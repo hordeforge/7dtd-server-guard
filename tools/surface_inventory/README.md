@@ -10,8 +10,10 @@ Phase 1 TODO item must satisfy.
 
 - `--assembly-dir <path>`: directory containing the installed `Assembly-CSharp.dll` and
   friends of the pinned build (default: the local dedicated server's managed dir).
-- `--registry docs/DETECTORS.md`: the detector registry; the probe targets the seams the
-  registry rows require and reports any row with no candidate seam.
+- `--registry docs/DETECTORS.md`: the detector registry; the probe targets each detector's
+  declared `seam` in `tools/detector_spec.yaml` (consumed via
+  `config/detector-config-manifest.json`) and reports any row whose seam cannot be
+  resolved on the pinned build.
 - `--manifest-out <path>`: where hook manifest v1 is written.
 - `--fingerprint-out <path>`: where the build fingerprint (SHA-256 over assembly identity
   plus `Assembly-CSharp.dll` file hash) is written.

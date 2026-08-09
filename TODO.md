@@ -64,7 +64,8 @@ the objection). The review is the gate; nothing in later phases starts until it 
 - [ ] Inventory block damage/change/place/repair/upgrade, claim, lock, wire, turret, drone, vehicle,
   explosion, entity spawn, quest reward, and admin/console methods.
 - [ ] For each candidate record authority, thread, pre-state, post-state, overload, metadata token,
-  expected call rate, reject capability, compatibility risk, and fallback event.
+  expected call rate, reject capability, compatibility risk, and fallback event; the seam, input
+  authority, and role per detector come from [tools/detector_spec.yaml](tools/detector_spec.yaml).
 - [ ] Confirm which client values the vanilla server already validates or overwrites.
 - [ ] Classify every planned validator input as server-derived or client-declared; a
   client-declared input caps that validator below Hard.

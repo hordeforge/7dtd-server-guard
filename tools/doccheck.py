@@ -169,6 +169,8 @@ def check_spec() -> list[str]:
                 out.append(f"{did}: input {i.get('name')} bad role {i.get('role')}")
         if not d.get("algorithm"):
             out.append(f"{did}: missing algorithm")
+        if not d.get("seam"):
+            out.append(f"{did}: missing seam (Phase 1 probe target)")
         if not d.get("state"):
             out.append(f"{did}: missing state")
         for f in d.get("fixtures", []):

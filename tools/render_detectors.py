@@ -107,7 +107,7 @@ def render_manifest(detectors: list[dict]) -> dict:
     manifest = {"manifestVersion": 1, "detectors": []}
     for d in detectors:
         entry = {"detectorId": d["id"], "phase": d["phase"], "ceiling": d["ceiling"],
-                 "defaultMode": d["default_mode"],
+                 "defaultMode": d["default_mode"], "seam": d.get("seam", "TBD (Phase 1 inventory)"),
                  **({"hardCondition": d["hard_condition"]} if d.get("hard_condition") else {})}
         if d.get("thresholds"):
             entry["thresholds"] = [

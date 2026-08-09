@@ -5,37 +5,43 @@
       "detectorId": "protocol.stage_order",
       "phase": 4,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "NetPackage*.ProcessPackage stage validation"
     },
     {
       "detectorId": "protocol.entity_owner",
       "phase": 4,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "ownership resolution at package process time"
     },
     {
       "detectorId": "protocol.permission",
       "phase": 4,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "console/command execution seam"
     },
     {
       "detectorId": "protocol.duplicate_session",
       "phase": 4,
       "ceiling": "Strong",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "PlayerLogin / PlayerJoinedGame handlers"
     },
     {
       "detectorId": "protocol.malformed",
       "phase": 4,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "package decode/deserialize boundary"
     },
     {
       "detectorId": "protocol.flood",
       "phase": 4,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "package intake before process",
       "thresholds": [
         {
           "key": "burst",
@@ -74,6 +80,7 @@
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "position sync package (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "max_speed_mps",
@@ -146,6 +153,7 @@
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "position sync package (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "hover_window_seconds",
@@ -173,13 +181,15 @@
       "detectorId": "movement.vertical_accel",
       "phase": 5,
       "ceiling": "Strong",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "position sync package (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "movement.noclip",
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "position sync package (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "voxel_queries_per_tick_cap",
@@ -209,6 +219,7 @@
       "phase": 5,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "EntityTeleport package; server teleport origin enumeration",
       "hardCondition": "Hard only after Phase 1 enumerates every server-side teleport origin; otherwise Strong (see DECISIONS.md D-12)"
     },
     {
@@ -216,6 +227,7 @@
       "phase": 5,
       "ceiling": "Weak",
       "defaultMode": "observe",
+      "seam": "vehicle sync package (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "envelope_validation_window_hours",
@@ -235,6 +247,7 @@
       "phase": 5,
       "ceiling": "Weak",
       "defaultMode": "observe",
+      "seam": "ledger output; no direct seam",
       "thresholds": [
         {
           "key": "window_samples",
@@ -262,6 +275,7 @@
       "phase": 6,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "EntityAlive.DamageEntity, NetPackageRangeCheckDamageEntity",
       "hardCondition": "Hard if reload/chamber and modifier state is fully server-known for the item family; otherwise Strong",
       "thresholds": [
         {
@@ -280,13 +294,15 @@
       "detectorId": "combat.held_item_ammo",
       "phase": 6,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "damage application seam + inventory ledger"
     },
     {
       "detectorId": "combat.reach",
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "damage application seam + server geometry",
       "thresholds": [
         {
           "key": "reach_tolerance_m",
@@ -305,6 +321,7 @@
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "EntityAlive.DamageEntity, NetPackageRangeCheckDamageEntity",
       "thresholds": [
         {
           "key": "damage_tolerance_percent",
@@ -331,25 +348,29 @@
       "detectorId": "combat.geometry",
       "phase": 6,
       "ceiling": "Strong",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "damage application seam + voxel ray test"
     },
     {
       "detectorId": "combat.state",
       "phase": 6,
       "ceiling": "Strong",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "entity state at the damage seam"
     },
     {
       "detectorId": "combat.target_set",
       "phase": 6,
       "ceiling": "Strong",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "attack correlation at both damage paths"
     },
     {
       "detectorId": "combat.aim",
       "phase": 6,
       "ceiling": "Weak",
       "defaultMode": "observe",
+      "seam": "rotation sync package (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "window_samples",
@@ -386,13 +407,15 @@
       "detectorId": "combat.acquisition",
       "phase": 6,
       "ceiling": "Weak",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "interest/visibility sync (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "progression.xp_rate",
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "NetPackageEntityAddExpServer",
       "thresholds": [
         {
           "key": "max_xp_per_tick",
@@ -431,19 +454,22 @@
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "NetPackageEntitySetSkillLevelServer",
       "hardCondition": "Hard only if the server progression rules (points, prerequisites, maxima) are recomputable; otherwise Strong"
     },
     {
       "detectorId": "progression.health_stamina",
       "phase": 8,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "health/stamina sync seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "inventory.delta",
       "phase": 7,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "inventory mutation/container transaction seams (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "max_unaccounted_delta",
@@ -461,13 +487,15 @@
       "detectorId": "inventory.stack",
       "phase": 7,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "inventory mutation seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "inventory.craft",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "craft/recipe/workstation-queue seam (at risk; TBD Phase 1)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -475,6 +503,7 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "container transaction seam (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "replay_cache_size",
@@ -501,19 +530,22 @@
       "detectorId": "inventory.container_race",
       "phase": 7,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "container transaction seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "inventory.quality",
       "phase": 7,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "inventory mutation seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "inventory.trader",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "trader price/currency seam (at risk; TBD Phase 1)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative trader price/currency seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -521,6 +553,7 @@
       "phase": 7,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "save epoch / disconnect handlers",
       "thresholds": [
         {
           "key": "reconcile_window_minutes",
@@ -539,6 +572,7 @@
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "block change/place/repair/upgrade seams (TBD Phase 1 inventory)",
       "hardCondition": "Hard only for the authorization subset (claims, locks, ownership, allowlist, overflow); positional and cadence subchecks consume client-declared position and stay Strong",
       "thresholds": [
         {
@@ -567,19 +601,22 @@
       "detectorId": "world.claim",
       "phase": 8,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "claim/lock access seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "world.wire",
       "phase": 8,
       "ceiling": "Hard",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "wire/power tile-entity seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "world.entity_spawn",
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
+      "seam": "entity spawn request seam (TBD Phase 1 inventory)",
       "thresholds": [
         {
           "key": "spawn_rate_per_minute",
@@ -597,13 +634,15 @@
       "detectorId": "world.explosion",
       "phase": 8,
       "ceiling": "Strong",
-      "defaultMode": "observe"
+      "defaultMode": "observe",
+      "seam": "explosion resolution seam (TBD Phase 1 inventory)"
     },
     {
       "detectorId": "world.budget",
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "high-fan-out package intake",
       "thresholds": [
         {
           "key": "max_actions_per_tick",
@@ -632,6 +671,7 @@
       "phase": 4,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "package decode counters",
       "thresholds": [
         {
           "key": "tiny",
@@ -676,6 +716,7 @@
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
+      "seam": "join/login handlers",
       "thresholds": [
         {
           "key": "max_joins_per_minute",
