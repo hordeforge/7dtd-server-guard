@@ -2,22 +2,40 @@
   "manifestVersion": 1,
   "detectors": [
     {
-      "detectorId": "protocol.stage_order"
+      "detectorId": "protocol.stage_order",
+      "phase": 4,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "protocol.entity_owner"
+      "detectorId": "protocol.entity_owner",
+      "phase": 4,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "protocol.permission"
+      "detectorId": "protocol.permission",
+      "phase": 4,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "protocol.duplicate_session"
+      "detectorId": "protocol.duplicate_session",
+      "phase": 4,
+      "ceiling": "Strong",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "protocol.malformed"
+      "detectorId": "protocol.malformed",
+      "phase": 4,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "protocol.flood",
+      "phase": 4,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "burst",
@@ -53,6 +71,9 @@
     },
     {
       "detectorId": "movement.displacement",
+      "phase": 5,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "max_speed_mps",
@@ -122,6 +143,9 @@
     },
     {
       "detectorId": "movement.flight",
+      "phase": 5,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "hover_window_seconds",
@@ -146,10 +170,16 @@
       ]
     },
     {
-      "detectorId": "movement.vertical_accel"
+      "detectorId": "movement.vertical_accel",
+      "phase": 5,
+      "ceiling": "Strong",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "movement.noclip",
+      "phase": 5,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "voxel_queries_per_tick_cap",
@@ -175,10 +205,17 @@
       ]
     },
     {
-      "detectorId": "movement.teleport_token"
+      "detectorId": "movement.teleport_token",
+      "phase": 5,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "hardCondition": "Hard only after Phase 1 enumerates every server-side teleport origin; otherwise Strong (see DECISIONS.md D-12)"
     },
     {
       "detectorId": "movement.vehicle",
+      "phase": 5,
+      "ceiling": "Weak",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "envelope_validation_window_hours",
@@ -195,6 +232,9 @@
     },
     {
       "detectorId": "movement.edge_distribution",
+      "phase": 5,
+      "ceiling": "Weak",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "window_samples",
@@ -219,6 +259,10 @@
     },
     {
       "detectorId": "combat.cadence",
+      "phase": 6,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "hardCondition": "Hard if reload/chamber and modifier state is fully server-known for the item family; otherwise Strong",
       "thresholds": [
         {
           "key": "cadence_tolerance_ms",
@@ -233,10 +277,16 @@
       ]
     },
     {
-      "detectorId": "combat.held_item_ammo"
+      "detectorId": "combat.held_item_ammo",
+      "phase": 6,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "combat.reach",
+      "phase": 6,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "reach_tolerance_m",
@@ -252,6 +302,9 @@
     },
     {
       "detectorId": "combat.damage",
+      "phase": 6,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "damage_tolerance_percent",
@@ -275,16 +328,28 @@
       ]
     },
     {
-      "detectorId": "combat.geometry"
+      "detectorId": "combat.geometry",
+      "phase": 6,
+      "ceiling": "Strong",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "combat.state"
+      "detectorId": "combat.state",
+      "phase": 6,
+      "ceiling": "Strong",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "combat.target_set"
+      "detectorId": "combat.target_set",
+      "phase": 6,
+      "ceiling": "Strong",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "combat.aim",
+      "phase": 6,
+      "ceiling": "Weak",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "window_samples",
@@ -318,10 +383,16 @@
       ]
     },
     {
-      "detectorId": "combat.acquisition"
+      "detectorId": "combat.acquisition",
+      "phase": 6,
+      "ceiling": "Weak",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "progression.xp_rate",
+      "phase": 8,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "max_xp_per_tick",
@@ -356,13 +427,23 @@
       ]
     },
     {
-      "detectorId": "progression.skill_prereq"
+      "detectorId": "progression.skill_prereq",
+      "phase": 8,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "hardCondition": "Hard only if the server progression rules (points, prerequisites, maxima) are recomputable; otherwise Strong"
     },
     {
-      "detectorId": "progression.health_stamina"
+      "detectorId": "progression.health_stamina",
+      "phase": 8,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "inventory.delta",
+      "phase": 7,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "max_unaccounted_delta",
@@ -377,13 +458,23 @@
       ]
     },
     {
-      "detectorId": "inventory.stack"
+      "detectorId": "inventory.stack",
+      "phase": 7,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "inventory.craft"
+      "detectorId": "inventory.craft",
+      "phase": 7,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "hardCondition": "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
       "detectorId": "inventory.replay",
+      "phase": 7,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "replay_cache_size",
@@ -407,16 +498,29 @@
       ]
     },
     {
-      "detectorId": "inventory.container_race"
+      "detectorId": "inventory.container_race",
+      "phase": 7,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "inventory.quality"
+      "detectorId": "inventory.quality",
+      "phase": 7,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "inventory.trader"
+      "detectorId": "inventory.trader",
+      "phase": 7,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "hardCondition": "Hard only if Phase 1 finds an authoritative trader price/currency seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
       "detectorId": "inventory.rollback",
+      "phase": 7,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "reconcile_window_minutes",
@@ -432,6 +536,10 @@
     },
     {
       "detectorId": "world.block",
+      "phase": 8,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "hardCondition": "Hard only for the authorization subset (claims, locks, ownership, allowlist, overflow); positional and cadence subchecks consume client-declared position and stay Strong",
       "thresholds": [
         {
           "key": "max_block_actions_per_minute",
@@ -456,13 +564,22 @@
       ]
     },
     {
-      "detectorId": "world.claim"
+      "detectorId": "world.claim",
+      "phase": 8,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
-      "detectorId": "world.wire"
+      "detectorId": "world.wire",
+      "phase": 8,
+      "ceiling": "Hard",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "world.entity_spawn",
+      "phase": 8,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "spawn_rate_per_minute",
@@ -477,10 +594,16 @@
       ]
     },
     {
-      "detectorId": "world.explosion"
+      "detectorId": "world.explosion",
+      "phase": 8,
+      "ceiling": "Strong",
+      "defaultMode": "observe"
     },
     {
       "detectorId": "world.budget",
+      "phase": 8,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "max_actions_per_tick",
@@ -506,6 +629,9 @@
     },
     {
       "detectorId": "availability.cost",
+      "phase": 4,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "tiny",
@@ -547,6 +673,9 @@
     },
     {
       "detectorId": "availability.churn",
+      "phase": 8,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
       "thresholds": [
         {
           "key": "max_joins_per_minute",

@@ -64,7 +64,9 @@ the trace and reports it instead of replaying blindly.
 
 Per-detector fixture catalog: every detector in the [registry](DETECTORS.md) ships at least
 one normal and one violation trace, and the contextual families cover the exclusions that
-detector's signals require:
+detector's signals require. The exact fixture set per detector is declared in
+`tools/detector_spec.yaml` and rendered as the coverage matrix in DETECTORS.md; the matrix
+is the gate checklist for this layer:
 
 | Family | Coverage |
 |---|---|

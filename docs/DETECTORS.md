@@ -109,6 +109,56 @@ not the tables. The per-detector config manifest
 | `availability.cost` | Decoded bytes, package count and cost, malformed decodes, exceptions, and queued work are bounded per identity and source prefix (in-memory only). | all decision inputs server-derived | Strong (availability) | server-retry, packet-loss-burst |
 | `availability.churn` | Reconnect churn and join storms are bounded; never an accusation. | all decision inputs server-derived | Strong (availability) | stale-disconnect, reconnect-grace |
 
+## Fixture coverage
+
+X marks the fixture families a detector must ship in TEST_PLAN.md Layer 4;
+declared per detector in `tools/detector_spec.yaml`. A detector is not considered for a mode
+raise until its declared fixture set is green in observe mode.
+
+| ID | normal | violation | latency-stall | reconnect-duplicate-session | teleport-vehicle-death | admin-mod-origin | rollback | induced-finding |
+|---|---|---|---|---|---|---|---|---|
+| `protocol.stage_order` | X | X |  | X |  |  |  |  |
+| `protocol.entity_owner` | X | X |  |  |  | X |  |  |
+| `protocol.permission` | X | X |  |  |  | X |  |  |
+| `protocol.duplicate_session` |  |  |  | X |  |  |  | X |
+| `protocol.malformed` | X | X |  |  |  |  |  |  |
+| `protocol.flood` | X | X | X |  |  |  |  |  |
+| `movement.displacement` | X | X | X |  | X |  |  | X |
+| `movement.flight` | X | X | X |  | X |  |  |  |
+| `movement.vertical_accel` | X | X | X |  |  |  |  | X |
+| `movement.noclip` | X | X | X |  |  |  |  |  |
+| `movement.teleport_token` | X | X | X |  | X |  |  |  |
+| `movement.vehicle` | X | X |  |  | X |  |  |  |
+| `movement.edge_distribution` | X |  | X |  |  |  |  |  |
+| `combat.cadence` | X | X | X |  |  |  |  |  |
+| `combat.held_item_ammo` | X | X |  |  |  | X |  |  |
+| `combat.reach` | X | X | X |  |  |  |  |  |
+| `combat.damage` | X | X |  |  |  | X |  |  |
+| `combat.geometry` | X | X |  |  |  |  |  |  |
+| `combat.state` | X | X |  |  |  |  |  |  |
+| `combat.target_set` | X | X |  |  |  |  |  |  |
+| `combat.aim` | X |  |  |  |  |  |  |  |
+| `combat.acquisition` | X |  |  |  |  |  |  |  |
+| `progression.xp_rate` | X | X |  |  |  | X |  |  |
+| `progression.skill_prereq` | X | X |  |  |  | X |  |  |
+| `progression.health_stamina` | X | X |  |  |  |  |  |  |
+| `inventory.delta` | X | X |  |  |  | X | X | X |
+| `inventory.stack` | X | X |  |  |  |  |  |  |
+| `inventory.craft` | X | X |  |  |  |  | X |  |
+| `inventory.replay` | X | X |  | X |  |  |  |  |
+| `inventory.container_race` | X | X |  |  |  |  |  | X |
+| `inventory.quality` | X | X |  |  |  |  |  |  |
+| `inventory.trader` | X | X |  |  |  |  | X |  |
+| `inventory.rollback` | X |  |  | X |  |  | X |  |
+| `world.block` | X | X |  |  |  | X |  |  |
+| `world.claim` | X | X |  |  |  | X |  |  |
+| `world.wire` | X | X |  |  |  |  |  |  |
+| `world.entity_spawn` | X | X |  |  |  | X |  |  |
+| `world.explosion` | X | X |  |  |  |  |  |  |
+| `world.budget` | X | X |  |  |  |  |  |  |
+| `availability.cost` | X | X | X |  |  |  |  |  |
+| `availability.churn` | X | X |  | X |  |  |  |  |
+
 <!-- REGISTRY:END -->
 
 ## Lifecycle

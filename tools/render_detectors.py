@@ -32,6 +32,8 @@ FAMILY_TITLES = {
 }
 FAMILY_ORDER = ["protocol", "movement", "combat", "progression", "inventory", "world", "availability"]
 AVAILABILITY_CEILING_SUFFIX = {"protocol.flood", "world.budget", "availability.cost", "availability.churn"}
+FIXTURE_FAMILIES = ["normal", "violation", "latency-stall", "reconnect-duplicate-session",
+                    "teleport-vehicle-death", "admin-mod-origin", "rollback", "induced-finding"]
 
 
 def load_spec() -> list[dict]:
@@ -77,6 +79,18 @@ def render_tables(detectors: list[dict]) -> str:
     return "\n".join(out)
 
 
+def render_fixture_matrix(detectors: list[dict]) -> str:
+    out = ["## Fixture coverage\n", "X marks the fixture families a detector must ship in TEST_PLAN.md Layer 4;",
+           "declared per detector in `tools/detector_spec.yaml`. A detector is not considered for a mode",
+           "raise until its declared fixture set is green in observe mode.\n",
+           "| ID | " + " | ".join(FIXTURE_FAMILIES) + " |", "|---|" + "---|" * len(FIXTURE_FAMILIES)]
+    for d in detectors:
+        have = set(d.get("fixtures", []))
+        cells = " | ".join("X" if f in have else "" for f in FIXTURE_FAMILIES)
+        out.append(f"| `{d['id']}` | {cells} |")
+    return "\n".join(out) + "\n"
+
+
 def render_registry(detectors: list[dict]) -> str:
     txt = REGISTRY.read_text(encoding="utf-8")
     start = txt.find("<!-- REGISTRY:START -->")
@@ -84,13 +98,17 @@ def render_registry(detectors: list[dict]) -> str:
     if start == -1 or end == -1:
         sys.exit("DETECTORS.md is missing REGISTRY:START/END markers; re-add them before rendering")
     tables = render_tables(detectors)
-    return txt[: start + len("<!-- REGISTRY:START -->")] + "\n\n" + tables + "\n" + txt[end:]
+    matrix = render_fixture_matrix(detectors)
+    body = tables + "\n" + matrix
+    return txt[: start + len("<!-- REGISTRY:START -->")] + "\n\n" + body + "\n" + txt[end:]
 
 
 def render_manifest(detectors: list[dict]) -> dict:
     manifest = {"manifestVersion": 1, "detectors": []}
     for d in detectors:
-        entry = {"detectorId": d["id"]}
+        entry = {"detectorId": d["id"], "phase": d["phase"], "ceiling": d["ceiling"],
+                 "defaultMode": d["default_mode"],
+                 **({"hardCondition": d["hard_condition"]} if d.get("hard_condition") else {})}
         if d.get("thresholds"):
             entry["thresholds"] = [
                 {

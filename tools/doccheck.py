@@ -231,7 +231,13 @@ def check_detector_ids() -> list[str]:
     spec_by_id = {d["id"]: d for d in _load_spec()}
     manifest_keys: dict[str, set[str]] = {}
     for entry in manifest["detectors"]:
-        declared = {t["key"] for t in spec_by_id[entry["detectorId"]].get("thresholds", [])}
+        spec_entry = spec_by_id.get(entry["detectorId"])
+        if spec_entry is None:
+            out.append(f"manifest detector {entry.get('detectorId')} not in spec")
+            continue
+        if entry.get("phase") != spec_entry["phase"] or entry.get("ceiling") != spec_entry["ceiling"]                 or entry.get("defaultMode") != spec_entry["default_mode"]:
+            out.append(f"manifest metadata drift for {entry['detectorId']}; re-run make detectors")
+        declared = {t["key"] for t in spec_entry.get("thresholds", [])}
         manifest_keys[entry["detectorId"]] = {t["key"] for t in entry.get("thresholds", [])}
         for t in entry.get("thresholds", []):
             if t["key"] not in declared:
