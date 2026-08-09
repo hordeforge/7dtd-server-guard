@@ -67,6 +67,16 @@ Calibration converts placeholder thresholds into measured operating points.
 - **Drift**: any game update or mod change re-runs calibration on the affected families;
   thresholds are build-scoped and shipped per build.
 
+Worked example (illustrative numbers): `movement.displacement` has two candidate
+thresholds, `max_speed_mps` in {9, 10, 11} and `latency_window_ms` in {150, 200, 250}.
+The operator's weights are `w_fp = 10` (a Hard-adjacent Strong false positive is
+expensive), `w_fn = 1`. Grid search evaluates nine operating points on the validation
+split. Point (10 m/s, 200 ms) yields FPR 0.002 and recall 0.93, objective
+`10 * 0.002 + 1 * (1 - 0.93) = 0.09`; point (9 m/s, 150 ms) yields FPR 0.001 but recall
+0.84, objective `0.01 + 0.16 = 0.17`. The first point wins, is re-checked on holdout,
+and ships as the calibrated operating point for the build. The curve and the per-point
+metrics are published with the release.
+
 ## 4. Labeling methodology (Layer 7, Phase 9)
 
 - **Dispositions**: `confirmed`, `benign`, `uncertain`, `detector bug` (POLICY.md). Every
