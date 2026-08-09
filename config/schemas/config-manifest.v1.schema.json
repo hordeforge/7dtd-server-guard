@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://7dtd-server-guard/config-manifest.v1.schema.json",
+  "title": "Server Guard per-detector config manifest v1",
+  "description": "Generated from tools/detector_spec.yaml by tools/render_detectors.py --manifest. Declares every detector's accepted threshold keys, types, ranges, and defaults.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "detectors"
+  ],
+  "properties": {
+    "manifestVersion": {
+      "const": 1
+    },
+    "detectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "detectorId",
+          "phase",
+          "ceiling",
+          "defaultMode",
+          "seam"
+        ],
+        "properties": {
+          "detectorId": {
+            "type": "string",
+            "pattern": "^[a-z]+\\.[a-z_]+$"
+          },
+          "phase": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "ceiling": {
+            "enum": [
+              "Hard",
+              "Strong",
+              "Weak"
+            ]
+          },
+          "defaultMode": {
+            "enum": [
+              "observe",
+              "correct",
+              "enforce"
+            ]
+          },
+          "seam": {
+            "type": "string"
+          },
+          "hardCondition": {
+            "type": "string"
+          },
+          "thresholds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "type",
+                "range",
+                "default"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "type": {
+                  "enum": [
+                    "int",
+                    "float",
+                    "string"
+                  ]
+                },
+                "range": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": [
+                      "number",
+                      "string"
+                    ]
+                  }
+                },
+                "default": {
+                  "type": [
+                    "number",
+                    "string",
+                    "boolean"
+                  ]
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

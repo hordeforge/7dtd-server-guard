@@ -16,6 +16,7 @@ bug to fix in the same change.
 | [SCHEMAS.md](SCHEMAS.md) | Concrete data contracts: config v1, evidence v1, hook manifest v1, audit v1, health v1, metrics naming | Field-level schema, strict-versioning rules, config keys |
 | [RESEARCH.md](RESEARCH.md) | External findings, community survey, open questions, references | Where findings landed; open questions that block or downgrade detectors |
 | [TEST_PLAN.md](TEST_PLAN.md) | Test layers, fixture families, adversarial scenarios, reproducibility, release gates | What must be verified before a phase closes |
+| [METHODOLOGY.md](METHODOLOGY.md) | The *how*: calibration, labeling, mutation, A/B statistics, red-team, evidence loop, detector lifecycle | Methods the gates rely on; gate evidence artifacts |
 | [DECISIONS.md](DECISIONS.md) | Why the design is this way; alternatives considered and rejected | Decision status and reasoning trail |
 | [OPERATIONS.md](OPERATIONS.md) | Operator workflows: rollout, incident response, appeals, upgrade/rollback, disclosure | Requirements the Response/Evidence/console components must support (validated in Phase 9) |
 | [TODO.md](../TODO.md) | The phase ledger with exit criteria | What is done, what is next, phase order |
@@ -26,7 +27,7 @@ bug to fix in the same change.
 ## Reading paths
 
 - **New contributor:** INDEX -> DETECTORS -> POLICY -> ARCHITECTURE -> SCHEMAS ->
-  TEST_PLAN -> TODO.
+  TEST_PLAN -> METHODOLOGY -> TODO.
 - **Adding a detector:** DETECTORS.md lifecycle (1. Phase 1 seam + authority, 2. registry
   row, 3. config keys + hook stub + evidence + metrics from SCHEMAS.md, 4. fixture family
   from TEST_PLAN.md Layer 4, 5. calibration in Phase 10). Record the decision in
@@ -45,14 +46,18 @@ bug to fix in the same change.
 ├── README.md                  public entry point
 ├── TODO.md                    phase ledger
 ├── Makefile                   docs quality gates (make check)
-├── config/                    example configs (server-guard.example.json)
+├── config/
+│   ├── server-guard.example.json     example config v1
+│   ├── detector-config-manifest.json generated per-detector thresholds (make detectors)
+│   └── schemas/                      JSON Schema: config.v1, config-manifest.v1
 ├── docs/                      this design contract
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects
 └── tools/
     ├── detector_spec.yaml     canonical detector spec (single source of truth)
     ├── render_detectors.py    renders DETECTORS.md and the config manifest from the spec
-    ├── doccheck.py            docs quality gate (em dashes, links, spec, registry sync)
+    ├── doccheck.py            docs quality gate (em dashes, links, spec, schemas, sync)
+    ├── fixtures/              traces/, regression/, generators/ (empty until Phase 4)
     └── surface_inventory/     Phase 1 Mono.Cecil metadata probe (planned)
 ```
 

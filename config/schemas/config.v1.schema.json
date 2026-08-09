@@ -1,0 +1,340 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://7dtd-server-guard/config.v1.schema.json",
+  "title": "Server Guard config v1",
+  "description": "Strict versioned runtime config. Unknown keys and invalid ranges are rejected (docs/SCHEMAS.md -> Config schema).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "emergencyDisable": {
+      "type": "boolean",
+      "default": false
+    },
+    "buildPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "buildId": {
+          "type": "string",
+          "default": "3.1.0-b14"
+        },
+        "policy": {
+          "const": "observe-else",
+          "default": "observe-else"
+        }
+      }
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-detector mode; keys must be registry detector ids.",
+      "patternProperties": {
+        "^[a-z]+\\.[a-z_]+$": {
+          "enum": [
+            "observe",
+            "correct",
+            "enforce"
+          ],
+          "default": "observe"
+        }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "correct": {
+          "type": "boolean",
+          "default": true
+        },
+        "quarantine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "damage": {
+              "type": "boolean",
+              "default": false
+            },
+            "containers": {
+              "type": "boolean",
+              "default": false
+            },
+            "worldMutation": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "kick": {
+          "type": "boolean",
+          "default": false
+        },
+        "throttle": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-detector threshold values; keys must be declared in the generated config manifest.",
+      "patternProperties": {
+        "^[a-z]+\\.[a-z_]+$": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "number",
+              "string"
+            ]
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "type": "string",
+          "default": "ServerGuard/evidence"
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 30
+        },
+        "rotationSizeMB": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024,
+          "default": 64
+        },
+        "positionHistoryDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 90,
+          "default": 7
+        },
+        "positionHistorySamplesPerPlayer": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20000,
+          "default": 3600
+        }
+      }
+    },
+    "identityMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "default": "ServerGuard/identity-map.json"
+        },
+        "permissions": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$",
+          "default": "0600"
+        }
+      }
+    },
+    "hmacKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "default": "ServerGuard/hmac.key"
+        },
+        "rotationDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 90
+        }
+      }
+    },
+    "queues": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actionQueueMax": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 65536,
+          "default": 4096
+        },
+        "evidenceQueueMax": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 65536,
+          "default": 8192
+        }
+      }
+    },
+    "faultGuard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxFaults": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 5
+        },
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "default": 300
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cooldownTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "default": 20
+        },
+        "suspendWindowTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "default": 200
+        },
+        "maxPerWindow": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 3
+        }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 200
+        },
+        "refillPerSecond": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "default": 40
+        },
+        "globalCostPerTick": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 2000
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Cost class weights (SIGNALS.md -> Availability).",
+          "properties": {
+            "tiny": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1
+            },
+            "play": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 2
+            },
+            "state": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 5
+            },
+            "expensive": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 20
+            }
+          }
+        }
+      }
+    },
+    "console": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "permissionLevel": {
+          "enum": [
+            "admin",
+            "moderator"
+          ],
+          "default": "admin"
+        }
+      }
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "evidenceIdsOnly": {
+          "const": true,
+          "default": true
+        },
+        "urlEnv": {
+          "type": "string",
+          "default": "SERVERGUARD_WEBHOOK_URL"
+        }
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "secretEnv": {
+          "type": "string",
+          "default": "SERVERGUARD_DASHBOARD_SECRET"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

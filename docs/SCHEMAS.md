@@ -23,6 +23,9 @@ Rules that apply to every schema in this document:
 
 File: `server-guard.json` (example in `config/server-guard.example.json`). Loaded at startup,
 rejected wholesale on any violation, reloadable by console command with the same checks.
+The machine form of this table is the JSON Schema at
+`config/schemas/config.v1.schema.json`; the doccheck gate validates the example config
+against it, and the strict loader in Phase 2 is generated from the same schema.
 
 | Key | Type | Default | Range / enum | Meaning |
 |---|---|---|---|---|

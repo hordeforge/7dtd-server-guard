@@ -10,5 +10,6 @@
   config-example/schema/manifest cross-checks.
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
   (SCHEMAS.md). Planned; does not exist yet.
-- `fixtures/`: versioned synthetic traces and labeled false-positive regression corpus
-  (TEST_PLAN.md layers 4 and 7). Generated starting Phase 4.
+- `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression
+  corpus (`regression/`), and seeded generators/mutation tools (`generators/`) for
+  TEST_PLAN.md layers 4 and 7. Empty until Phase 4.

@@ -42,6 +42,7 @@ REQUIRED_DOCS = [
     "docs/TEST_PLAN.md",
     "docs/DECISIONS.md",
     "docs/OPERATIONS.md",
+    "docs/METHODOLOGY.md",
     "TODO.md",
     "PRIVACY.md",
     "SECURITY.md",
@@ -307,6 +308,87 @@ def _matches_schema(path: str, patterns: list[str]) -> bool:
     return False
 
 
+def _schema_type_ok(instance, t) -> bool:
+    if isinstance(t, list):
+        return any(_schema_type_ok(instance, tt) for tt in t)
+    return {
+        "string": isinstance(instance, str),
+        "boolean": isinstance(instance, bool),
+        "integer": isinstance(instance, int) and not isinstance(instance, bool),
+        "number": isinstance(instance, (int, float)) and not isinstance(instance, bool),
+        "object": isinstance(instance, dict),
+        "array": isinstance(instance, list),
+    }.get(t, False)
+
+
+def _schema_validate(instance, schema, path="$") -> list[str]:
+    """Minimal JSON Schema (draft-07 subset) validator for the schemas we ship."""
+    errs = []
+    if "const" in schema:
+        if instance != schema["const"]:
+            errs.append(f"{path}: expected const {schema['const']!r}, got {instance!r}")
+        return errs
+    if "enum" in schema and instance not in schema["enum"]:
+        errs.append(f"{path}: {instance!r} not in {schema['enum']}")
+    if "type" in schema and not _schema_type_ok(instance, schema["type"]):
+        errs.append(f"{path}: expected type {schema['type']}, got {type(instance).__name__}")
+        return errs
+    if "minimum" in schema and isinstance(instance, (int, float)) and not isinstance(instance, bool) and instance < schema["minimum"]:
+        errs.append(f"{path}: {instance} < minimum {schema['minimum']}")
+    if "maximum" in schema and isinstance(instance, (int, float)) and not isinstance(instance, bool) and instance > schema["maximum"]:
+        errs.append(f"{path}: {instance} > maximum {schema['maximum']}")
+    if "pattern" in schema and isinstance(instance, str) and not re.match(schema["pattern"], instance):
+        errs.append(f"{path}: {instance!r} does not match {schema['pattern']}")
+    if isinstance(instance, dict):
+        props = schema.get("properties", {})
+        pats = schema.get("patternProperties", {})
+        for k, v in instance.items():
+            if k in props:
+                errs += _schema_validate(v, props[k], f"{path}.{k}")
+                continue
+            matched = False
+            for pat, sub in pats.items():
+                if re.match(pat, k):
+                    errs += _schema_validate(v, sub, f"{path}.{k}")
+                    matched = True
+                    break
+            if not matched and schema.get("additionalProperties") is False:
+                errs.append(f"{path}: unexpected key {k!r}")
+        for req in schema.get("required", []):
+            if req not in instance:
+                errs.append(f"{path}: missing required key {req!r}")
+    if isinstance(instance, list) and "items" in schema:
+        for i, v in enumerate(instance):
+            errs += _schema_validate(v, schema["items"], f"{path}[{i}]")
+    return errs
+
+
+def check_config_schemas() -> list[str]:
+    """Validate the shipped JSON Schemas parse and the example config and generated
+    manifest conform to them."""
+    out = []
+    pairs = [
+        (ROOT / "config" / "schemas" / "config.v1.schema.json",
+         ROOT / "config" / "server-guard.example.json"),
+        (ROOT / "config" / "schemas" / "config-manifest.v1.schema.json",
+         ROOT / "config" / "detector-config-manifest.json"),
+    ]
+    for schema_path, data_path in pairs:
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"{schema_path.relative_to(ROOT)} unparseable: {exc}")
+            continue
+        try:
+            data = json.loads(data_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
+            continue
+        for err in _schema_validate(data, schema):
+            out.append(f"{data_path.relative_to(ROOT)}: {err}")
+    return out
+
+
 def check_config_example_keys() -> list[str]:
     patterns = _schema_key_patterns()
     example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
@@ -332,6 +414,7 @@ def main() -> int:
         "registry sync": check_registry_sync(),
         "detector registry coverage": check_detector_ids(),
         "config example vs schema": check_config_example_keys(),
+        "config JSON schemas": check_config_schemas(),
         "required docs": check_required_docs(),
     }
     total = sum(len(v) for v in failures.values())

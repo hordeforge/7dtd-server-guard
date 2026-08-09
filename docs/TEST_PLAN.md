@@ -2,7 +2,9 @@
 
 This plan verifies Server Guard against the design contract in `docs/` and gates the phase
 exits in [TODO.md](../TODO.md). Where a gate restates the policy contract, [POLICY.md](POLICY.md)
-is canonical.
+is canonical. The *methods* behind each layer (calibration, labeling, mutation, A/B
+statistics, red-team) are defined in [METHODOLOGY.md](METHODOLOGY.md); this plan names what
+each layer verifies.
 
 ## Test layers
 

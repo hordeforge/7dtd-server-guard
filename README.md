@@ -48,6 +48,7 @@ Start at the [design contract index](docs/INDEX.md) for reading order and owners
 - [Signal catalog](docs/SIGNALS.md)
 - [Research and constraints](docs/RESEARCH.md)
 - [Verification plan](docs/TEST_PLAN.md)
+- [Methodology](docs/METHODOLOGY.md) (calibration, labeling, mutation, A/B, red-team)
 - [Decision log](docs/DECISIONS.md)
 - [Operations and incident runbook (draft)](docs/OPERATIONS.md)
 - [Detailed work plan](TODO.md)
