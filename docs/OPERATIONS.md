@@ -54,7 +54,7 @@ instructions for a shipped product.
 2. Operator resolves the pseudonym via the identity map, reviews the evidence timeline and
    contextual values.
 3. Operator records a disposition: `confirmed`, `benign`, `uncertain`, or `detector bug`
-   (POLICY.md -> Roles and appeals).
+   (POLICY.md -> Roles and appeals; labeling method in [METHODOLOGY.md](METHODOLOGY.md) -> Labeling).
 4. `benign` and `detector bug` export to the regression corpus; `confirmed` may keep the
    action; `uncertain` lowers the detector or narrows its context until resolved.
 5. Every disposition is an `audit` record. A player erasure request follows

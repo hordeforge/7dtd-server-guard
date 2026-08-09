@@ -126,7 +126,26 @@ Each campaign targets one category and produces a report plus fixtures:
 Every bypass found becomes a fixture and a regression trace before the campaign closes; a
 Hard-invariant bypass blocks the release candidate.
 
-## 8. Release gating
+## 8. Change checklist
+
+A change is one concern, and every artifact that encodes that concern changes in the same
+commit (workspace rule: one lever at a time). The doccheck gate fails when the contract is
+inconsistent, so the checklist is mechanical:
+
+| Change | Must change together |
+|---|---|
+| Add or demote a detector | `tools/detector_spec.yaml`, re-render (`make detectors`), fixture families, RESEARCH.md open question, DECISIONS.md entry, TEST_PLAN Layer 4 traces |
+| Threshold value or range | The spec's `thresholds` entry (placeholder until calibration), re-render, config example if it cites the key, SCHEMAS.md excerpt if it shows the key |
+| Config schema | `docs/SCHEMAS.md` table, `config/schemas/config.v1.schema.json`, example config, doccheck pattern keys |
+| Evidence schema | `docs/SCHEMAS.md` evidence section, `config/schemas/evidence.v1.schema.json`, the sample JSONL, replay fixtures |
+| Policy (severity, mode, gate) | POLICY.md, DECISIONS.md, DETECTORS.md ceilings, THREAT_MODEL.md outcome table, PRIVACY.md if notice text changes |
+| Method (calibration, labeling, A/B) | METHODOLOGY.md, the TEST_PLAN layer that gates on it, TODO phase that runs it |
+
+A change that touches none of the listed artifacts for its type is incomplete, even if
+`make check` passes.
+
+## 9. Release gating
+
 
 Each release gate (TEST_PLAN.md -> Release gates) must cite the evidence artifact that
 satisfies it: a calibration report, a labeling summary with kappa, the mutation score, the
