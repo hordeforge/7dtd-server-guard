@@ -21,7 +21,7 @@ schema_version: 1
 detectors:
   # ---------------------------------------------------------------- protocol (phase 4)
   - id: protocol.stage_order
-    seam: "NetPackage*.ProcessPackage stage validation"
+    seam: "NetPackage*.ProcessPackage stage gating (ConnectionManager.ProcessPackages)"
     family: protocol
     phase: 4
     ceiling: Hard
@@ -39,7 +39,7 @@ detectors:
     fixtures: [normal, violation, reconnect-duplicate-session]
 
   - id: protocol.entity_owner
-    seam: "ownership resolution at package process time"
+    seam: "process-time ownership resolution; NetPackageOwnedEntitySync"
     family: protocol
     phase: 4
     ceiling: Hard
@@ -57,7 +57,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: protocol.permission
-    seam: "console/command execution seam"
+    seam: "NetPackageConsoleCmdClient/Server, NetPackageDebug, NetPackageModifyCVar execution seams"
     family: protocol
     phase: 4
     ceiling: Hard
@@ -75,7 +75,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: protocol.duplicate_session
-    seam: "PlayerLogin / PlayerJoinedGame handlers"
+    seam: "NetPackagePlayerLogin, NetPackageRequestToEnterGame handlers"
     family: protocol
     phase: 4
     ceiling: Strong
@@ -94,7 +94,7 @@ detectors:
     fixtures: [normal, violation, reconnect-duplicate-session, induced-finding]
 
   - id: protocol.malformed
-    seam: "package decode/deserialize boundary"
+    seam: "NetPackage read/decode boundaries across all census types"
     family: protocol
     phase: 4
     ceiling: Hard
@@ -111,7 +111,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: protocol.flood
-    seam: "package intake before process"
+    seam: "ConnectionManager.ProcessPackages intake; cost classes per package"
     family: protocol
     phase: 4
     ceiling: Strong
@@ -135,7 +135,7 @@ detectors:
 
   # ---------------------------------------------------------------- movement (phase 5)
   - id: movement.displacement
-    seam: "position sync package (TBD Phase 1 inventory)"
+    seam: "NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics, NetPackagePlayerStats"
     family: movement
     phase: 5
     ceiling: Strong
@@ -165,7 +165,7 @@ detectors:
     fixtures: [normal, violation, latency-stall, teleport-vehicle-death, induced-finding]
 
   - id: movement.flight
-    seam: "position sync package (TBD Phase 1 inventory)"
+    seam: "NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics"
     family: movement
     phase: 5
     ceiling: Strong
@@ -187,7 +187,7 @@ detectors:
     fixtures: [normal, violation, latency-stall, teleport-vehicle-death]
 
   - id: movement.vertical_accel
-    seam: "position sync package (TBD Phase 1 inventory)"
+    seam: "NetPackageEntityVelocity, NetPackageEntityAddVelocity, NetPackageEntityPosAndRot"
     family: movement
     phase: 5
     ceiling: Strong
@@ -205,7 +205,7 @@ detectors:
     fixtures: [normal, violation, induced-finding, latency-stall]
 
   - id: movement.noclip
-    seam: "position sync package (TBD Phase 1 inventory)"
+    seam: "NetPackageEntityPosAndRot/RelPosAndRot plus voxel sweep"
     family: movement
     phase: 5
     ceiling: Strong
@@ -227,7 +227,7 @@ detectors:
     fixtures: [normal, violation, latency-stall]
 
   - id: movement.teleport_token
-    seam: "EntityTeleport package; server teleport origin enumeration"
+    seam: "NetPackageEntityTeleport (client discontinuity), NetPackageTeleportPlayer (server origin)"
     family: movement
     phase: 5
     ceiling: Hard
@@ -249,7 +249,7 @@ detectors:
     fixtures: [teleport-vehicle-death, normal, violation, latency-stall]
 
   - id: movement.vehicle
-    seam: "vehicle sync package (TBD Phase 1 inventory)"
+    seam: "NetPackageVehicleDataSync, NetPackageVehiclePositions"
     family: movement
     phase: 5
     ceiling: Weak
@@ -291,7 +291,7 @@ detectors:
 
   # ---------------------------------------------------------------- combat (phase 6)
   - id: combat.cadence
-    seam: "EntityAlive.DamageEntity, NetPackageRangeCheckDamageEntity"
+    seam: "NetPackageDamageEntity, NetPackageRangeCheckDamageEntity"
     family: combat
     phase: 6
     ceiling: Hard
@@ -314,7 +314,7 @@ detectors:
     fixtures: [normal, violation, latency-stall]
 
   - id: combat.held_item_ammo
-    seam: "damage application seam + inventory ledger"
+    seam: "NetPackageHoldingItem, NetPackageItemReload plus damage application seam"
     family: combat
     phase: 6
     ceiling: Hard
@@ -332,7 +332,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: combat.reach
-    seam: "damage application seam + server geometry"
+    seam: "damage application seam plus server geometry"
     family: combat
     phase: 6
     ceiling: Strong
@@ -353,7 +353,7 @@ detectors:
     fixtures: [normal, violation, latency-stall]
 
   - id: combat.damage
-    seam: "EntityAlive.DamageEntity, NetPackageRangeCheckDamageEntity"
+    seam: "NetPackageDamageEntity, NetPackageRangeCheckDamageEntity"
     family: combat
     phase: 6
     ceiling: Strong
@@ -379,7 +379,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: combat.geometry
-    seam: "damage application seam + voxel ray test"
+    seam: "damage application seam plus voxel ray test"
     family: combat
     phase: 6
     ceiling: Strong
@@ -397,7 +397,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: combat.state
-    seam: "entity state at the damage seam"
+    seam: "entity state at NetPackageDamageEntity/RangeCheck process"
     family: combat
     phase: 6
     ceiling: Strong
@@ -415,7 +415,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: combat.target_set
-    seam: "attack correlation at both damage paths"
+    seam: "NetPackageDamageEntity correlation; NetPackageEntityAwardKillServer"
     family: combat
     phase: 6
     ceiling: Strong
@@ -434,7 +434,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: combat.aim
-    seam: "rotation sync package (TBD Phase 1 inventory)"
+    seam: "NetPackageEntityRotation (quantized rotation series)"
     family: combat
     phase: 6
     ceiling: Weak
@@ -456,7 +456,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: combat.acquisition
-    seam: "interest/visibility sync (TBD Phase 1 inventory)"
+    seam: "NetEntityDistribution / NetPackageEntitySpawn visibility history"
     family: combat
     phase: 6
     ceiling: Weak
@@ -518,7 +518,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: progression.health_stamina
-    seam: "health/stamina sync seam (TBD Phase 1 inventory)"
+    seam: "NetPackageEntityStatChanged, NetPackageEntityStatsBuff, NetPackageGameStats"
     family: progression
     phase: 8
     ceiling: Hard
@@ -537,7 +537,7 @@ detectors:
 
   # ---------------------------------------------------------------- inventory (phase 7)
   - id: inventory.delta
-    seam: "inventory mutation/container transaction seams (TBD Phase 1 inventory)"
+    seam: "NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag"
     family: inventory
     phase: 7
     ceiling: Strong
@@ -561,7 +561,7 @@ detectors:
     fixtures: [normal, violation, rollback, admin-mod-origin, induced-finding]
 
   - id: inventory.stack
-    seam: "inventory mutation seam (TBD Phase 1 inventory)"
+    seam: "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -578,7 +578,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: inventory.craft
-    seam: "craft/recipe/workstation-queue seam (at risk; TBD Phase 1)"
+    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.1.0 census)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -598,7 +598,7 @@ detectors:
     fixtures: [normal, violation, rollback]
 
   - id: inventory.replay
-    seam: "container transaction seam (TBD Phase 1 inventory)"
+    seam: "NetPackageInventoryTransactionRequest (transaction idempotency)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -619,7 +619,7 @@ detectors:
     fixtures: [normal, violation, reconnect-duplicate-session]
 
   - id: inventory.container_race
-    seam: "container transaction seam (TBD Phase 1 inventory)"
+    seam: "NetPackageInventoryTransactionRequest (atomic slot check)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -637,7 +637,7 @@ detectors:
     fixtures: [normal, violation, induced-finding]
 
   - id: inventory.quality
-    seam: "inventory mutation seam (TBD Phase 1 inventory)"
+    seam: "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -655,7 +655,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: inventory.trader
-    seam: "trader price/currency seam (at risk; TBD Phase 1)"
+    seam: "NetPackageTraderData (sync only; no price/currency transaction package in the census)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -674,7 +674,7 @@ detectors:
     fixtures: [normal, violation, rollback]
 
   - id: inventory.rollback
-    seam: "save epoch / disconnect handlers"
+    seam: "save epoch / NetPackagePlayerDisconnect / reconnect handlers"
     family: inventory
     phase: 7
     ceiling: Strong
@@ -697,7 +697,7 @@ detectors:
 
   # ---------------------------------------------------------------- world and entity (phase 8)
   - id: world.block
-    seam: "block change/place/repair/upgrade seams (TBD Phase 1 inventory)"
+    seam: "NetPackageSetBlock, NetPackagePickupBlock, NetPackageAnimateBlock, NetPackageLandClaimRepair"
     family: world
     phase: 8
     ceiling: Hard
@@ -723,7 +723,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: world.claim
-    seam: "claim/lock access seam (TBD Phase 1 inventory)"
+    seam: "NetPackageLockRequest/Response plus claim database at access seam"
     family: world
     phase: 8
     ceiling: Hard
@@ -740,7 +740,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: world.wire
-    seam: "wire/power tile-entity seam (TBD Phase 1 inventory)"
+    seam: "NetPackageWireActions, NetPackageWireToolActions"
     family: world
     phase: 8
     ceiling: Hard
@@ -757,7 +757,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: world.entity_spawn
-    seam: "entity spawn request seam (TBD Phase 1 inventory)"
+    seam: "NetPackageRequestToSpawnEntity, NetPackageEntitySpawn/Response, NetPackageQuestEntitySpawn"
     family: world
     phase: 8
     ceiling: Hard
@@ -778,7 +778,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: world.explosion
-    seam: "explosion resolution seam (TBD Phase 1 inventory)"
+    seam: "NetPackageExplosionInitiate, NetPackageExplosionClient"
     family: world
     phase: 8
     ceiling: Strong
@@ -796,7 +796,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: world.budget
-    seam: "high-fan-out package intake"
+    seam: "NetPackageMapChunks, NetPackagePOIAround, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes)"
     family: world
     phase: 8
     ceiling: Strong
@@ -818,7 +818,7 @@ detectors:
 
   # ---------------------------------------------------------------- availability (phases 4 and 8)
   - id: availability.cost
-    seam: "package decode counters"
+    seam: "package decode counters across all census types"
     family: availability
     phase: 4
     ceiling: Strong
@@ -841,7 +841,7 @@ detectors:
     fixtures: [normal, violation, latency-stall]
 
   - id: availability.churn
-    seam: "join/login handlers"
+    seam: "NetPackagePlayerLogin, NetPackageRequestToEnterGame"
     family: availability
     phase: 8
     ceiling: Strong

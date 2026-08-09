@@ -6,42 +6,42 @@
       "phase": 4,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "NetPackage*.ProcessPackage stage validation"
+      "seam": "NetPackage*.ProcessPackage stage gating (ConnectionManager.ProcessPackages)"
     },
     {
       "detectorId": "protocol.entity_owner",
       "phase": 4,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "ownership resolution at package process time"
+      "seam": "process-time ownership resolution; NetPackageOwnedEntitySync"
     },
     {
       "detectorId": "protocol.permission",
       "phase": 4,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "console/command execution seam"
+      "seam": "NetPackageConsoleCmdClient/Server, NetPackageDebug, NetPackageModifyCVar execution seams"
     },
     {
       "detectorId": "protocol.duplicate_session",
       "phase": 4,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "PlayerLogin / PlayerJoinedGame handlers"
+      "seam": "NetPackagePlayerLogin, NetPackageRequestToEnterGame handlers"
     },
     {
       "detectorId": "protocol.malformed",
       "phase": 4,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "package decode/deserialize boundary"
+      "seam": "NetPackage read/decode boundaries across all census types"
     },
     {
       "detectorId": "protocol.flood",
       "phase": 4,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "package intake before process",
+      "seam": "ConnectionManager.ProcessPackages intake; cost classes per package",
       "thresholds": [
         {
           "key": "burst",
@@ -80,7 +80,7 @@
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "position sync package (TBD Phase 1 inventory)",
+      "seam": "NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics, NetPackagePlayerStats",
       "thresholds": [
         {
           "key": "max_speed_mps",
@@ -153,7 +153,7 @@
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "position sync package (TBD Phase 1 inventory)",
+      "seam": "NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics",
       "thresholds": [
         {
           "key": "hover_window_seconds",
@@ -182,14 +182,14 @@
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "position sync package (TBD Phase 1 inventory)"
+      "seam": "NetPackageEntityVelocity, NetPackageEntityAddVelocity, NetPackageEntityPosAndRot"
     },
     {
       "detectorId": "movement.noclip",
       "phase": 5,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "position sync package (TBD Phase 1 inventory)",
+      "seam": "NetPackageEntityPosAndRot/RelPosAndRot plus voxel sweep",
       "thresholds": [
         {
           "key": "voxel_queries_per_tick_cap",
@@ -219,7 +219,7 @@
       "phase": 5,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "EntityTeleport package; server teleport origin enumeration",
+      "seam": "NetPackageEntityTeleport (client discontinuity), NetPackageTeleportPlayer (server origin)",
       "hardCondition": "Hard only after Phase 1 enumerates every server-side teleport origin; otherwise Strong (see DECISIONS.md D-12)"
     },
     {
@@ -227,7 +227,7 @@
       "phase": 5,
       "ceiling": "Weak",
       "defaultMode": "observe",
-      "seam": "vehicle sync package (TBD Phase 1 inventory)",
+      "seam": "NetPackageVehicleDataSync, NetPackageVehiclePositions",
       "thresholds": [
         {
           "key": "envelope_validation_window_hours",
@@ -275,7 +275,7 @@
       "phase": 6,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "EntityAlive.DamageEntity, NetPackageRangeCheckDamageEntity",
+      "seam": "NetPackageDamageEntity, NetPackageRangeCheckDamageEntity",
       "hardCondition": "Hard if reload/chamber and modifier state is fully server-known for the item family; otherwise Strong",
       "thresholds": [
         {
@@ -295,14 +295,14 @@
       "phase": 6,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "damage application seam + inventory ledger"
+      "seam": "NetPackageHoldingItem, NetPackageItemReload plus damage application seam"
     },
     {
       "detectorId": "combat.reach",
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "damage application seam + server geometry",
+      "seam": "damage application seam plus server geometry",
       "thresholds": [
         {
           "key": "reach_tolerance_m",
@@ -321,7 +321,7 @@
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "EntityAlive.DamageEntity, NetPackageRangeCheckDamageEntity",
+      "seam": "NetPackageDamageEntity, NetPackageRangeCheckDamageEntity",
       "thresholds": [
         {
           "key": "damage_tolerance_percent",
@@ -349,28 +349,28 @@
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "damage application seam + voxel ray test"
+      "seam": "damage application seam plus voxel ray test"
     },
     {
       "detectorId": "combat.state",
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "entity state at the damage seam"
+      "seam": "entity state at NetPackageDamageEntity/RangeCheck process"
     },
     {
       "detectorId": "combat.target_set",
       "phase": 6,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "attack correlation at both damage paths"
+      "seam": "NetPackageDamageEntity correlation; NetPackageEntityAwardKillServer"
     },
     {
       "detectorId": "combat.aim",
       "phase": 6,
       "ceiling": "Weak",
       "defaultMode": "observe",
-      "seam": "rotation sync package (TBD Phase 1 inventory)",
+      "seam": "NetPackageEntityRotation (quantized rotation series)",
       "thresholds": [
         {
           "key": "window_samples",
@@ -408,7 +408,7 @@
       "phase": 6,
       "ceiling": "Weak",
       "defaultMode": "observe",
-      "seam": "interest/visibility sync (TBD Phase 1 inventory)"
+      "seam": "NetEntityDistribution / NetPackageEntitySpawn visibility history"
     },
     {
       "detectorId": "progression.xp_rate",
@@ -462,14 +462,14 @@
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "health/stamina sync seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageEntityStatChanged, NetPackageEntityStatsBuff, NetPackageGameStats"
     },
     {
       "detectorId": "inventory.delta",
       "phase": 7,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "inventory mutation/container transaction seams (TBD Phase 1 inventory)",
+      "seam": "NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag",
       "thresholds": [
         {
           "key": "max_unaccounted_delta",
@@ -488,14 +488,14 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "inventory mutation seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
     },
     {
       "detectorId": "inventory.craft",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "craft/recipe/workstation-queue seam (at risk; TBD Phase 1)",
+      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.1.0 census)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -503,7 +503,7 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "container transaction seam (TBD Phase 1 inventory)",
+      "seam": "NetPackageInventoryTransactionRequest (transaction idempotency)",
       "thresholds": [
         {
           "key": "replay_cache_size",
@@ -531,21 +531,21 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "container transaction seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageInventoryTransactionRequest (atomic slot check)"
     },
     {
       "detectorId": "inventory.quality",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "inventory mutation seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
     },
     {
       "detectorId": "inventory.trader",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "trader price/currency seam (at risk; TBD Phase 1)",
+      "seam": "NetPackageTraderData (sync only; no price/currency transaction package in the census)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative trader price/currency seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -553,7 +553,7 @@
       "phase": 7,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "save epoch / disconnect handlers",
+      "seam": "save epoch / NetPackagePlayerDisconnect / reconnect handlers",
       "thresholds": [
         {
           "key": "reconcile_window_minutes",
@@ -572,7 +572,7 @@
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "block change/place/repair/upgrade seams (TBD Phase 1 inventory)",
+      "seam": "NetPackageSetBlock, NetPackagePickupBlock, NetPackageAnimateBlock, NetPackageLandClaimRepair",
       "hardCondition": "Hard only for the authorization subset (claims, locks, ownership, allowlist, overflow); positional and cadence subchecks consume client-declared position and stay Strong",
       "thresholds": [
         {
@@ -602,21 +602,21 @@
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "claim/lock access seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageLockRequest/Response plus claim database at access seam"
     },
     {
       "detectorId": "world.wire",
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "wire/power tile-entity seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageWireActions, NetPackageWireToolActions"
     },
     {
       "detectorId": "world.entity_spawn",
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "entity spawn request seam (TBD Phase 1 inventory)",
+      "seam": "NetPackageRequestToSpawnEntity, NetPackageEntitySpawn/Response, NetPackageQuestEntitySpawn",
       "thresholds": [
         {
           "key": "spawn_rate_per_minute",
@@ -635,14 +635,14 @@
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "explosion resolution seam (TBD Phase 1 inventory)"
+      "seam": "NetPackageExplosionInitiate, NetPackageExplosionClient"
     },
     {
       "detectorId": "world.budget",
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "high-fan-out package intake",
+      "seam": "NetPackageMapChunks, NetPackagePOIAround, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes)",
       "thresholds": [
         {
           "key": "max_actions_per_tick",
@@ -671,7 +671,7 @@
       "phase": 4,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "package decode counters",
+      "seam": "package decode counters across all census types",
       "thresholds": [
         {
           "key": "tiny",
@@ -716,7 +716,7 @@
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "join/login handlers",
+      "seam": "NetPackagePlayerLogin, NetPackageRequestToEnterGame",
       "thresholds": [
         {
           "key": "max_joins_per_minute",

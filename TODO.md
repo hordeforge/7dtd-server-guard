@@ -201,18 +201,24 @@ the objection). The review is the gate; nothing in later phases starts until it 
 Consolidated from [SIGNALS.md](docs/SIGNALS.md) and the phases above; revisit each when new
 evidence lands:
 
-- **Craft transactions:** no craft/recipe/workstation-queue package surfaced in the census;
-  backpack crafting looks client-local and workstations sync as opaque tile-entity blobs.
-  Expected to degrade to unexplained-delta (Strong) unless Phase 1 finds a seam.
-- **Trader pricing:** purchases look like client-side inventory edits against synced trader
-  state; verify an authoritative price/currency decision point in Phase 1 or defer like craft.
-- **Second damage path:** `NetPackageRangeCheckDamageEntity` must be hooked together with
-  `EntityAlive.DamageEntity`; a validator on one path only protects nothing (Phase 6).
+- **Craft transactions:** the V3.1.0 census confirms no craft/recipe/workstation-queue
+  package; backpack crafting looks client-local and workstations sync as opaque tile-entity
+  blobs. `NetPackageInventoryTransactionRequest` is a transaction package whose coverage
+  (container moves, craft completion, trader purchase) is the Phase 1 question. Expected to
+  degrade to unexplained-delta (Strong) unless a seam is found.
+- **Trader pricing:** the census shows `NetPackageTraderData` sync only, no price/currency
+  transaction package; purchases look like client-side inventory edits against synced trader
+  state. Verify in Phase 1 or defer like craft.
+- **Second damage path:** `NetPackageDamageEntity` (the primary damage request) and
+  `NetPackageRangeCheckDamageEntity` are both in the V3.1.0 census and must be hooked
+  together; a validator on one path only protects nothing (Phase 6).
 - **Vehicle envelopes:** physics-master vehicles are client-simulated; reconstructed
   terrain-aware limits stay Weak until validated, then Strong (SIGNALS.md → Movement).
 - **Loadgen coverage:** the `7dtd-loadgen` golden set covers only movement, damage, and login;
   Phase 7 must extend it to container, trader, and craft traffic or the ledger phase cannot be
   exercised (Phase 7).
-- **Build delta:** all surfaces were inventoried against V3.0.1 (b4); Phase 1 re-verifies the
-  pinned V3.1.0 (b14) before any hook is written.
+- **Build delta:** older narratives were inventoried against V3.0.1 (b4); V3.1.0 regenerable
+  dumps (`il/netpackages-v3.1.0/`, `il/dedi-complete-v3.1.0/`) now exist, partially
+  de-risking the delta, but Phase 1 still re-verifies the pinned V3.1.0 (b14) before any
+  hook is written.
 

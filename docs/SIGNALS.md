@@ -39,7 +39,7 @@ uncertainty, not accuse.
 | Flight or hover | Unsupported vertical state over a time window with voxel/ladder/water/vehicle checks | Strong |
 | Impossible vertical acceleration | Compare delta velocity with jump, gravity, fall, impact, explosion, and buff impulses | Strong |
 | No-clip | Swept capsule/voxel path crosses solid blocks without a valid state transition; unloaded or ungenerated chunks along the path yield "unknown", never "air" | Strong |
-| Teleport request without server-issued capability | One-use teleport token tied to cause and expiry. The stock protocol emits `EntityTeleport` for any >8 m positional delta (rubber-banding, chunk stalls), so a client teleport package is an ordinary discontinuity, not a violation. Server-side teleport origins (trader ejection, quests, respawn, console, mods) must all issue tokens | Hard once all origins are enumerated, else Strong |
+| Teleport request without server-issued capability | One-use teleport token tied to cause and expiry. The stock protocol emits `NetPackageEntityTeleport` for any >8 m positional delta (rubber-banding, chunk stalls), so a client teleport package is an ordinary discontinuity, not a violation. Server-side origins (trader ejection, quests, respawn, console, mods) go through `NetPackageTeleportPlayer` and must all issue tokens | Hard once all origins are enumerated, else Strong |
 | Vehicle speed/acceleration violation | Vehicle physics is client-simulated under the physics-master scheme; the server holds no authoritative envelope. Reconstructed terrain-aware limits only | Weak until reconstruction is validated, then Strong |
 | Repeated edge-of-limit motion | Distribution of normalized budget consumption | Weak |
 
@@ -49,8 +49,10 @@ cap credit, and reset on named discontinuities. High ping widens uncertainty, no
 ## Combat
 
 The V3 damage frame carries client-computed strength, hit body part, hit direction, and
-critical flag; the server applies rather than derives them. Two damage paths exist
-(`EntityAlive.DamageEntity` and `NetPackageRangeCheckDamageEntity`) and both must be hooked. Melee misses and
+critical flag; the server applies rather than derives them. Two damage paths exist and both
+must be hooked: the primary damage request `NetPackageDamageEntity` and the range-check path
+`NetPackageRangeCheckDamageEntity` (both confirmed in the V3.1.0 census;
+[RESEARCH.md](RESEARCH.md) finding 9). Melee misses and
 cosmetic action/reload broadcasts are omittable by a hostile client, so cadence is observable
 only at damage application. Consequently most combat validators bound client claims rather
 than recompute them, and "Hard" applies only where every decision input is
@@ -111,11 +113,11 @@ death backpack, admin grant, mod action, vehicle/drone/container move, or rollba
 |---|---|---:|
 | Unexplained positive item delta | Snapshot delta minus authorized causes | Strong |
 | Stack exceeds item definition | Authoritative stack limit | Hard |
-| Craft output without ingredients/time/station/recipe | Craft transaction state machine. **At risk:** the package census shows no craft/recipe/workstation-queue package; backpack crafting appears client-local and workstations sync as opaque tile-entity blobs. Expected to degrade to unexplained-delta (Strong) unless Phase 1 finds a seam | Hard only if a seam exists |
+| Craft output without ingredients/time/station/recipe | Craft transaction state machine. **At risk:** the V3.1.0 census shows no craft/recipe/workstation-queue package; `NetPackageInventoryTransactionRequest` is a transaction package whose craft coverage is the Phase 1 question. Expected to degrade to unexplained-delta (Strong) unless a seam is found | Hard only if a seam exists |
 | Duplicate transaction ID or replay | Session-scoped idempotency cache | Hard |
 | Container race/dupe | Atomic ownership/version check and post-transaction conservation | Hard |
 | Impossible quality/mod/durability combination | Item definition and crafting rules | Hard |
-| Trader price or currency mismatch | Server-computed transaction. **At risk:** trader purchases look like client-side inventory edits against synced trader state; verify an authoritative price/currency decision point exists in Phase 1 or defer with craft | Hard only if a seam exists |
+| Trader price or currency mismatch | Server-computed transaction. **At risk:** the census shows `NetPackageTraderData` sync only, no price/currency transaction package; purchases look like client-side inventory edits against synced trader state. Verify an authoritative decision point in Phase 1 or defer with craft | Hard only if a seam exists |
 | Disconnect/rollback gain | Reconcile durable save epoch and pending transfers | Strong |
 
 The ledger must account for other mods through a registered server-origin cause API. Every

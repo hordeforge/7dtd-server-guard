@@ -96,12 +96,17 @@ Prefer typed `ModEvents` for lifecycle and identity: `PlayerLogin`, `PlayerJoine
 the authoritative decision point. Every Harmony hook must specify the complete signature,
 record its metadata token at startup, have a fixture test, and disable itself on mismatch.
 
-Candidate authoritative seams to verify in Phase 1 include `NetPackage*.ProcessPackage`,
-server combat resolution, both damage paths (`EntityAlive.DamageEntity` and
-`NetPackageRangeCheckDamageEntity`), item/inventory mutation methods, container transaction
-processing, block damage/change application, crafting completion, vehicle movement, teleport,
-entity spawning, and permission/console execution. Hook the narrowest method that still sees
-pre-state, request, decision, and post-state.
+Candidate authoritative seams to verify in Phase 1 come from the V3.1.0 netpackage census
+([RESEARCH.md](RESEARCH.md) finding 9) and the per-detector `seam` fields in
+`tools/detector_spec.yaml`: `NetPackage*.ProcessPackage`, both damage paths
+(`NetPackageDamageEntity` and `NetPackageRangeCheckDamageEntity`), movement
+(`NetPackageEntityPosAndRot`/`RelPosAndRot`/`EntityPhysics`), teleport
+(`NetPackageEntityTeleport` vs `NetPackageTeleportPlayer`), inventory transactions
+(`NetPackageInventoryTransactionRequest`), progression (`NetPackageEntityAddExpServer`,
+`NetPackageEntitySetSkillLevelServer`), console (`NetPackageConsoleCmdClient/Server`),
+blocks (`NetPackageSetBlock`), wire (`NetPackageWireActions`), explosions
+(`NetPackageExplosionInitiate`), and entity spawn (`NetPackageRequestToSpawnEntity`). Hook
+the narrowest method that still sees pre-state, request, decision, and post-state.
 
 Startup pinning is not the whole fail-open story. Every prefix/postfix body runs inside an
 exception guard; a hook that resolves but throws at runtime increments a per-hook fault
