@@ -93,7 +93,9 @@ see note).
   attacker controls all client-declared fields together, so agreement among them is
   meaningless); demand full authority without a written class (rejected: unverifiable).
 - **Consequence:** POLICY.md -> Severity, ARCHITECTURE.md -> Input authority, DETECTORS.md
-  authority notes, and the Phase 6 exit gate all reference this rule.
+  authority notes, and the Phase 6 exit gate all reference this rule. Refined by D-15
+  (observed vs decision input roles); `make check` enforces the refined rule against the
+  detector spec.
 
 ## D-08: Statistical behavioral models are offline-only until calibrated
 
@@ -177,7 +179,28 @@ see note).
 - **Consequence:** README.md scope, THREAT_MODEL.md out-of-scope list, SECURITY.md
   out-of-scope list, and the workspace boundary rules are binding.
 
+## D-15: Input roles (observed vs decision) refine the authority rule
+
+- **Status:** accepted.
+- **Decision:** Every validator input carries an authority (server-derived or
+  client-declared) and a role (observed or decision). Observed inputs are the quantity
+  being checked and may be client-declared; decision inputs are the state the verdict
+  depends on and must be server-derived for a `Hard` ceiling. A detector with a
+  client-declared decision input is capped below `Hard` unless a `hard_condition` documents
+  complete server-side determination.
+- **Alternatives:** Keep the unqualified rule "any client-declared input caps below Hard"
+  (rejected: it contradicted the progression rows in SIGNALS.md that are Hard by fully
+  server-side recomputation, and it misclassified `inventory.stack`, whose claimed stack
+  is the observed quantity, not trusted input); treat observed inputs as trusted
+  (rejected: the observed quantity must still be validated, it just does not set the
+  ceiling).
+- **Consequence:** POLICY.md -> Severity, ARCHITECTURE.md -> Input authority, the detector
+  spec (`tools/detector_spec.yaml`), and the doccheck gate all encode the two roles. The
+  hard-condition carve-out is reserved for completeness-of-server-state cases (teleport
+  origin enumeration, craft/trader seams) and is reviewed per detector.
+
 ## Decision process
+
 
 - A decision enters as `proposed`, gets a Phase-0-style review with alternatives, and
   becomes `accepted` when the owning document is updated to match.

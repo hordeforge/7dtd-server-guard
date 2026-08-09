@@ -139,8 +139,11 @@ the same operation, and the operation is written as an `audit` record.
 The `thresholds.<detectorId>.<key>` keys are not free-form: each detector declares the
 threshold keys it accepts, with type, range, and a placeholder default, so the strict config
 loader can reject unknown or out-of-range threshold keys with the same rule as top-level
-keys. The manifest is emitted as part of Phase 2 scaffolding from the detector registry
-([DETECTORS.md](DETECTORS.md)) and is machine-checkable.
+keys. The manifest is **generated** from the canonical detector spec
+(`tools/detector_spec.yaml`) into `config/detector-config-manifest.json` by
+`tools/render_detectors.py --manifest` (`make detectors`); edit the YAML, never the JSON.
+The excerpt below is illustrative of the generated shape and is kept in sync by the doccheck
+gate.
 
 ```json
 {
@@ -149,9 +152,12 @@ keys. The manifest is emitted as part of Phase 2 scaffolding from the detector r
     {
       "detectorId": "movement.displacement",
       "thresholds": [
-        { "key": "maxSpeedMps", "type": "float", "range": [0.5, 100.0], "default": 10.0 },
-        { "key": "latencyWindowMs", "type": "int", "range": [0, 5000], "default": 200 },
-        { "key": "jitterAllowanceM", "type": "float", "range": [0.0, 50.0], "default": 1.0 }
+        { "key": "max_speed_mps", "type": "float", "range": [0.5, 100.0], "default": 10.0 },
+        { "key": "max_accel_mps2", "type": "float", "range": [0.0, 100.0], "default": 20.0 },
+        { "key": "latency_window_ms", "type": "int", "range": [0, 5000], "default": 200 },
+        { "key": "jitter_allowance_m", "type": "float", "range": [0.0, 50.0], "default": 1.0 },
+        { "key": "credit_cap_m", "type": "float", "range": [0.0, 200.0], "default": 20.0 },
+        { "key": "debt_grace_m", "type": "float", "range": [0.0, 200.0], "default": 10.0 }
       ]
     },
     {

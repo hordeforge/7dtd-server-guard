@@ -53,9 +53,25 @@ partner integration Server Guard does not have. Local kick/ban is the realistic 
 | `Strong` | Near-impossible but not proven from a single event. | Nothing alone. Contributes toward `Enforce` only with a second independent category. |
 | `Weak` | Behavioral anomaly (aim, cadence distribution, efficiency). | `record` only. Never enforces. |
 
-The ceiling is set by input authority, not ambition: a validator that must consume any
-client-declared input is capped below `Hard`, because complete authoritative inputs are a
-`Hard` precondition. Phase 1 records each validator's input authority class.
+The ceiling is set by input authority, not ambition. Every validator input is classified
+by **authority** (server-derived or client-declared) and **role** (observed or decision):
+
+- **Observed** inputs are the quantity being checked (a reported position, a claimed
+  stack, a requested skill level). They may be client-declared: they are the subject of
+  the check, not trusted input.
+- **Decision** inputs are the state the verdict depends on. A detector is `Hard` only
+  when every decision input is server-derived, meaning server state fully determines the
+  verdict. A client-declared decision input caps the detector below `Hard` unless a
+  `hard_condition` documents complete server-side determination (for example a teleport
+  token store that covers every origin, or a craft seam found in Phase 1).
+
+This refinement (DECISIONS.md D-15) reconciles the authority rule with detectors whose
+observed quantity is client-declared but whose verdict is fully server-determined, such as
+`inventory.stack` (claimed stack observed against the item definition) and
+`progression.health_stamina` (reported value observed against attribute maxima). Phase 1
+records each validator input's authority class and role; the detector spec
+([DETECTORS.md](DETECTORS.md)) declares both, and `make check` enforces the ceiling rule
+mechanically.
 
 ## Confidence and combination
 
@@ -132,7 +148,7 @@ the fact.
 | Mode | Per-detector capability level: `Observe`, `Correct`, `Enforce` | Detector mode ladder |
 | Action | What a decision produces: `record`, `correct`, `quarantine`, `throttle`, `kick`, `temp-ban (local)` | Action set |
 | Severity | Property of a signal: `Hard`, `Strong`, `Weak` | Severity |
-| Authority class | Whether a validator input is server-derived or client-declared; any client-declared input caps the signal below `Hard` | Severity |
+| Authority class | Whether a validator input is server-derived or client-declared, plus its role (observed or decision); a client-declared *decision* input caps the signal below `Hard` unless a hard condition documents complete server-side determination | Severity |
 | Ledger | Per-player bounded double-entry state for movement, combat, inventory, or world actions | ARCHITECTURE.md → Components |
 | Cause token | Typed, authorized server-origin cause for an inventory delta; calling-mod identity is recorded on every invocation | SIGNALS.md → Inventory; TODO.md → Phase 7 |
 | Evidence ID | Identifier on a finding, named in kick/quarantine/ban messages and webhook alerts | ARCHITECTURE.md → Evidence model |

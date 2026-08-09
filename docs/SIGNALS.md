@@ -6,9 +6,12 @@ detectors with stable IDs, severity ceilings, and contexts is the
 registry IDs. All thresholds are placeholders until recorded from the exact game build. Detectors consume
 authoritative state and explicit context. A threshold is not a proof. Severity terms
 (Hard/Strong/Weak) and what each may justify are defined in the [policy contract](POLICY.md).
-A signal's ceiling is set by its inputs' authority: any validator that must consume a
-client-declared input is capped below `Hard` (see [POLICY.md](POLICY.md) → Severity). Phase 1
-records each validator's input authority class.
+A signal's ceiling is set by its inputs' authority and role: any validator whose
+*decision* inputs include a client-declared value is capped below `Hard` unless a hard
+condition documents complete server-side determination (see [POLICY.md](POLICY.md) →
+Severity and DECISIONS.md D-15). Observed quantities may be client-declared. Phase 1
+records each validator input's authority class and role; the detector spec
+([DETECTORS.md](DETECTORS.md)) declares both, and `make check` enforces the ceiling rule.
 
 ## Identity, authorization, and protocol
 
@@ -50,7 +53,16 @@ critical flag; the server applies rather than derives them. Two damage paths exi
 (`EntityAlive.DamageEntity` and `NetPackageRangeCheckDamageEntity`) and both must be hooked. Melee misses and
 cosmetic action/reload broadcasts are omittable by a hostile client, so cadence is observable
 only at damage application. Consequently most combat validators bound client claims rather
-than recompute them, and "Hard" applies only where every input is server-authoritative.
+than recompute them, and "Hard" applies only where every decision input is
+server-authoritative.
+
+Cadence bound: for a weapon family with item-action interval `T_action` and reload/chamber
+state fully server-known, consecutive damage applications from the same connection are
+legal when `dt_damage >= T_action - cadence_tolerance_ms`; a shorter interval is a cadence
+finding. `T_action` comes from the item XML action definitions; `cadence_tolerance_ms`
+absorbs tick quantization (default 100 ms placeholder). Because damage application is the
+only reliably observable event (fires, reloads, and misses can be omitted by a hostile
+client), the bound is computed at damage application only.
 
 | Signal | Validation | Strength |
 |---|---|---:|
@@ -79,6 +91,13 @@ Clients push XP and skill-level values to the server (`NetPackageEntityAddExpSer
 | Signal | Validation | Strength |
 |---|---|---:|
 | XP gain rate beyond any legitimate source | Bound per-tick and windowed XP against maximum earnable causes | Strong |
+
+XP envelope: accumulate pushed XP per player per tick and per rolling window
+(`window_minutes`); a finding fires when `xp_in_window > max_xp_per_minute * window_minutes`
+or `xp_in_tick > max_xp_per_tick`. The bounds are placeholders derived in Phase 8 from the
+maximum legitimate earn rate (kills, quests, events, mod grants); because the server cannot
+enumerate every mod earn source, the envelope stays Strong. `NetPackageEntityAddExpServer`
+is validated at the execution seam.
 | Skill/attribute level without spent points or prerequisite | Server-side progression rule check | Hard if rules recomputable |
 | Health/stamina beyond attribute maximum | Authoritative attribute-derived bounds | Hard |
 
@@ -138,6 +157,14 @@ against the pinned build):
 Each connection starts with a burst allowance and refills at a fixed per-second rate
 (per-class or global, configurable). Global load shedding caps the cross-connection
 aggregate cost per tick. Flood evidence records carry pseudonym and cost class only.
+
+Token bucket math (placeholders until profiled against the pinned build): a connection's
+balance `b` starts at `burst` and updates each tick (`dt` at 20 TPS = 50 ms) as
+`b = min(burst, b + refill_per_second * dt) - cost(package)`, where `cost` is the package's
+class weight. A package that would make `b < 0` is shed or delayed (`throttle`) instead of
+processed. Global load shedding sums `cost(package)` across connections per tick and sheds
+the excess beyond `global_cost_per_tick`. Bucket state is in-memory only and never
+persisted; flood evidence records carry pseudonym and cost class, never IPs.
 
 Network-level volumetric attacks belong in the firewall, not the game thread.
 

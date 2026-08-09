@@ -50,7 +50,9 @@ bug to fix in the same change.
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects
 └── tools/
-    ├── doccheck.py            docs quality gate (em dashes, links, registry coverage)
+    ├── detector_spec.yaml     canonical detector spec (single source of truth)
+    ├── render_detectors.py    renders DETECTORS.md and the config manifest from the spec
+    ├── doccheck.py            docs quality gate (em dashes, links, spec, registry sync)
     └── surface_inventory/     Phase 1 Mono.Cecil metadata probe (planned)
 ```
 

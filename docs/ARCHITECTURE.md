@@ -112,11 +112,14 @@ co-patching behavior and the compatibility run exercises rejects, not just coexi
 
 ## Input authority
 
-Every validator declares whether each of its inputs is **server-derived** (originates in
-state the server controls) or **client-declared** (any path allows a client package to
-influence it). The rule: a validator with any client-declared input is capped below `Hard`
-regardless of how many server-derived inputs it also checks (see [POLICY.md](POLICY.md) →
-Severity).
+Every validator declares each input's **authority** (server-derived or client-declared)
+and **role** (observed or decision). Observed inputs are the quantity being checked and may
+be client-declared; decision inputs are the state the verdict depends on. The rule: a
+detector is capped below `Hard` when any *decision* input is client-declared, unless a
+`hard_condition` documents complete server-side determination (see [POLICY.md](POLICY.md) →
+Severity and DECISIONS.md D-15). The detector spec
+([DETECTORS.md](DETECTORS.md), backed by `tools/detector_spec.yaml`) declares both fields
+per input, and `make check` enforces the ceiling rule mechanically.
 
 Examples to verify in Phase 1:
 

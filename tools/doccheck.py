@@ -225,14 +225,22 @@ def check_detector_ids() -> list[str]:
     for mode_id in sorted(example.get("modes", {}).keys()):
         if mode_id not in registered:
             out.append(f"config example mode key not in registry: {mode_id}")
-    # Every threshold key in the generated config manifest must be declared in the spec.
+    # Every threshold key in the generated config manifest must be declared in the spec,
+    # and every example-config threshold key must exist in the generated manifest.
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
     spec_by_id = {d["id"]: d for d in _load_spec()}
+    manifest_keys: dict[str, set[str]] = {}
     for entry in manifest["detectors"]:
         declared = {t["key"] for t in spec_by_id[entry["detectorId"]].get("thresholds", [])}
+        manifest_keys[entry["detectorId"]] = {t["key"] for t in entry.get("thresholds", [])}
         for t in entry.get("thresholds", []):
             if t["key"] not in declared:
                 out.append(f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec")
+    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    for did, keys in example.get("thresholds", {}).items():
+        for key in keys:
+            if key not in manifest_keys.get(did, set()):
+                out.append(f"example config threshold {did}.{key} not in generated manifest")
     return out
 
 

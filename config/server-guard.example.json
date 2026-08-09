@@ -61,9 +61,12 @@
   },
   "thresholds": {
     "movement.displacement": {
-      "maxSpeedMps": 10.0,
-      "latencyWindowMs": 200,
-      "jitterAllowanceM": 1.0
+      "max_speed_mps": 10.0,
+      "max_accel_mps2": 20.0,
+      "latency_window_ms": 200,
+      "jitter_allowance_m": 1.0,
+      "credit_cap_m": 20.0,
+      "debt_grace_m": 10.0
     }
   },
   "evidence": {
