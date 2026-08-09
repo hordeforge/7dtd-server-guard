@@ -1,9 +1,9 @@
 # surface_inventory
 
 Planned Phase 1 tool: a Mono.Cecil metadata probe that inventories authoritative decision
-points in the pinned build and emits hook manifest v1 ([docs/SCHEMAS.md](../../../docs/SCHEMAS.md)).
+points in the pinned build and emits hook manifest v1 ([docs/SCHEMAS.md](../../docs/SCHEMAS.md)).
 Runs against the installed assemblies by path; never copies or commits game DLLs
-([AGENTS.md](../../../AGENTS.md)). No code yet: this README is the planned contract the
+([AGENTS.md](../../AGENTS.md)). No code yet: this README is the planned contract the
 Phase 1 TODO item must satisfy.
 
 ## Inputs

@@ -26,8 +26,8 @@ import sys
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MD_FILES = sorted(p for p in (ROOT / "docs").rglob("*.md")) + sorted(
-    p for p in ROOT.glob("*.md")
+MD_FILES = sorted(
+    p for p in ROOT.rglob("*.md") if ".git" not in p.parts and "third-party" not in p.parts
 )
 
 REQUIRED_DOCS = [
