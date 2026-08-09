@@ -62,7 +62,9 @@ rejected wholesale on any violation, reloadable by console command with the same
 | `console.permissionLevel` | string | `admin` | `admin` / `moderator` | Minimum level for Server Guard console commands |
 | `webhook.enabled` | bool | false | - | Optional alert sink |
 | `webhook.evidenceIdsOnly` | bool | true | must be true in v1 | No player identity in payloads |
+| `webhook.urlEnv` | string | `SERVERGUARD_WEBHOOK_URL` | env var name | Webhook URL comes from the environment, never the config file (workspace secrets rule) |
 | `dashboard.enabled` | bool | false | - | Ships only after auth and permission tests (Phase 3) |
+| `dashboard.secretEnv` | string | `SERVERGUARD_DASHBOARD_SECRET` | env var name | Dashboard auth secret from the environment, never the config file |
 | `metrics.enabled` | bool | true | - | APM-compatible counters |
 
 Config hash: SHA-256 over the normalized (sorted-key) JSON of the *effective* config,

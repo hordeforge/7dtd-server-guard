@@ -110,10 +110,12 @@
   },
   "webhook": {
     "enabled": false,
-    "evidenceIdsOnly": true
+    "evidenceIdsOnly": true,
+    "urlEnv": "SERVERGUARD_WEBHOOK_URL"
   },
   "dashboard": {
-    "enabled": false
+    "enabled": false,
+    "secretEnv": "SERVERGUARD_DASHBOARD_SECRET"
   },
   "metrics": {
     "enabled": true
