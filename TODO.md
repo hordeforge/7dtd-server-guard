@@ -178,7 +178,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 - [ ] Add Prometheus/JSON metrics without player identity labels.
 - [ ] Add optional operator alert sink (webhook/Discord) sending evidence IDs off the game
   thread; no raw player identity in the payload.
-- [ ] Document incident runbook, threshold rollout, rollback, appeal, and disclosure procedures.
+- [ ] Validate and finalize the incident runbook, threshold rollout, rollback, appeal, and disclosure procedures drafted in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 - [ ] Exit: operators can explain, reverse, and audit every action.
 
 ## Phase 10: calibration and release

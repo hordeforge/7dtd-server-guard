@@ -38,6 +38,7 @@ REQUIRED_DOCS = [
     "docs/RESEARCH.md",
     "docs/TEST_PLAN.md",
     "docs/DECISIONS.md",
+    "docs/OPERATIONS.md",
     "TODO.md",
     "PRIVACY.md",
     "SECURITY.md",

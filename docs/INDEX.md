@@ -17,6 +17,7 @@ bug to fix in the same change.
 | [RESEARCH.md](RESEARCH.md) | External findings, community survey, open questions, references | Where findings landed; open questions that block or downgrade detectors |
 | [TEST_PLAN.md](TEST_PLAN.md) | Test layers, fixture families, adversarial scenarios, reproducibility, release gates | What must be verified before a phase closes |
 | [DECISIONS.md](DECISIONS.md) | Why the design is this way; alternatives considered and rejected | Decision status and reasoning trail |
+| [OPERATIONS.md](OPERATIONS.md) | Operator workflows: rollout, incident response, appeals, upgrade/rollback, disclosure | Requirements the Response/Evidence/console components must support (validated in Phase 9) |
 | [TODO.md](../TODO.md) | The phase ledger with exit criteria | What is done, what is next, phase order |
 | [PRIVACY.md](../PRIVACY.md) | Player monitoring notice, retention schedule, pseudonymization | Retention, what is/not recorded, operator checklist |
 | [SECURITY.md](../SECURITY.md) | Vulnerability reporting, in/out of scope, disclosure | Security contact and report classes |
