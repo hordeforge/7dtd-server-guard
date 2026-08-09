@@ -431,6 +431,37 @@ def check_config_schemas() -> list[str]:
     return out
 
 
+def check_folder_structure() -> list[str]:
+    """The documented layout (docs/INDEX.md -> Repo layout) must hold: every directory
+    under src/, tests/, tools/, config/ carries a README (empty dirs document their
+    purpose), and the planned subfolders exist."""
+    out = []
+    root_dirs = ["docs", "config", "src", "tests", "tools"]
+    for d in root_dirs:
+        if not (ROOT / d).is_dir():
+            out.append(f"missing documented directory: {d}/")
+    for base in ["src", "tests", "tools", "config"]:
+        for d in sorted((ROOT / base).rglob("*")):
+            if not d.is_dir() or "__pycache__" in d.parts:
+                continue
+            if not any(x.name == "README.md" for x in d.iterdir()):
+                out.append(f"directory without README: {d.relative_to(ROOT)}/")
+    planned = [
+        ROOT / "config" / "schemas",
+        ROOT / "tools" / "fixtures" / "traces",
+        ROOT / "tools" / "fixtures" / "regression",
+        ROOT / "tools" / "fixtures" / "generators",
+        ROOT / "tools" / "surface_inventory",
+        ROOT / "tests" / "ServerGuard.Tests",
+        ROOT / "tests" / "ServerGuard.MetadataTests",
+        ROOT / "tests" / "ServerGuard.Replay",
+    ]
+    for d in planned:
+        if not d.is_dir():
+            out.append(f"missing planned directory: {d.relative_to(ROOT)}/")
+    return out
+
+
 def check_config_example_keys() -> list[str]:
     patterns = _schema_key_patterns()
     example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
@@ -458,6 +489,7 @@ def main() -> int:
         "config example vs schema": check_config_example_keys(),
         "config JSON schemas": check_config_schemas(),
         "evidence sample chain": check_evidence_sample_chain(),
+        "folder structure": check_folder_structure(),
         "required docs": check_required_docs(),
     }
     total = sum(len(v) for v in failures.values())
