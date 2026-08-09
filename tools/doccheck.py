@@ -379,6 +379,17 @@ def _schema_validate(instance, schema, path="$") -> list[str]:
     return errs
 
 
+def check_evidence_sample_chain() -> list[str]:
+    """The shipped evidence sample must verify as a hash chain."""
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "evidence_check.py"), "--sample"],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    if proc.returncode != 0:
+        return [proc.stdout.strip() or proc.stderr.strip() or "evidence sample chain broken"]
+    return []
+
+
 def check_config_schemas() -> list[str]:
     """Validate the shipped JSON Schemas parse and the example config and generated
     manifest conform to them."""
@@ -446,6 +457,7 @@ def main() -> int:
         "detector registry coverage": check_detector_ids(),
         "config example vs schema": check_config_example_keys(),
         "config JSON schemas": check_config_schemas(),
+        "evidence sample chain": check_evidence_sample_chain(),
         "required docs": check_required_docs(),
     }
     total = sum(len(v) for v in failures.values())

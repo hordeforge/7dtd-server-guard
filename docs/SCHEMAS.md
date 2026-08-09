@@ -80,8 +80,17 @@ produced it.
 Append-only JSONL, one object per line, hash-chained. Segment files
 `evidence-<UTC-date>-<seq>.jsonl` plus a `segment-index.json`. Every record starts with
 `schemaVersion`, `type`, and `eventId` (UUID v4). `chainPrev` is the SHA-256 of the
-canonical serialization (sorted keys, no whitespace) of the previous record in the chain;
-the first record of a segment chains to the last record of the previous segment.
+canonical serialization of the previous record in the chain; the first record of a segment
+chains to the last record of the previous segment.
+
+Canonical serialization (pinned by `tools/evidence_check.py`):
+`json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)`. Genesis:
+the first record of the very first segment has `chainPrev` equal to 64 zeros. A chain
+detects tampering of any record except the last one; tampering the last record is only
+detected when the next record is appended, because an append-only chain has no later
+record to cross-check. The verifier is `python3 tools/evidence_check.py --dir <evidence-dir>`
+and the shipped sample (`config/schemas/evidence.v1.sample.jsonl`) is a real, verifiable
+chain run by the doccheck gate.
 
 The machine form of this section is the JSON Schema at
 `config/schemas/evidence.v1.schema.json` with a one-record-per-type sample at
