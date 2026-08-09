@@ -74,7 +74,20 @@ Phase 0 (policy, drafted; human review pending) → 1 authoritative surface inve
 10 calibration and release. Enforcement stays off until each detector passes its phase gates;
 the ledger, exit criteria, and known at-risk seams live in [TODO.md](TODO.md).
 
+## Development
+
+- `make check`: docs quality gate (em dashes, internal links, detector spec and ceiling
+  rule, registry sync, JSON Schemas, config/schema cross-references). Run before opening
+  any change.
+- `make detectors`: re-render the detector registry tables and the per-detector config
+  manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
+- `make ci`: CI entry point (docs gate now; build and test layers 1-4 land in Phase 2).
+
+The detector spec, data schemas, and methodology are the design contract; see
+[docs/INDEX.md](docs/INDEX.md) for who owns what.
+
 ## Project status
+
 
 Research and design contract only. Phase 0 policy review is the blocking gate; the review
 checklist is in [TODO.md](TODO.md). Run `make check` for the docs quality gate. No

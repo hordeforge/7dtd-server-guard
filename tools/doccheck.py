@@ -229,9 +229,11 @@ def check_detector_ids() -> list[str]:
 
     # Every mode key in the example config must exist in the spec.
     example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
-    for mode_id in sorted(example.get("modes", {}).keys()):
-        if mode_id not in registered:
-            out.append(f"config example mode key not in registry: {mode_id}")
+    example_modes = set(example.get("modes", {}).keys())
+    for mode_id in sorted(example_modes - registered):
+        out.append(f"config example mode key not in registry: {mode_id}")
+    for mode_id in sorted(registered - example_modes):
+        out.append(f"config example missing mode key for registered detector: {mode_id}")
     # Every threshold key in the generated config manifest must be declared in the spec,
     # and every example-config threshold key must exist in the generated manifest.
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())

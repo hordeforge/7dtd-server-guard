@@ -107,6 +107,10 @@ trace stays legal), so every validator input is exercised.
   over the per-tick samples. The gate fails when the p95 added main-thread time exceeds the
   budget (0.5 ms) with the 95% CI excluding the budget, or when any queue drops or
   disconnect-rate increase is statistically distinguishable from baseline.
+- **Run protocol**: at least five paired runs per seed; discard the first run of each
+  pair as warmup (world load, caches, chunk generation). Interleave baseline and candidate
+  runs to spread host noise. Record host load (other processes) and report outliers rather
+  than silently dropping them.
 - **Reporting**: record hardware, server config, config hash, and hook manifest hash so the
   A/B is reproducible (SCHEMAS.md).
 
@@ -144,7 +148,20 @@ inconsistent, so the checklist is mechanical:
 A change that touches none of the listed artifacts for its type is incomplete, even if
 `make check` passes.
 
+## References
+
+- Wilson, *Probable inference, the law of succession, and statistical inference* (1927);
+  the Wilson interval for proportion confidence intervals (precision, recall, FPR).
+- Efron and Tibshirani, *An Introduction to the Bootstrap* (1993); bootstrap CIs for
+  percentile cost and memory deltas.
+- Cohen, *A coefficient of agreement for nominal scales* (1960); inter-rater agreement for
+  the labeling methodology.
+- Offutt and Untch, *Mutation 2000: Uniting the Orthogonal* (2001); mutation testing
+  operators and kill criteria (section 5).
+- The workspace evidence loop: `../AGENTS.md` (baseline, one change, compare, soak).
+
 ## 9. Release gating
+
 
 
 Each release gate (TEST_PLAN.md -> Release gates) must cite the evidence artifact that
