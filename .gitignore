@@ -1,0 +1,14 @@
+bin/
+obj/
+dist/
+.vs/
+*.user
+*.suo
+artifacts/
+captures/
+server-data/
+Config/server-guard.local.json
+evidence/
+*.dll
+*.key
+__pycache__/

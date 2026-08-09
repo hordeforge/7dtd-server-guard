@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "emergencyDisable": false,
+  "buildPin": {
+    "buildId": "3.1.0-b14",
+    "policy": "observe-else"
+  },
+  "modes": {
+    "protocol.stage_order": "observe",
+    "protocol.entity_owner": "observe",
+    "protocol.permission": "observe",
+    "protocol.duplicate_session": "observe",
+    "protocol.malformed": "observe",
+    "protocol.flood": "observe",
+    "movement.displacement": "observe",
+    "movement.flight": "observe",
+    "movement.vertical_accel": "observe",
+    "movement.noclip": "observe",
+    "movement.teleport_token": "observe",
+    "movement.vehicle": "observe",
+    "movement.edge_distribution": "observe",
+    "combat.cadence": "observe",
+    "combat.held_item_ammo": "observe",
+    "combat.reach": "observe",
+    "combat.damage": "observe",
+    "combat.geometry": "observe",
+    "combat.state": "observe",
+    "combat.target_set": "observe",
+    "combat.aim": "observe",
+    "combat.acquisition": "observe",
+    "progression.xp_rate": "observe",
+    "progression.skill_prereq": "observe",
+    "progression.health_stamina": "observe",
+    "inventory.delta": "observe",
+    "inventory.stack": "observe",
+    "inventory.craft": "observe",
+    "inventory.replay": "observe",
+    "inventory.container_race": "observe",
+    "inventory.quality": "observe",
+    "inventory.trader": "observe",
+    "inventory.rollback": "observe",
+    "world.block": "observe",
+    "world.claim": "observe",
+    "world.wire": "observe",
+    "world.entity_spawn": "observe",
+    "world.explosion": "observe",
+    "world.budget": "observe",
+    "availability.cost": "observe",
+    "availability.churn": "observe"
+  },
+  "actions": {
+    "correct": true,
+    "quarantine": {
+      "damage": false,
+      "containers": false,
+      "worldMutation": false
+    },
+    "kick": false,
+    "throttle": true
+  },
+  "thresholds": {
+    "movement.displacement": {
+      "maxSpeedMps": 10.0,
+      "latencyWindowMs": 200,
+      "jitterAllowanceM": 1.0
+    }
+  },
+  "evidence": {
+    "dir": "ServerGuard/evidence",
+    "retentionDays": 30,
+    "rotationSizeMB": 64,
+    "positionHistoryDays": 7,
+    "positionHistorySamplesPerPlayer": 3600
+  },
+  "identityMap": {
+    "path": "ServerGuard/identity-map.json",
+    "permissions": "0600"
+  },
+  "hmacKey": {
+    "path": "ServerGuard/hmac.key",
+    "rotationDays": 90
+  },
+  "queues": {
+    "actionQueueMax": 4096,
+    "evidenceQueueMax": 8192
+  },
+  "faultGuard": {
+    "maxFaults": 5,
+    "windowSeconds": 300
+  },
+  "correction": {
+    "cooldownTicks": 20,
+    "suspendWindowTicks": 200,
+    "maxPerWindow": 3
+  },
+  "availability": {
+    "burst": 200,
+    "refillPerSecond": 40,
+    "globalCostPerTick": 2000,
+    "cost": {
+      "tiny": 1,
+      "play": 2,
+      "state": 5,
+      "expensive": 20
+    }
+  },
+  "console": {
+    "permissionLevel": "admin"
+  },
+  "webhook": {
+    "enabled": false,
+    "evidenceIdsOnly": true
+  },
+  "dashboard": {
+    "enabled": false
+  },
+  "metrics": {
+    "enabled": true
+  }
+}
