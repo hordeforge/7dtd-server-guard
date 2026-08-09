@@ -1,0 +1,820 @@
+# Canonical detector specification (spec v1)
+#
+# Single source of truth for every planned detector. docs/DETECTORS.md tables are rendered
+# from this file (tools/render_detectors.py); the per-detector config manifest and Phase 2
+# scaffolding are generated from the same file. SCHEMAS.md and POLICY.md are canonical for
+# the schemas and the severity rules; this file is canonical for detector identity, input
+# authority, thresholds, contexts, and fixtures.
+#
+# Input roles:
+#   observed  - the quantity being validated (may be client-declared; it is the subject of
+#               the check, not trusted input)
+#   decision  - state the verdict depends on; must be server-derived for a Hard ceiling
+#               (POLICY.md D-07 refinement; see DECISIONS.md D-15)
+#
+# A Hard ceiling additionally requires `hard_condition` when the verdict depends on an
+# enumerated-or-seam condition (for example "all teleport origins enumerated") or when a
+# client-declared observed quantity is checked against server state that must be complete.
+
+schema_version: 1
+
+detectors:
+  # ---------------------------------------------------------------- protocol (phase 4)
+  - id: protocol.stage_order
+    family: protocol
+    phase: 4
+    ceiling: Hard
+    default_mode: observe
+    summary: "Package type is legal for the connection's current join/auth/spawn/play stage."
+    inputs:
+      - {name: package_type, authority: server-derived, role: observed}
+      - {name: connection_stage, authority: server-derived, role: decision}
+    algorithm: |
+      Compare the decoded package class against the protocol state machine's allowed set
+      for the current stage. Vanilla already checks AllowedBeforeAuth; this is defense in
+      depth and is never an independent evidence category (POLICY.md enforcement gates).
+    state: "One stage enum per connection; cleared on disconnect."
+    contexts: [stock-reconnect-resume]
+    fixtures: [normal, violation, reconnect-duplicate-session]
+
+  - id: protocol.entity_owner
+    family: protocol
+    phase: 4
+    ceiling: Hard
+    default_mode: observe
+    summary: "The entity ID in a request belongs to the requesting connection."
+    inputs:
+      - {name: entity_id, authority: server-derived, role: observed}
+      - {name: ownership_map, authority: server-derived, role: decision}
+    algorithm: |
+      Resolve the connection owner of the target entity at process time. Server-originated
+      relays and physics-master delegates (driven vehicles, ragdolls, owned turrets and
+      drones) are named exemptions, not violations.
+    state: "Ownership map maintained by the session registry."
+    contexts: [physics-master-delegate, server-originated-relay]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: protocol.permission
+    family: protocol
+    phase: 4
+    ceiling: Hard
+    default_mode: observe
+    summary: "Debug, creative, godmode, spectator, and console actions require permission, checked at execution time, not request time."
+    inputs:
+      - {name: requested_action, authority: server-derived, role: observed}
+      - {name: permission_registry, authority: server-derived, role: decision}
+      - {name: admin_level, authority: server-derived, role: decision}
+    algorithm: |
+      At the execution seam, resolve the principal's admin level and compare against the
+      action's required level. Exempts named admin and automation principals.
+    state: "None (reads the server permission registry)."
+    contexts: [admin-principal, automation-principal]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: protocol.duplicate_session
+    family: protocol
+    phase: 4
+    ceiling: Strong
+    default_mode: observe
+    summary: "A platform identity has only one live session; duplicate logins are evidence, not proof."
+    inputs:
+      - {name: platform_id, authority: server-derived, role: observed}
+      - {name: session_epoch, authority: server-derived, role: decision}
+      - {name: live_session_map, authority: server-derived, role: decision}
+    algorithm: |
+      On login, if the platform ID already has a live session, record duplicate-session
+      evidence against the connection that accepted the second login, never the original.
+      Stale disconnects and reconnect grace windows are exemptions.
+    state: "Live session map with epochs and grace timers."
+    contexts: [stale-disconnect, reconnect-grace]
+    fixtures: [reconnect-duplicate-session, induced-finding]
+
+  - id: protocol.malformed
+    family: protocol
+    phase: 4
+    ceiling: Hard
+    default_mode: observe
+    summary: "Decoded values are in domain: enum in range, no NaN/infinity, coordinates, stack sizes, and lengths bounded."
+    inputs:
+      - {name: decoded_value, authority: server-derived, role: observed}
+      - {name: domain_bounds, authority: server-derived, role: decision}
+    algorithm: |
+      Validate at decode time, before expensive processing. Invalid values fail the
+      request safely (reject the package) with no gameplay effect.
+    state: "None."
+    contexts: []
+    fixtures: [normal, violation]
+
+  - id: protocol.flood
+    family: protocol
+    phase: 4
+    ceiling: Strong
+    default_mode: observe
+    summary: "Per-connection and global cost-weighted token buckets contain floods; throttle is availability protection and never counts toward enforcement."
+    inputs:
+      - {name: package_cost, authority: server-derived, role: decision}
+      - {name: token_bucket_state, authority: server-derived, role: decision}
+      - {name: connection_identity, authority: server-derived, role: observed}
+    algorithm: |
+      Cost-weighted token buckets (SIGNALS.md -> Availability). Each connection starts with
+      burst tokens and refills at refillPerSecond; globalCostPerTick caps cross-connection
+      aggregate cost. Exhausting a bucket sheds or slows the connection (throttle).
+    state: "Per-connection bucket (burst, refill), global tick budget."
+    thresholds:
+      - {key: burst, type: int, range: [1, 100000], default: 200, note: "placeholder until profiled"}
+      - {key: refill_per_second, type: int, range: [1, 10000], default: 40, note: "placeholder"}
+      - {key: global_cost_per_tick, type: int, range: [1, 100000], default: 2000, note: "placeholder"}
+    contexts: [server-retry, packet-loss-burst]
+    fixtures: [normal, violation, latency-stall]
+
+  # ---------------------------------------------------------------- movement (phase 5)
+  - id: movement.displacement
+    family: movement
+    phase: 5
+    ceiling: Strong
+    default_mode: observe
+    summary: "Reported displacement stays within an integrated speed/acceleration envelope plus a latency-uncertainty window."
+    inputs:
+      - {name: reported_position, authority: client-declared, role: decision}
+      - {name: server_clock_interval, authority: server-derived, role: decision}
+      - {name: latency_estimate, authority: server-derived, role: decision}
+      - {name: grounded_stance_buffs, authority: server-derived, role: decision}
+    algorithm: |
+      Integrate legal_distance = maxSpeed * dt + maxAccel * 0.5 * dt^2, add
+      uncertainty = maxSpeed * latencyWindow + jitterAllowance; accept when the reported
+      displacement fits, otherwise clamp to the envelope edge and accumulate debt with a
+      bounded credit/debt budget. Reset on named discontinuities (teleport, death, spawn,
+      vehicle enter/exit, knockback, admin correction). Unknown flight states widen
+      uncertainty, never accuse. Never divide distance by one packet interval.
+    state: "Per-player accepted sample, credit/debt budget, discontinuity flags; sampled position history (20-tick cadence, max 3600 samples, 7-day expiry)."
+    thresholds:
+      - {key: max_speed_mps, type: float, range: [0.5, 100.0], default: 10.0, unit: m/s, note: "placeholder; sprint band"}
+      - {key: max_accel_mps2, type: float, range: [0.0, 100.0], default: 20.0, unit: m/s2, note: "placeholder"}
+      - {key: latency_window_ms, type: int, range: [0, 5000], default: 200, unit: ms}
+      - {key: jitter_allowance_m, type: float, range: [0.0, 50.0], default: 1.0, unit: m}
+      - {key: credit_cap_m, type: float, range: [0.0, 200.0], default: 20.0, unit: m, note: "unused budget cap"}
+      - {key: debt_grace_m, type: float, range: [0.0, 200.0], default: 10.0, unit: m, note: "over-budget grace"}
+    contexts: [teleport, death, spawn, vehicle-enter-exit, knockback, ragdoll, server-stall, packet-loss-burst, mod-movement, unknown-buffs, admin-correction]
+    fixtures: [normal, violation, latency-stall, teleport-vehicle-death, induced-finding]
+
+  - id: movement.flight
+    family: movement
+    phase: 5
+    ceiling: Strong
+    default_mode: observe
+    summary: "Sustained unsupported vertical state without a valid flight context."
+    inputs:
+      - {name: reported_position, authority: client-declared, role: decision}
+      - {name: voxel_ladder_water_state, authority: server-derived, role: decision}
+      - {name: flight_context, authority: server-derived, role: decision}
+    algorithm: |
+      Over a time window, if vertical support (ground, ladder, water, vehicle, jetpack,
+      parachute, elevator, helicopter) is absent and the player stays elevated, record
+      flight. Unknown mod flight states widen the uncertainty window.
+    state: "Per-player vertical support window (ring buffer)."
+    thresholds:
+      - {key: hover_window_seconds, type: int, range: [1, 120], default: 10, unit: s}
+      - {key: hover_tolerance_m, type: float, range: [0.0, 20.0], default: 3.0, unit: m}
+    contexts: [jetpack, parachute, elevator, helicopter, mod-flight, server-stall]
+    fixtures: [normal, violation, latency-stall, teleport-vehicle-death]
+
+  - id: movement.vertical_accel
+    family: movement
+    phase: 5
+    ceiling: Strong
+    default_mode: observe
+    summary: "Vertical velocity deltas are explainable by jump, gravity, fall, impact, explosion, or buff impulses."
+    inputs:
+      - {name: reported_position_series, authority: client-declared, role: decision}
+      - {name: impulse_ledger, authority: server-derived, role: decision}
+    algorithm: |
+      Compare delta velocity per interval against the legal impulse set for the current
+      state. Impulses (knockback, explosion, ragdoll) are attributed to the initiating
+      connection (POLICY.md attribution), never the recipient.
+    state: "Per-player last vertical velocity, impulse ledger."
+    contexts: [knockback, explosion, ragdoll, server-hitch, mod-buffs]
+    fixtures: [normal, violation, induced-finding, latency-stall]
+
+  - id: movement.noclip
+    family: movement
+    phase: 5
+    ceiling: Strong
+    default_mode: observe
+    summary: "Swept capsule/voxel path crosses solid blocks without a valid state transition."
+    inputs:
+      - {name: reported_position_series, authority: client-declared, role: decision}
+      - {name: voxel_world, authority: server-derived, role: decision}
+      - {name: state_transition, authority: server-derived, role: decision}
+    algorithm: |
+      Swept capsule between accepted samples; unloaded or ungenerated chunks along the
+      path yield "unknown", never "air" (no accusation on missing data). Cap voxel queries
+      per tick and defer the rest (perf dominator, SCHEMAS.md metrics).
+    state: "Per-player sweep state; per-tick query budget."
+    thresholds:
+      - {key: voxel_queries_per_tick_cap, type: int, range: [1, 4096], default: 256, note: "perf cap"}
+      - {key: overlap_tolerance_m, type: float, range: [0.0, 2.0], default: 0.25, unit: m, note: "capsule skin"}
+    contexts: [vehicle, buffs, unloaded-chunks, server-stall]
+    fixtures: [normal, violation, latency-stall]
+
+  - id: movement.teleport_token
+    family: movement
+    phase: 5
+    ceiling: Hard
+    default_mode: observe
+    hard_condition: "Hard only after Phase 1 enumerates every server-side teleport origin; otherwise Strong (see DECISIONS.md D-12)"
+    summary: "Position discontinuities are backed by a one-use server-issued teleport token; stock EntityTeleport for >8 m deltas is an ordinary discontinuity, not a violation."
+    inputs:
+      - {name: entity_teleport_package, authority: client-declared, role: observed}
+      - {name: teleport_token_store, authority: server-derived, role: decision}
+      - {name: discontinuity_context, authority: server-derived, role: decision}
+    algorithm: |
+      Every server-side teleport origin (trader ejection, quests, respawn, console, game
+      events, mods) issues a one-use token tied to cause and expiry. A position
+      discontinuity without a valid token is a violation; with one, it consumes it. Client
+      EntityTeleport packages (stock >8 m deltas, rubber-banding after chunk stalls) are
+      treated as discontinuities, never violations.
+    state: "Per-player one-use token queue with causes and expiry."
+    contexts: [trader-ejection, quests, respawn, console, mods, chunk-stall]
+    fixtures: [teleport-vehicle-death, normal, violation, latency-stall]
+
+  - id: movement.vehicle
+    family: movement
+    phase: 5
+    ceiling: Weak
+    default_mode: observe
+    summary: "Vehicle speed/acceleration against reconstructed terrain-aware limits."
+    inputs:
+      - {name: reported_vehicle_position, authority: client-declared, role: decision}
+      - {name: reconstructed_envelope, authority: server-derived, role: decision}
+    algorithm: |
+      Vehicle physics is client-simulated under the physics-master scheme; the server
+      holds no authoritative envelope. Reconstruct terrain-aware limits (grade, surface)
+      and compare. Weak until the reconstruction is validated against a fixture corpus,
+      then Strong.
+    state: "Per-vehicle sample ring buffer."
+    thresholds:
+      - {key: envelope_validation_window_hours, type: int, range: [1, 720], default: 24, unit: h, note: "fixture corpus before Strong"}
+    contexts: [vehicle-physics, collision, passenger-motion, server-stall]
+    fixtures: [normal, violation, teleport-vehicle-death]
+
+  - id: movement.edge_distribution
+    family: movement
+    phase: 5
+    ceiling: Weak
+    default_mode: observe
+    summary: "Distribution of normalized movement-budget consumption is unusually edge-clustered."
+    inputs:
+      - {name: normalized_budget_series, authority: server-derived, role: decision}
+    algorithm: |
+      Collect the normalized budget consumption over a rolling window; flag heavy
+      right-tails (consistently near-limit) as review evidence. Behavioral, never
+      enforcing alone.
+    state: "Per-player rolling window of budget samples."
+    thresholds:
+      - {key: window_samples, type: int, range: [60, 10000], default: 600}
+      - {key: tail_percentile, type: float, range: [0.5, 1.0], default: 0.95, note: "fraction treated as edge"}
+    contexts: [all movement discontinuity contexts]
+    fixtures: [normal, latency-stall]
+
+  # ---------------------------------------------------------------- combat (phase 6)
+  - id: combat.cadence
+    family: combat
+    phase: 6
+    ceiling: Hard
+    default_mode: observe
+    hard_condition: "Hard if reload/chamber and modifier state is fully server-known for the item family; otherwise Strong"
+    summary: "Fire/use cadence at damage application is not faster than the item action permits."
+    inputs:
+      - {name: damage_application_timestamps, authority: server-derived, role: decision}
+      - {name: item_action_definition, authority: server-derived, role: decision}
+      - {name: reload_chamber_state, authority: server-derived, role: decision}
+    algorithm: |
+      Melee misses and cosmetic action/reload broadcasts are omittable by a hostile
+      client, so cadence is observable only at damage application. Compare inter-damage
+      intervals against the item action interval plus modifiers; a tolerance window covers
+      tick quantization. Both damage paths must be hooked (SIGNALS.md -> Combat).
+    state: "Per-player per-weapon-family last-damage timestamps."
+    thresholds:
+      - {key: cadence_tolerance_ms, type: int, range: [0, 1000], default: 100, unit: ms}
+    contexts: [buffs, mods, reload-state, server-stall]
+    fixtures: [normal, violation, latency-stall]
+
+  - id: combat.held_item_ammo
+    family: combat
+    phase: 6
+    ceiling: Hard
+    default_mode: observe
+    summary: "An attack requires a valid held item and ammunition in the authoritative inventory/chamber ledger."
+    inputs:
+      - {name: attack_event, authority: server-derived, role: observed}
+      - {name: inventory_chamber_ledger, authority: server-derived, role: decision}
+    algorithm: |
+      Before applying damage, verify the authoritative held item and ammo count (including
+      chamber/reload state) permit the attack. Server-originated item grants are causes in
+      the inventory ledger, not violations.
+    state: "Reads the combat ledger's per-player chamber/ammo state."
+    contexts: [server-originated-item-grant]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: combat.reach
+    family: combat
+    phase: 6
+    ceiling: Strong
+    default_mode: observe
+    summary: "Attacker origin to target hit volume at resolved time is within weapon reach."
+    inputs:
+      - {name: attacker_origin, authority: client-declared, role: decision}
+      - {name: target_hit_volume, authority: server-derived, role: decision}
+      - {name: weapon_reach, authority: server-derived, role: decision}
+    algorithm: |
+      At the authoritative seam, measure attacker origin (with latency uncertainty) to the
+      resolved target hit volume. Movement targets, vehicles, and ragdolls widen the
+      uncertainty window.
+    state: "None beyond the combat ledger's correlated attack record."
+    thresholds:
+      - {key: reach_tolerance_m, type: float, range: [0.0, 5.0], default: 0.5, unit: m}
+    contexts: [moving-target, vehicle, ragdoll, high-latency]
+    fixtures: [normal, violation, latency-stall]
+
+  - id: combat.damage
+    family: combat
+    phase: 6
+    ceiling: Strong
+    default_mode: observe
+    summary: "Applied damage is consistent with the recomputed allowed range from item, quality, mods, buffs, armor, difficulty, and hit zone."
+    inputs:
+      - {name: claimed_strength, authority: client-declared, role: decision}
+      - {name: claimed_hit_zone, authority: client-declared, role: decision}
+      - {name: base_damage, authority: server-derived, role: decision}
+      - {name: quality_mods_buffs, authority: server-derived, role: decision}
+      - {name: target_armor_difficulty, authority: server-derived, role: decision}
+    algorithm: |
+      Recompute the allowed damage range from authoritative item XML, quality, mods,
+      buffs, target armor, difficulty, and the claimed hit zone. Because strength and hit
+      zone are client-computed, the recompute is a bound, not a proof: flag out-of-range
+      applications, cap severity at Strong (POLICY.md D-07 refinement). Hook both damage
+      paths.
+    state: "Per-attack correlation record (item, modifiers, target, result)."
+    thresholds:
+      - {key: damage_tolerance_percent, type: float, range: [0.0, 100.0], default: 20.0, unit: "%"}
+      - {key: recompute_mode, type: string, range: [bounds, exact], default: bounds}
+    contexts: [armor, buffs, difficulty, headshot, dot, explosive, vehicle]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: combat.geometry
+    family: combat
+    phase: 6
+    ceiling: Strong
+    default_mode: observe
+    summary: "Damage does not pass through solid geometry beyond weapon penetration rules."
+    inputs:
+      - {name: attacker_origin, authority: client-declared, role: decision}
+      - {name: voxel_world, authority: server-derived, role: decision}
+      - {name: penetration_rules, authority: server-derived, role: decision}
+    algorithm: |
+      Server ray/voxel line test from attacker origin to the resolved target with the
+      weapon's penetration rules. Unloaded chunks yield "unknown", never "air".
+    state: "Ray results are transient; query budget shared with movement.noclip."
+    contexts: [unloaded-chunks, high-latency]
+    fixtures: [normal, violation]
+
+  - id: combat.state
+    family: combat
+    phase: 6
+    ceiling: Strong
+    default_mode: observe
+    summary: "Damage is not applied during death, spawn protection, stun, reload, or a disallowed animation state."
+    inputs:
+      - {name: damage_event, authority: server-derived, role: observed}
+      - {name: entity_state_machine, authority: server-derived, role: decision}
+    algorithm: |
+      Check the authoritative entity state at the damage seam. Stays Strong (not Hard)
+      because damage events from turrets, explosions, and other sources make attribution
+      and timing uncertain at the seam.
+    state: "Reads entity state at the seam."
+    contexts: [spawn-protection, buffs, vehicle, turret, explosion]
+    fixtures: [normal, violation]
+
+  - id: combat.target_set
+    family: combat
+    phase: 6
+    ceiling: Strong
+    default_mode: observe
+    summary: "Multi-target or repeat damage matches weapon rules and the attack correlation ID."
+    inputs:
+      - {name: attack_correlation_id, authority: server-derived, role: decision}
+      - {name: target_set, authority: server-derived, role: decision}
+      - {name: weapon_rules, authority: server-derived, role: decision}
+    algorithm: |
+      Correlate damage applications by attack ID; verify the target set (count and
+      identities) matches weapon rules (pierce, aoe, turret, explosion). Repeat damage to
+      the same target outside rules is flagged.
+    state: "Per-attack target set with expiry."
+    contexts: [turret, explosion, dot, vehicle]
+    fixtures: [normal, violation]
+
+  - id: combat.aim
+    family: combat
+    phase: 6
+    ceiling: Weak
+    default_mode: observe
+    summary: "Aim snap, low reaction time, and abnormal angular tracking as review-only evidence."
+    inputs:
+      - {name: rotation_series, authority: client-declared, role: decision}
+      - {name: visible_target_geometry, authority: server-derived, role: decision}
+    algorithm: |
+      Record rotation time series (quantized ~1.4 deg, change-gated, unevenly sampled;
+      low fidelity) and compute snap/reaction features. Review-only: skilled players,
+      accessibility devices, interpolation, and PvE predictability forbid enforcement.
+    state: "Per-player bounded rotation series with sampling controls."
+    thresholds:
+      - {key: window_samples, type: int, range: [60, 10000], default: 1200}
+      - {key: snap_degrees_threshold, type: float, range: [0.0, 180.0], default: 45.0, unit: deg}
+      - {key: min_reaction_time_ms, type: int, range: [0, 5000], default: 150, unit: ms}
+    contexts: [skilled-play, accessibility-device, interpolation, pve]
+    fixtures: [normal]
+
+  - id: combat.acquisition
+    family: combat
+    phase: 6
+    ceiling: Weak
+    default_mode: observe
+    summary: "Target acquisition before the server could expose the target; nearly unobservable in vanilla, low priority."
+    inputs:
+      - {name: interest_history, authority: server-derived, role: decision}
+    algorithm: |
+      Entity distribution is distance-based with no server-side line-of-sight culling, so
+      "acquired before exposure" has almost no observable surface. Keep as review-only and
+      low priority; do not invest in Phase 1 seam hunting before the other families.
+    state: "Per-player bounded interest history."
+    contexts: [pve]
+    fixtures: [normal]
+
+  # ---------------------------------------------------------------- progression (phase 8)
+  - id: progression.xp_rate
+    family: progression
+    phase: 8
+    ceiling: Strong
+    default_mode: observe
+    summary: "Client-pushed XP gain rate stays within the maximum earnable from legitimate causes."
+    inputs:
+      - {name: xp_request, authority: client-declared, role: observed}
+      - {name: earnable_xp_bounds, authority: server-derived, role: decision}
+      - {name: server_clock, authority: server-derived, role: decision}
+    algorithm: |
+      Bound per-tick and windowed XP against the maximum any legitimate cause (kills,
+      quests, events) can earn in the window. Because the server may not know every mod
+      earn source, the bound is an envelope: Strong, never Hard. Validate
+      NetPackageEntityAddExpServer at the execution seam.
+    state: "Per-player XP ledger with tick/window accumulators."
+    thresholds:
+      - {key: max_xp_per_tick, type: int, range: [1, 1000000], default: 5000, note: "placeholder"}
+      - {key: max_xp_per_minute, type: int, range: [1, 100000000], default: 200000, note: "placeholder"}
+      - {key: window_minutes, type: int, range: [1, 120], default: 5, unit: min}
+    contexts: [quests, kills, server-events, mod-grants]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: progression.skill_prereq
+    family: progression
+    phase: 8
+    ceiling: Hard
+    default_mode: observe
+    hard_condition: "Hard only if the server progression rules (points, prerequisites, maxima) are recomputable; otherwise Strong"
+    summary: "A client-pushed skill/attribute level is legal under the server progression rules."
+    inputs:
+      - {name: skill_level_request, authority: client-declared, role: observed}
+      - {name: progression_state, authority: server-derived, role: decision}
+    algorithm: |
+      The verdict depends only on server progression state: points spent, prerequisites,
+      and attribute maxima. The requested level is the observed quantity; the server
+      recomputes legality from its own state, so the check is Hard when the rules are
+      recomputable. Validate NetPackageEntitySetSkillLevelServer at the execution seam.
+    state: "Reads the server progression database at the seam."
+    contexts: [mod-skill-grants]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: progression.health_stamina
+    family: progression
+    phase: 8
+    ceiling: Hard
+    default_mode: observe
+    summary: "Reported health/stamina cannot exceed attribute-derived maxima."
+    inputs:
+      - {name: reported_health_stamina, authority: client-declared, role: observed}
+      - {name: attribute_maxima, authority: server-derived, role: decision}
+    algorithm: |
+      The verdict depends only on server attribute-derived maxima; the reported value is
+      the observed quantity. A value above the maximum is impossible-by-construction and
+      can be rejected at the sync seam.
+    state: "None (reads attribute state)."
+    contexts: [buffs, mods]
+    fixtures: [normal, violation]
+
+  # ---------------------------------------------------------------- inventory (phase 7)
+  - id: inventory.delta
+    family: inventory
+    phase: 7
+    ceiling: Strong
+    default_mode: observe
+    summary: "Every positive item delta is explained by an authorized cause in the double-entry ledger."
+    inputs:
+      - {name: snapshot_delta, authority: server-derived, role: observed}
+      - {name: authorized_causes, authority: server-derived, role: decision}
+      - {name: ledger_state, authority: server-derived, role: decision}
+    algorithm: |
+      Double-entry ledger: every positive/negative delta needs an authorized cause (loot,
+      craft, repair, consume, fire, drop, pickup, quest, trader, death backpack, admin
+      grant, mod action, vehicle/drone/container move, rollback reconciliation). Unknown
+      server-origin changes are logged separately and never accuse a player. Reconciliation
+      after crash/disconnect never attributes to a player. Cap full-inventory diffs per
+      tick and diff lazily (perf dominator).
+    state: "Per-player item ledger, cause queue, reconciliation markers."
+    thresholds:
+      - {key: max_unaccounted_delta, type: int, range: [1, 1000000], default: 1000, note: "placeholder, item count"}
+    contexts: [all authorized causes, rollback, disconnect, mod-grants, reconciliation]
+    fixtures: [normal, violation, rollback, admin-mod-origin, induced-finding]
+
+  - id: inventory.stack
+    family: inventory
+    phase: 7
+    ceiling: Hard
+    default_mode: observe
+    summary: "A stack cannot exceed the authoritative item definition's stack limit."
+    inputs:
+      - {name: claimed_stack, authority: client-declared, role: observed}
+      - {name: item_definition, authority: server-derived, role: decision}
+    algorithm: |
+      Compare the claimed stack against the item definition at the mutation seam; reject
+      the transition (correct). The verdict depends only on the item definition.
+    state: "None (reads item XML definition)."
+    contexts: [container-stacks, vehicle, drone]
+    fixtures: [normal, violation]
+
+  - id: inventory.craft
+    family: inventory
+    phase: 7
+    ceiling: Hard
+    default_mode: observe
+    hard_condition: "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
+    summary: "Craft output is backed by ingredients, time, station, and recipe."
+    inputs:
+      - {name: craft_output, authority: server-derived, role: observed}
+      - {name: craft_transaction_state, authority: server-derived, role: decision}
+    algorithm: |
+      At-risk seam: the package census shows no craft/recipe/workstation-queue package;
+      backpack crafting appears client-local and workstations sync as opaque tile-entity
+      blobs. If Phase 1 finds no seam, this detector is deferred and its coverage degrades
+      to inventory.delta.
+    state: "Craft transaction state machine (only if the seam exists)."
+    contexts: [workstation, craft-cancellation]
+    fixtures: [normal, violation, rollback]
+
+  - id: inventory.replay
+    family: inventory
+    phase: 7
+    ceiling: Hard
+    default_mode: observe
+    summary: "A transaction ID is applied at most once per session epoch."
+    inputs:
+      - {name: transaction_id, authority: client-declared, role: observed}
+      - {name: idempotency_cache, authority: server-derived, role: decision}
+    algorithm: |
+      Session-scoped idempotency cache: a replayed transaction is a no-op (the second
+      application is rejected without state change). The verdict depends only on the
+      server's cache.
+    state: "Per-session bounded transaction-id cache with replay-window expiry."
+    thresholds:
+      - {key: replay_cache_size, type: int, range: [64, 1000000], default: 10000}
+      - {key: replay_window_seconds, type: int, range: [10, 86400], default: 600, unit: s}
+    contexts: [reconnect, container-move, craft, trader]
+    fixtures: [normal, violation, reconnect-duplicate-session]
+
+  - id: inventory.container_race
+    family: inventory
+    phase: 7
+    ceiling: Hard
+    default_mode: observe
+    summary: "Concurrent container moves resolve atomically; a second player's race never grants an item."
+    inputs:
+      - {name: slot_ownership, authority: server-derived, role: decision}
+      - {name: container_version, authority: server-derived, role: decision}
+    algorithm: |
+      The server atomically checks slot ownership and container version; a racing request
+      fails without state change, so the victim accrues nothing (POLICY.md attribution).
+      Post-transaction conservation re-verifies the ledger.
+    state: "Container version counters."
+    contexts: [concurrent-moves, split-merge, second-player-race]
+    fixtures: [normal, violation, induced-finding]
+
+  - id: inventory.quality
+    family: inventory
+    phase: 7
+    ceiling: Hard
+    default_mode: observe
+    summary: "Item quality/mod/durability combinations are possible under item definitions and crafting rules."
+    inputs:
+      - {name: claimed_quality, authority: client-declared, role: observed}
+      - {name: item_definition, authority: server-derived, role: decision}
+      - {name: crafting_rules, authority: server-derived, role: decision}
+    algorithm: |
+      Verify the combination against the item definition and crafting rules at the
+      mutation seam.
+    state: "None."
+    contexts: [mod-item-quality]
+    fixtures: [normal, violation]
+
+  - id: inventory.trader
+    family: inventory
+    phase: 7
+    ceiling: Hard
+    default_mode: observe
+    hard_condition: "Hard only if Phase 1 finds an authoritative trader price/currency seam; otherwise degrades to inventory.delta (Strong)"
+    summary: "Trader transactions match server-computed price and currency."
+    inputs:
+      - {name: trader_transaction, authority: server-derived, role: observed}
+      - {name: price_currency_state, authority: server-derived, role: decision}
+    algorithm: |
+      At-risk seam: purchases look like client-side inventory edits against synced trader
+      state. If Phase 1 finds no authoritative price/currency decision point, defer and
+      degrade to inventory.delta like craft.
+    state: "Trader transaction state (only if the seam exists)."
+    contexts: [trader-state-sync]
+    fixtures: [normal, violation, rollback]
+
+  - id: inventory.rollback
+    family: inventory
+    phase: 7
+    ceiling: Strong
+    default_mode: observe
+    summary: "Disconnect/rollback gains are reconciled against the durable save epoch."
+    inputs:
+      - {name: save_epoch, authority: server-derived, role: decision}
+      - {name: pending_transfers, authority: server-derived, role: decision}
+      - {name: durable_snapshot, authority: server-derived, role: decision}
+    algorithm: |
+      On disconnect or crash recovery, reconcile the ledger against the durable save:
+      replay committed transactions from the evidence segment, diff, and log unexplained
+      deltas with a reconciliation marker. Never attributed to a player (ARCHITECTURE.md ->
+      Inventory reconciliation).
+    state: "Reconciliation markers and pending-transfer queue."
+    thresholds:
+      - {key: reconcile_window_minutes, type: int, range: [1, 1440], default: 60, unit: min}
+    contexts: [crash-recovery, disconnect, save-rollback]
+    fixtures: [rollback, normal, reconnect-duplicate-session]
+
+  # ---------------------------------------------------------------- world and entity (phase 8)
+  - id: world.block
+    family: world
+    phase: 8
+    ceiling: Hard
+    default_mode: observe
+    hard_condition: "Hard only for the authorization subset (claims, locks, ownership, allowlist, overflow); positional and cadence subchecks consume client-declared position and stay Strong"
+    summary: "Block changes respect reach, tool, material, claim, cadence, and world bounds."
+    inputs:
+      - {name: requested_position, authority: client-declared, role: observed, note: "subject of reach/bounds subchecks"}
+      - {name: claim_lock_state, authority: server-derived, role: decision}
+      - {name: block_definitions, authority: server-derived, role: decision}
+      - {name: tool_material, authority: server-derived, role: decision}
+      - {name: world_bounds, authority: server-derived, role: decision}
+    algorithm: |
+      Authorization subchecks (claim, lock, ownership, entity-class allowlist, negative/
+      overflow damage) are Hard with complete server inputs. Reach, tool/material
+      suitability, and cadence subchecks bound client claims and stay Strong. Reject seams
+      document co-patching behavior.
+    state: "Per-player block-action budget."
+    thresholds:
+      - {key: max_block_actions_per_minute, type: int, range: [1, 100000], default: 3000, note: "placeholder"}
+      - {key: reach_tolerance_m, type: float, range: [0.0, 5.0], default: 0.5, unit: m}
+    contexts: [falling-blocks, explosion, quests, allies, parties, admin]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: world.claim
+    family: world
+    phase: 8
+    ceiling: Hard
+    default_mode: observe
+    summary: "Locked-container and claim access is authorized."
+    inputs:
+      - {name: access_request, authority: server-derived, role: observed}
+      - {name: claim_database, authority: server-derived, role: decision}
+    algorithm: |
+      Check the server claim/lock database at the access seam: owner, allies, parties, and
+      admin exemptions.
+    state: "None (reads the claim database)."
+    contexts: [allies, parties, admin]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: world.wire
+    family: world
+    phase: 8
+    ceiling: Hard
+    default_mode: observe
+    summary: "Wire endpoints, powered tile ownership, and lock state are valid."
+    inputs:
+      - {name: wire_request, authority: server-derived, role: observed}
+      - {name: tile_entity_state, authority: server-derived, role: decision}
+    algorithm: |
+      Validate endpoints against server tile-entity state (ownership, power, lock) at the
+      wiring seam.
+    state: "None."
+    contexts: [turret, drone, vehicle, power-tools]
+    fixtures: [normal, violation]
+
+  - id: world.entity_spawn
+    family: world
+    phase: 8
+    ceiling: Hard
+    default_mode: observe
+    summary: "Client-requested entity classes are on the server allowlist with a valid spawn source."
+    inputs:
+      - {name: entity_class_request, authority: client-declared, role: observed}
+      - {name: spawn_allowlist, authority: server-derived, role: decision}
+      - {name: spawn_source, authority: server-derived, role: decision}
+    algorithm: |
+      The verdict depends only on the server allowlist and spawn source; the requested
+      class is the observed quantity. Mods that legitimately spawn entities register
+      sources.
+    state: "None."
+    thresholds:
+      - {key: spawn_rate_per_minute, type: int, range: [1, 100000], default: 120, note: "placeholder"}
+    contexts: [mod-spawns]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: world.explosion
+    family: world
+    phase: 8
+    ceiling: Strong
+    default_mode: observe
+    summary: "Explosion inventory consumption and damage bounds are consistent with the explosive used."
+    inputs:
+      - {name: explosion_resolution, authority: server-derived, role: decision}
+      - {name: inventory_consumption, authority: server-derived, role: decision}
+    algorithm: |
+      Compare explosion damage and inventory consumption against the explosive item's
+      definition at the resolution seam. Stays Strong because environment interaction
+      (barrels, vehicles, chains) widens the possible outcomes.
+    state: "Per-explosion correlation record."
+    contexts: [explosives, barrels, vehicles]
+    fixtures: [normal, violation]
+
+  - id: world.budget
+    family: world
+    phase: 8
+    ceiling: Strong
+    default_mode: observe
+    summary: "Per-player action budgets bound high-fan-out requests."
+    inputs:
+      - {name: request_fan_out, authority: server-derived, role: decision}
+      - {name: action_budget, authority: server-derived, role: decision}
+    algorithm: |
+      Cost the fan-out of chunk/map/inventory and high-volume requests per player and per
+      tick; over-budget requests are shed or throttled (availability protection, never an
+      accusation).
+    state: "Per-player rolling action budgets."
+    thresholds:
+      - {key: max_actions_per_tick, type: int, range: [1, 100000], default: 500, note: "placeholder"}
+      - {key: max_fan_out_per_request, type: int, range: [1, 1000000], default: 10000, note: "placeholder"}
+    contexts: [mod-batched-actions]
+    fixtures: [normal, violation]
+
+  # ---------------------------------------------------------------- availability (phases 4 and 8)
+  - id: availability.cost
+    family: availability
+    phase: 4
+    ceiling: Strong
+    default_mode: observe
+    summary: "Decoded bytes, package count and cost, malformed decodes, exceptions, and queued work are bounded per identity and source prefix (in-memory only)."
+    inputs:
+      - {name: package_cost_class, authority: server-derived, role: decision}
+      - {name: decode_counters, authority: server-derived, role: decision}
+    algorithm: |
+      Cost classes (tiny 1, play 2, state 5, expensive 20) weight token buckets; flood
+      evidence records pseudonym and cost class only, never IPs. Shared rate-limit
+      infrastructure is the only thing chat moderation and anti-cheat share.
+    state: "Per-identity and per-source-prefix counters, in-memory only."
+    thresholds:
+      - {key: tiny, type: int, range: [1, 1000], default: 1}
+      - {key: play, type: int, range: [1, 1000], default: 2}
+      - {key: state, type: int, range: [1, 1000], default: 5}
+      - {key: expensive, type: int, range: [1, 1000], default: 20}
+    contexts: [server-retry, packet-loss-burst]
+    fixtures: [normal, violation, latency-stall]
+
+  - id: availability.churn
+    family: availability
+    phase: 8
+    ceiling: Strong
+    default_mode: observe
+    summary: "Reconnect churn and join storms are bounded; never an accusation."
+    inputs:
+      - {name: join_events, authority: server-derived, role: decision}
+      - {name: session_registry, authority: server-derived, role: decision}
+    algorithm: |
+      Bound join/reconnect frequency per identity with a cooldown; churn evidence records
+      pseudonym and cost class. Stale-disconnect and reconnect-grace are exemptions.
+    state: "Per-identity join timestamps with cooldown."
+    thresholds:
+      - {key: max_joins_per_minute, type: int, range: [1, 1000], default: 10}
+      - {key: join_cooldown_seconds, type: int, range: [0, 3600], default: 30, unit: s}
+    contexts: [stale-disconnect, reconnect-grace]
+    fixtures: [normal, violation, reconnect-duplicate-session]

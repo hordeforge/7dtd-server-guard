@@ -20,7 +20,10 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import subprocess
 import sys
+
+import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MD_FILES = sorted(p for p in (ROOT / "docs").rglob("*.md")) + sorted(
@@ -46,15 +49,24 @@ REQUIRED_DOCS = [
     "AGENTS.md",
 ]
 
+SPEC_PATH = ROOT / "tools" / "detector_spec.yaml"
+SPEC_FAMILIES = {"protocol", "movement", "combat", "progression", "inventory", "world", "availability"}
+SPEC_CEILINGS = {"Hard", "Strong", "Weak"}
+SPEC_ROLES = {"observed", "decision"}
+SPEC_AUTHORITIES = {"server-derived", "client-declared"}
+SPEC_THRESHOLD_TYPES = {"int", "float", "string"}
+ALLOWED_FIXTURES = {
+    "normal", "violation", "latency-stall", "reconnect-duplicate-session",
+    "teleport-vehicle-death", "admin-mod-origin", "rollback", "induced-finding",
+}
+
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 DETECTOR_ID_RE = re.compile(r"(?<![\w-])([a-z]+\.[a-z_]+)(?![\w-])")
 
 # Families that own detectors; tokens from these families must be in the registry.
 # Config key paths (actions.correct, evidence.dir, webhook.enabled, ...) are not
 # detector IDs and are checked against the schema instead.
-DETECTOR_FAMILIES = {
-    "protocol", "movement", "combat", "progression", "inventory", "world", "availability",
-}
+DETECTOR_FAMILIES = SPEC_FAMILIES
 
 # Config key paths declared in the SCHEMAS.md config table; they share the dotted
 # family.subject shape with detector IDs but are schema keys, not detectors.
@@ -117,17 +129,90 @@ def check_todo_format() -> list[str]:
     return out
 
 
-def check_detector_ids() -> list[str]:
-    registry = (ROOT / "docs" / "DETECTORS.md").read_text(encoding="utf-8")
-    # Registered IDs are the first backticked token on rows of the ID tables.
-    registered: set[str] = set()
-    for m in re.finditer(r"^\| `([a-z]+\.[a-z_]+)` \|", registry, re.M):
-        registered.add(m.group(1))
-    # Also accept IDs explicitly written as `detectorId` values in SCHEMAS examples.
-    for m in re.finditer(r'"detectorId": "([a-z]+\.[a-z_]+)"',
-                         (ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8")):
-        registered.add(m.group(1))
+def _load_spec() -> list[dict]:
+    return yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))["detectors"]
 
+
+def spec_ids() -> set[str]:
+    return {d["id"] for d in _load_spec()}
+
+
+def check_spec() -> list[str]:
+    """Validate tools/detector_spec.yaml and the D-07 ceiling rule."""
+    try:
+        detectors = _load_spec()
+    except Exception as exc:  # noqa: BLE001
+        return [f"tools/detector_spec.yaml unparseable: {exc}"]
+
+    out = []
+    ids = [d["id"] for d in detectors]
+    if len(ids) != len(set(ids)):
+        dups = sorted({i for i in ids if ids.count(i) > 1})
+        out.append(f"duplicate detector ids in spec: {dups}")
+    for d in detectors:
+        did = d["id"]
+        if d.get("family") not in SPEC_FAMILIES:
+            out.append(f"{did}: bad family {d.get('family')}")
+        if d.get("ceiling") not in SPEC_CEILINGS:
+            out.append(f"{did}: bad ceiling {d.get('ceiling')}")
+        if d.get("default_mode") not in {"observe", "correct", "enforce"}:
+            out.append(f"{did}: bad default_mode {d.get('default_mode')}")
+        if not d.get("summary"):
+            out.append(f"{did}: missing summary")
+        inputs = d.get("inputs", [])
+        if not inputs:
+            out.append(f"{did}: no inputs")
+        for i in inputs:
+            if i.get("authority") not in SPEC_AUTHORITIES:
+                out.append(f"{did}: input {i.get('name')} bad authority {i.get('authority')}")
+            if i.get("role") not in SPEC_ROLES:
+                out.append(f"{did}: input {i.get('name')} bad role {i.get('role')}")
+        if not d.get("algorithm"):
+            out.append(f"{did}: missing algorithm")
+        if not d.get("state"):
+            out.append(f"{did}: missing state")
+        for f in d.get("fixtures", []):
+            if f not in ALLOWED_FIXTURES:
+                out.append(f"{did}: fixture {f} outside TEST_PLAN families")
+        # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
+        decision_client = [
+            i["name"] for i in inputs
+            if i.get("role") == "decision" and i.get("authority") == "client-declared"
+        ]
+        if d.get("ceiling") == "Hard" and decision_client and not d.get("hard_condition"):
+            out.append(
+                f"{did}: ceiling Hard with client-declared decision inputs "
+                f"({', '.join(decision_client)}) and no hard_condition (POLICY.md D-07/D-15)"
+            )
+        # Thresholds: unique keys, valid type, sane range, default within range.
+        keys = [t["key"] for t in d.get("thresholds", [])]
+        if len(keys) != len(set(keys)):
+            out.append(f"{did}: duplicate threshold keys")
+        for t in d.get("thresholds", []):
+            if t.get("type") not in SPEC_THRESHOLD_TYPES:
+                out.append(f"{did}: threshold {t.get('key')} bad type {t.get('type')}")
+            rng = t.get("range")
+            if t["type"] in {"int", "float"} and isinstance(rng, list):
+                if len(rng) != 2 or rng[0] > rng[1]:
+                    out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
+                elif isinstance(t.get("default"), (int, float)) and not (rng[0] <= t["default"] <= rng[1]):
+                    out.append(f"{did}: threshold {t.get('key')} default {t.get('default')} outside range {rng}")
+    return out
+
+
+def check_registry_sync() -> list[str]:
+    """docs/DETECTORS.md tables must match the rendered output from the spec."""
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "render_detectors.py"), "--check"],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    if proc.returncode != 0:
+        return [proc.stdout.strip() or proc.stderr.strip() or "registry is stale"]
+    return []
+
+
+def check_detector_ids() -> list[str]:
+    registered = spec_ids()
     out = []
     for p in MD_FILES:
         text = p.read_text(encoding="utf-8")
@@ -135,11 +220,19 @@ def check_detector_ids() -> list[str]:
             if tid not in registered:
                 out.append(f"{p.relative_to(ROOT)}: detector ID not in registry: {tid}")
 
-    # Every mode key in the example config must exist in the registry.
+    # Every mode key in the example config must exist in the spec.
     example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
     for mode_id in sorted(example.get("modes", {}).keys()):
         if mode_id not in registered:
             out.append(f"config example mode key not in registry: {mode_id}")
+    # Every threshold key in the generated config manifest must be declared in the spec.
+    manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
+    spec_by_id = {d["id"]: d for d in _load_spec()}
+    for entry in manifest["detectors"]:
+        declared = {t["key"] for t in spec_by_id[entry["detectorId"]].get("thresholds", [])}
+        for t in entry.get("thresholds", []):
+            if t["key"] not in declared:
+                out.append(f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec")
     return out
 
 
@@ -215,6 +308,8 @@ def main() -> int:
         "em dashes": check_em_dashes(),
         "links": check_links(),
         "TODO checkboxes": check_todo_format(),
+        "detector spec": check_spec(),
+        "registry sync": check_registry_sync(),
         "detector registry coverage": check_detector_ids(),
         "config example vs schema": check_config_example_keys(),
         "required docs": check_required_docs(),

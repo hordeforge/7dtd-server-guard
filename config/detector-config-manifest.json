@@ -1,0 +1,573 @@
+{
+  "manifestVersion": 1,
+  "detectors": [
+    {
+      "detectorId": "protocol.stage_order"
+    },
+    {
+      "detectorId": "protocol.entity_owner"
+    },
+    {
+      "detectorId": "protocol.permission"
+    },
+    {
+      "detectorId": "protocol.duplicate_session"
+    },
+    {
+      "detectorId": "protocol.malformed"
+    },
+    {
+      "detectorId": "protocol.flood",
+      "thresholds": [
+        {
+          "key": "burst",
+          "type": "int",
+          "range": [
+            1,
+            100000
+          ],
+          "default": 200,
+          "note": "placeholder until profiled"
+        },
+        {
+          "key": "refill_per_second",
+          "type": "int",
+          "range": [
+            1,
+            10000
+          ],
+          "default": 40,
+          "note": "placeholder"
+        },
+        {
+          "key": "global_cost_per_tick",
+          "type": "int",
+          "range": [
+            1,
+            100000
+          ],
+          "default": 2000,
+          "note": "placeholder"
+        }
+      ]
+    },
+    {
+      "detectorId": "movement.displacement",
+      "thresholds": [
+        {
+          "key": "max_speed_mps",
+          "type": "float",
+          "range": [
+            0.5,
+            100.0
+          ],
+          "default": 10.0,
+          "unit": "m/s",
+          "note": "placeholder; sprint band"
+        },
+        {
+          "key": "max_accel_mps2",
+          "type": "float",
+          "range": [
+            0.0,
+            100.0
+          ],
+          "default": 20.0,
+          "unit": "m/s2",
+          "note": "placeholder"
+        },
+        {
+          "key": "latency_window_ms",
+          "type": "int",
+          "range": [
+            0,
+            5000
+          ],
+          "default": 200,
+          "unit": "ms"
+        },
+        {
+          "key": "jitter_allowance_m",
+          "type": "float",
+          "range": [
+            0.0,
+            50.0
+          ],
+          "default": 1.0,
+          "unit": "m"
+        },
+        {
+          "key": "credit_cap_m",
+          "type": "float",
+          "range": [
+            0.0,
+            200.0
+          ],
+          "default": 20.0,
+          "unit": "m",
+          "note": "unused budget cap"
+        },
+        {
+          "key": "debt_grace_m",
+          "type": "float",
+          "range": [
+            0.0,
+            200.0
+          ],
+          "default": 10.0,
+          "unit": "m",
+          "note": "over-budget grace"
+        }
+      ]
+    },
+    {
+      "detectorId": "movement.flight",
+      "thresholds": [
+        {
+          "key": "hover_window_seconds",
+          "type": "int",
+          "range": [
+            1,
+            120
+          ],
+          "default": 10,
+          "unit": "s"
+        },
+        {
+          "key": "hover_tolerance_m",
+          "type": "float",
+          "range": [
+            0.0,
+            20.0
+          ],
+          "default": 3.0,
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "detectorId": "movement.vertical_accel"
+    },
+    {
+      "detectorId": "movement.noclip",
+      "thresholds": [
+        {
+          "key": "voxel_queries_per_tick_cap",
+          "type": "int",
+          "range": [
+            1,
+            4096
+          ],
+          "default": 256,
+          "note": "perf cap"
+        },
+        {
+          "key": "overlap_tolerance_m",
+          "type": "float",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "default": 0.25,
+          "unit": "m",
+          "note": "capsule skin"
+        }
+      ]
+    },
+    {
+      "detectorId": "movement.teleport_token"
+    },
+    {
+      "detectorId": "movement.vehicle",
+      "thresholds": [
+        {
+          "key": "envelope_validation_window_hours",
+          "type": "int",
+          "range": [
+            1,
+            720
+          ],
+          "default": 24,
+          "unit": "h",
+          "note": "fixture corpus before Strong"
+        }
+      ]
+    },
+    {
+      "detectorId": "movement.edge_distribution",
+      "thresholds": [
+        {
+          "key": "window_samples",
+          "type": "int",
+          "range": [
+            60,
+            10000
+          ],
+          "default": 600
+        },
+        {
+          "key": "tail_percentile",
+          "type": "float",
+          "range": [
+            0.5,
+            1.0
+          ],
+          "default": 0.95,
+          "note": "fraction treated as edge"
+        }
+      ]
+    },
+    {
+      "detectorId": "combat.cadence",
+      "thresholds": [
+        {
+          "key": "cadence_tolerance_ms",
+          "type": "int",
+          "range": [
+            0,
+            1000
+          ],
+          "default": 100,
+          "unit": "ms"
+        }
+      ]
+    },
+    {
+      "detectorId": "combat.held_item_ammo"
+    },
+    {
+      "detectorId": "combat.reach",
+      "thresholds": [
+        {
+          "key": "reach_tolerance_m",
+          "type": "float",
+          "range": [
+            0.0,
+            5.0
+          ],
+          "default": 0.5,
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "detectorId": "combat.damage",
+      "thresholds": [
+        {
+          "key": "damage_tolerance_percent",
+          "type": "float",
+          "range": [
+            0.0,
+            100.0
+          ],
+          "default": 20.0,
+          "unit": "%"
+        },
+        {
+          "key": "recompute_mode",
+          "type": "string",
+          "range": [
+            "bounds",
+            "exact"
+          ],
+          "default": "bounds"
+        }
+      ]
+    },
+    {
+      "detectorId": "combat.geometry"
+    },
+    {
+      "detectorId": "combat.state"
+    },
+    {
+      "detectorId": "combat.target_set"
+    },
+    {
+      "detectorId": "combat.aim",
+      "thresholds": [
+        {
+          "key": "window_samples",
+          "type": "int",
+          "range": [
+            60,
+            10000
+          ],
+          "default": 1200
+        },
+        {
+          "key": "snap_degrees_threshold",
+          "type": "float",
+          "range": [
+            0.0,
+            180.0
+          ],
+          "default": 45.0,
+          "unit": "deg"
+        },
+        {
+          "key": "min_reaction_time_ms",
+          "type": "int",
+          "range": [
+            0,
+            5000
+          ],
+          "default": 150,
+          "unit": "ms"
+        }
+      ]
+    },
+    {
+      "detectorId": "combat.acquisition"
+    },
+    {
+      "detectorId": "progression.xp_rate",
+      "thresholds": [
+        {
+          "key": "max_xp_per_tick",
+          "type": "int",
+          "range": [
+            1,
+            1000000
+          ],
+          "default": 5000,
+          "note": "placeholder"
+        },
+        {
+          "key": "max_xp_per_minute",
+          "type": "int",
+          "range": [
+            1,
+            100000000
+          ],
+          "default": 200000,
+          "note": "placeholder"
+        },
+        {
+          "key": "window_minutes",
+          "type": "int",
+          "range": [
+            1,
+            120
+          ],
+          "default": 5,
+          "unit": "min"
+        }
+      ]
+    },
+    {
+      "detectorId": "progression.skill_prereq"
+    },
+    {
+      "detectorId": "progression.health_stamina"
+    },
+    {
+      "detectorId": "inventory.delta",
+      "thresholds": [
+        {
+          "key": "max_unaccounted_delta",
+          "type": "int",
+          "range": [
+            1,
+            1000000
+          ],
+          "default": 1000,
+          "note": "placeholder, item count"
+        }
+      ]
+    },
+    {
+      "detectorId": "inventory.stack"
+    },
+    {
+      "detectorId": "inventory.craft"
+    },
+    {
+      "detectorId": "inventory.replay",
+      "thresholds": [
+        {
+          "key": "replay_cache_size",
+          "type": "int",
+          "range": [
+            64,
+            1000000
+          ],
+          "default": 10000
+        },
+        {
+          "key": "replay_window_seconds",
+          "type": "int",
+          "range": [
+            10,
+            86400
+          ],
+          "default": 600,
+          "unit": "s"
+        }
+      ]
+    },
+    {
+      "detectorId": "inventory.container_race"
+    },
+    {
+      "detectorId": "inventory.quality"
+    },
+    {
+      "detectorId": "inventory.trader"
+    },
+    {
+      "detectorId": "inventory.rollback",
+      "thresholds": [
+        {
+          "key": "reconcile_window_minutes",
+          "type": "int",
+          "range": [
+            1,
+            1440
+          ],
+          "default": 60,
+          "unit": "min"
+        }
+      ]
+    },
+    {
+      "detectorId": "world.block",
+      "thresholds": [
+        {
+          "key": "max_block_actions_per_minute",
+          "type": "int",
+          "range": [
+            1,
+            100000
+          ],
+          "default": 3000,
+          "note": "placeholder"
+        },
+        {
+          "key": "reach_tolerance_m",
+          "type": "float",
+          "range": [
+            0.0,
+            5.0
+          ],
+          "default": 0.5,
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "detectorId": "world.claim"
+    },
+    {
+      "detectorId": "world.wire"
+    },
+    {
+      "detectorId": "world.entity_spawn",
+      "thresholds": [
+        {
+          "key": "spawn_rate_per_minute",
+          "type": "int",
+          "range": [
+            1,
+            100000
+          ],
+          "default": 120,
+          "note": "placeholder"
+        }
+      ]
+    },
+    {
+      "detectorId": "world.explosion"
+    },
+    {
+      "detectorId": "world.budget",
+      "thresholds": [
+        {
+          "key": "max_actions_per_tick",
+          "type": "int",
+          "range": [
+            1,
+            100000
+          ],
+          "default": 500,
+          "note": "placeholder"
+        },
+        {
+          "key": "max_fan_out_per_request",
+          "type": "int",
+          "range": [
+            1,
+            1000000
+          ],
+          "default": 10000,
+          "note": "placeholder"
+        }
+      ]
+    },
+    {
+      "detectorId": "availability.cost",
+      "thresholds": [
+        {
+          "key": "tiny",
+          "type": "int",
+          "range": [
+            1,
+            1000
+          ],
+          "default": 1
+        },
+        {
+          "key": "play",
+          "type": "int",
+          "range": [
+            1,
+            1000
+          ],
+          "default": 2
+        },
+        {
+          "key": "state",
+          "type": "int",
+          "range": [
+            1,
+            1000
+          ],
+          "default": 5
+        },
+        {
+          "key": "expensive",
+          "type": "int",
+          "range": [
+            1,
+            1000
+          ],
+          "default": 20
+        }
+      ]
+    },
+    {
+      "detectorId": "availability.churn",
+      "thresholds": [
+        {
+          "key": "max_joins_per_minute",
+          "type": "int",
+          "range": [
+            1,
+            1000
+          ],
+          "default": 10
+        },
+        {
+          "key": "join_cooldown_seconds",
+          "type": "int",
+          "range": [
+            0,
+            3600
+          ],
+          "default": 30,
+          "unit": "s"
+        }
+      ]
+    }
+  ]
+}
