@@ -56,7 +56,8 @@ bug to fix in the same change.
 └── tools/
     ├── detector_spec.yaml     canonical detector spec (single source of truth)
     ├── render_detectors.py    renders DETECTORS.md and the config manifest from the spec
-    ├── doccheck.py            docs quality gate (em dashes, links, spec, schemas, sync)
+    ├── doccheck.py            docs quality gate (em dashes, links, spec, schemas, chain)
+    ├── evidence_check.py      evidence hash-chain verifier (make verify-evidence)
     ├── fixtures/              traces/, regression/, generators/ (empty until Phase 4)
     └── surface_inventory/     Phase 1 Mono.Cecil metadata probe (planned)
 ```

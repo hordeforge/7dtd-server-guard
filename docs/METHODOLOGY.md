@@ -158,6 +158,16 @@ inconsistent, so the checklist is mechanical:
 A change that touches none of the listed artifacts for its type is incomplete, even if
 `make check` passes.
 
+## 9. Release gating
+
+
+
+Each release gate (TEST_PLAN.md -> Release gates) must cite the evidence artifact that
+satisfies it: a calibration report, a labeling summary with kappa, the mutation score, the
+A/B report, the red-team report, a passing `tools/evidence_check.py` run over the release
+candidate's evidence directory, and the `make check` + Layer 1-4 CI run. A gate with no
+artifact is not closed.
+
 ## References
 
 - Wilson, *Probable inference, the law of succession, and statistical inference* (1927);
@@ -170,11 +180,3 @@ A change that touches none of the listed artifacts for its type is incomplete, e
   operators and kill criteria (section 5).
 - The workspace evidence loop: `../AGENTS.md` (baseline, one change, compare, soak).
 
-## 9. Release gating
-
-
-
-Each release gate (TEST_PLAN.md -> Release gates) must cite the evidence artifact that
-satisfies it: a calibration report, a labeling summary with kappa, the mutation score, the
-A/B report, the red-team report, and the `make check` + Layer 1-4 CI run. A gate with no
-artifact is not closed.

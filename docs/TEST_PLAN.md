@@ -29,7 +29,9 @@ Pure tests with an injected clock and seeded RNG; no wall clock and no real file
 a temp directory. Cover every branch of: movement, combat, inventory, and world ledgers;
 bounded windows; score decay; per-connection and global token buckets across cost classes;
 HMAC pseudonymization (key rotation, identity map); redaction and tombstones; hash chaining
-(segment close, rotation); strict versioned config (unknown-key and invalid-range rejection);
+(segment close, rotation; `tools/evidence_check.py` is the reference implementation of the
+canonical serialization and genesis); strict versioned config (unknown-key and invalid-range
+rejection);
 and the response policy (cooldowns, gates, dry-run diff).
 
 Exit: all modules covered; the layer is green in CI per change.

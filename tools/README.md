@@ -5,6 +5,9 @@
   contexts, fixtures. Edit this, never the generated files.
 - `render_detectors.py`: renders docs/DETECTORS.md tables and
   config/detector-config-manifest.json from the spec (`make detectors`).
+- `evidence_check.py`: verifies evidence hash chains (canonical serialization, genesis,
+  cross-segment links, tamper/truncation) with negative self-tests; the doccheck gate runs
+  it on the sample, and `make verify-evidence DIR=...` targets operator evidence dirs.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
   format, detector-spec validity (including the D-07 ceiling rule), registry sync, and
   config-example/schema/manifest cross-checks.
