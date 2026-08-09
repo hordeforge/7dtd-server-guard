@@ -127,9 +127,6 @@ def check_detector_ids() -> list[str]:
     for m in re.finditer(r'"detectorId": "([a-z]+\.[a-z_]+)"',
                          (ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8")):
         registered.add(m.group(1))
-    # Add config example mode keys (they must match the registry too).
-    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
-    registered |= set(example.get("modes", {}).keys())
 
     out = []
     for p in MD_FILES:
@@ -137,6 +134,12 @@ def check_detector_ids() -> list[str]:
         for tid in sorted(detector_ids_in(text)):
             if tid not in registered:
                 out.append(f"{p.relative_to(ROOT)}: detector ID not in registry: {tid}")
+
+    # Every mode key in the example config must exist in the registry.
+    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    for mode_id in sorted(example.get("modes", {}).keys()):
+        if mode_id not in registered:
+            out.append(f"config example mode key not in registry: {mode_id}")
     return out
 
 
