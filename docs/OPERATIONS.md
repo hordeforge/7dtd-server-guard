@@ -61,7 +61,41 @@ instructions for a shipped product.
    [PRIVACY.md](../PRIVACY.md) (tombstones preserve the chain; the audit log records the
    purge).
 
+## Console commands
+
+Required surface for the operator-facing workflows above; every command is permissioned
+(`console.permissionLevel` in [SCHEMAS.md](SCHEMAS.md)), audited via the audit log, and
+never prints secrets or raw identities (pseudonyms only).
+
+| Command | Purpose | Audited |
+|---|---|---|
+| `sg status` | Health report: per-detector state, faults, queue depth, drops, uptime | no |
+| `sg detector list` | Registry IDs with current mode, ceiling, and context list | no |
+| `sg detector set <id> <mode> [reason]` | Per-detector override; lowering is instant, raising requires the gates | yes |
+| `sg findings <entityId> [--since <h>]` | Review findings for one entity (pseudonym resolution only during review) | no |
+| `sg evidence export <path>` | Pseudonymous export of chained segments | yes |
+| `sg review <evidenceId> <disposition> [reason]` | Record appeal disposition; `benign`/`detector bug` export to the regression corpus | yes |
+| `sg dry-run <id>` | Show what *would* have happened in the target mode without changing mode | no |
+| `sg purge <evidenceId>` | Tombstone a record; requires a review disposition | yes |
+| `sg config reload` | Strict reload with the same validation as startup | yes |
+| `sg emergency-disable` / `sg emergency-enable` | Revert all detectors to observe / restore configured modes | yes |
+
+## Webhook alert payload
+
+The optional alert sink receives finding notifications off the game thread. Payloads carry
+evidence IDs only, never player identity:
+
+```json
+{ "type": "finding", "evidenceId": "9f2c...", "detectorId": "movement.displacement",
+  "severity": "strong", "mode": "observe", "utc": "2026-07-21T12:34:56.789Z" }
+```
+
+The webhook URL comes from `SERVERGUARD_WEBHOOK_URL` (SCHEMAS.md config), never a config
+file. Interception or spoofing of the endpoint is an in-scope report class
+([SECURITY.md](../SECURITY.md)).
+
 ## Upgrade and rollback
+
 
 - Upgrade path: stop the server, back up `ServerGuard/` (evidence, identity map, HMAC key,
   config), replace the DLL, run the config migration tool if the schema changed
