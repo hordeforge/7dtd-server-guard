@@ -40,7 +40,7 @@ instructions for a shipped product.
 
 | Incident | Immediate action | Follow-up |
 |---|---|---|
-| False hard-reject on a legal player | Note evidence ID; `sg override <detector> observe` for that detector; tell the player the override is in place | Export the trace to the regression corpus; fix ships with failing-then-passing trace |
+| False hard-reject on a legal player | Note evidence ID; `sg detector set <id> observe` for that detector; tell the player the override is in place | Export the trace to the regression corpus; fix ships with failing-then-passing trace |
 | Correction loop on one entity | The design auto-suspends corrections past the burst limit (ARCHITECTURE.md); verify the suspension in the health report | Review the detector's uncertainty windows and contexts |
 | Hook self-disables at runtime | Detector reverts to unavailable; confirm via health report | Check for a game update or co-patch change; re-run metadata-contract tests |
 | Evidence queue full / drops | Soft observations dropped first by design; check `serverguard.queue.*` metrics | Review flood config and evidence writer throughput |
