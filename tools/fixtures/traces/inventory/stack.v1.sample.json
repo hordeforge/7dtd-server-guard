@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "traceId": "inventory.stack.contract-v1",
+  "detectorId": "inventory.stack",
+  "seed": 74071,
+  "build": {"gameVersion": "V3.1.0-b14", "hookManifestHash": "UNVERIFIED"},
+  "mode": "observe",
+  "workBudget": {"maxEvents": 4, "maxStateEntries": 8, "maxWorkUnits": 32},
+  "cases": [
+    {
+      "name": "normal.at-stack-limit",
+      "class": "normal",
+      "events": [
+        {"sequence": 1, "tick": 100, "type": "inventory.transaction", "sessionEpoch": 1, "containerVersion": 7, "values": {"claimedDestinationQuantity": 50}, "authoritative": {"itemStackLimit": 50}}
+      ],
+      "expect": {"findingDetectorIds": [], "actions": [], "maxWorkUnits": 8}
+    },
+    {
+      "name": "violation.stack-overflow",
+      "class": "violation",
+      "events": [
+        {"sequence": 1, "tick": 200, "type": "inventory.transaction", "sessionEpoch": 2, "containerVersion": 11, "values": {"claimedDestinationQuantity": 100}, "authoritative": {"itemStackLimit": 50}}
+      ],
+      "expect": {"findingDetectorIds": ["inventory.stack"], "actions": [], "maxWorkUnits": 8}
+    }
+  ]
+}

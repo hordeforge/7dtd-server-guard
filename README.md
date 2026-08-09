@@ -45,7 +45,9 @@ Start at the [design contract index](docs/INDEX.md) for reading order and owners
 - [Threat model](docs/THREAT_MODEL.md)
 - [Architecture](docs/ARCHITECTURE.md) (components, hook policy, ledgers, budget, source layout)
 - [Schemas](docs/SCHEMAS.md) (config v1, evidence v1, hook manifest v1, metrics naming)
-- [Signal catalog](docs/SIGNALS.md)
+- [Validation primitives](docs/SIGNALS.md) (shared ledger, capability, geometry, and budget mechanics)
+- [Detector proposal incubator](docs/PROPOSALS.md) (non-binding ideas and promotion gate)
+- [Execution plan](docs/EXECUTION.md) (next evidence, primitive order, and first vertical slice)
 - [Research and constraints](docs/RESEARCH.md)
 - [Verification plan](docs/TEST_PLAN.md)
 - [Methodology](docs/METHODOLOGY.md) (calibration, labeling, mutation, A/B, red-team)
@@ -92,4 +94,3 @@ The detector spec, data schemas, and methodology are the design contract; see
 Research and design contract only. Phase 0 policy review is the blocking gate; the review
 checklist is in [TODO.md](TODO.md). Run `make check` for the docs quality gate. No
 enforcement code has been enabled.
-

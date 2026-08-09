@@ -13,6 +13,9 @@ validated by `make check`):
   validated against it.
 - `evidence.v1.sample.jsonl`: one record per type; a test vector for the EvidenceStore and
   the replay harness (TEST_PLAN.md Layer 4).
+- `replay-trace.v1.schema.json`: deterministic synthetic replay inputs, authoritative
+  decision state, expectations, and bounded-work declarations. Evidence records are output,
+  not replay input.
 
 Edit the schemas and the SCHEMAS.md table in the same change; doccheck enforces the
 cross-references.

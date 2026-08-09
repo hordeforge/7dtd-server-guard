@@ -9,6 +9,9 @@ Phases run mostly in order, but the dependencies below are the hard constraints;
 start its *design* work any time its inputs exist. Detector registry:
 [DETECTORS.md](docs/DETECTORS.md). Data contracts: [SCHEMAS.md](docs/SCHEMAS.md).
 Reasoning trail: [DECISIONS.md](docs/DECISIONS.md).
+Uncommitted detector ideas live in [PROPOSALS.md](docs/PROPOSALS.md); they do not enter a
+phase or receive a stable ID until its promotion gate is satisfied.
+The prioritized work order and first vertical slice are in [EXECUTION.md](docs/EXECUTION.md).
 
 ```text
 Phase 0 policy review (blocking gate for everything)
@@ -40,6 +43,10 @@ phase if Phase 1 finds no authoritative seam; the detector registry records the 
 - [x] Define severity vocabulary, evidence confidence, and operator override semantics (`docs/POLICY.md`).
 - [ ] Exit: policy reviewed before any enforcement code is written. (Docs drafted; human review pending.)
 
+Review results use the falsification exercise and disposition fields in
+[EXECUTION.md](docs/EXECUTION.md); a bare approval without attempted counterexamples does not
+close the gate.
+
 Review checklist for the Phase 0 exit (whoever reviews: tick each item or return the doc with
 the objection). The review is the gate; nothing in later phases starts until it passes.
 
@@ -49,7 +56,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 - [ ] Enforcement gates cannot be gamed by repeated copies of one root cause (POLICY.md -> Confidence and combination).
 - [ ] Privacy notice and retention schedule match what the evidence schemas actually store (PRIVACY.md vs SCHEMAS.md evidence v1).
 - [ ] Out-of-scope lists agree across THREAT_MODEL.md, SECURITY.md, README.md, and AGENTS.md.
-- [ ] The at-risk seams in TODO.md and SIGNALS.md name a Phase 1 action for each.
+- [ ] The at-risk seams in TODO.md and the detector spec name a Phase 1 action for each.
 - [ ] The Phase 1 exit criteria can be checked mechanically (hook manifest v1 in SCHEMAS.md is the machine-readable output).
 - [ ] Docs quality gate passes: `make check` is green.
 
@@ -69,11 +76,15 @@ the objection). The review is the gate; nothing in later phases starts until it 
 - [ ] Confirm which client values the vanilla server already validates or overwrites.
 - [ ] Classify every planned validator input as server-derived or client-declared; a
   client-declared input caps that validator below Hard.
-- [ ] Resolve the at-risk seams flagged in `docs/SIGNALS.md`: craft transactions, trader
+- [ ] Resolve the at-risk seams flagged in `tools/detector_spec.yaml`: craft transactions, trader
   pricing, and the second damage path (`NetPackageRangeCheckDamageEntity`).
 - [ ] Enumerate every server-side teleport origin (trader ejection, quests, respawn, console,
   game events, mods) for the teleport capability-token model.
 - [ ] Generate a build fingerprint and machine-readable hook manifest (hook manifest v1, [SCHEMAS.md](docs/SCHEMAS.md)).
+- [ ] Populate every hook-manifest field required by EXECUTION.md Phase 1 inventory contract,
+  including state visibility, reject capability, call rate, cost, co-patching, and fallback.
+- [ ] Review proposal-incubator candidates against the verified surface inventory; promote,
+  retain, or reject each with a recorded reason. Incubator entries do not block the phase exit.
 - [ ] Exit: every planned detector maps to a verified authoritative decision point or is deferred.
 
 ## Phase 2: scaffold and safe runtime
@@ -198,7 +209,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 
 ## Known at-risk seams
 
-Consolidated from [SIGNALS.md](docs/SIGNALS.md) and the phases above; revisit each when new
+Consolidated from the detector spec and the phases above; revisit each when new
 evidence lands:
 
 - **Craft transactions:** the V3.1.0 census confirms no craft/recipe/workstation-queue
@@ -213,7 +224,7 @@ evidence lands:
   `NetPackageRangeCheckDamageEntity` are both in the V3.1.0 census and must be hooked
   together; a validator on one path only protects nothing (Phase 6).
 - **Vehicle envelopes:** physics-master vehicles are client-simulated; reconstructed
-  terrain-aware limits stay Weak until validated, then Strong (SIGNALS.md → Movement).
+  terrain-aware limits stay Weak until validated, then Strong (DETECTORS.md -> Movement).
 - **Loadgen coverage:** the `7dtd-loadgen` golden set covers only movement, damage, and login;
   Phase 7 must extend it to container, trader, and craft traffic or the ledger phase cannot be
   exercised (Phase 7).
@@ -221,4 +232,3 @@ evidence lands:
   dumps (`il/netpackages-v3.1.0/`, `il/dedi-complete-v3.1.0/`) now exist, partially
   de-risking the delta, but Phase 1 still re-verifies the pinned V3.1.0 (b14) before any
   hook is written.
-

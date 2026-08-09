@@ -50,7 +50,7 @@ updates the owning document, not just this one:
 | 1 (publisher game bans) | POLICY.md → Action set |
 | 2 (notice and reasons) | PRIVACY.md; POLICY.md → Roles and appeals |
 | 3 (prefix/postfix over transpilers) | ARCHITECTURE.md → Hook policy |
-| 4 (statistical models) | POLICY.md → Severity; SIGNALS.md → Combat |
+| 4 (statistical models) | POLICY.md -> Severity; SIGNALS.md -> Behavioral residuals |
 | 5 (logging guidance) | ARCHITECTURE.md → Evidence model |
 | 6 (ModEvents surface) | ARCHITECTURE.md → Hook policy |
 | 7 (EAC types) | THREAT_MODEL.md → Out of scope; SECURITY.md → Out of scope |
@@ -126,4 +126,3 @@ inventory against the pinned build, unless noted otherwise.
 - `../AGENTS.md`: workspace EAC, runtime, build, and evidence constraints.
 
 These local files are regenerable metadata narratives. No game assembly is copied into this project.
-

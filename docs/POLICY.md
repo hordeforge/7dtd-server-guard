@@ -150,7 +150,7 @@ the fact.
 | Severity | Property of a signal: `Hard`, `Strong`, `Weak` | Severity |
 | Authority class | Whether a validator input is server-derived or client-declared, plus its role (observed or decision); a client-declared *decision* input caps the signal below `Hard` unless a hard condition documents complete server-side determination | Severity |
 | Ledger | Per-player bounded double-entry state for movement, combat, inventory, or world actions | ARCHITECTURE.md → Components |
-| Cause token | Typed, authorized server-origin cause for an inventory delta; calling-mod identity is recorded on every invocation | SIGNALS.md → Inventory; TODO.md → Phase 7 |
+| Cause token | Typed, authorized server-origin cause for an inventory delta; calling-mod identity is recorded on every invocation | SIGNALS.md -> Causal capabilities; TODO.md -> Phase 7 |
 | Evidence ID | Identifier on a finding, named in kick/quarantine/ban messages and webhook alerts | ARCHITECTURE.md → Evidence model |
 | Session epoch | Per-connection identity epoch separating live from stale state | ARCHITECTURE.md → Components |
 | Pseudonym epoch | HMAC key rotation boundary for evidence pseudonyms | PRIVACY.md → Retention schedule |

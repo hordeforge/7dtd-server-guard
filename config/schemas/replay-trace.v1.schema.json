@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Server Guard replay contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "traceId", "detectorId", "seed", "build", "mode", "workBudget", "cases"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "traceId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
+    "detectorId": {"type": "string", "pattern": "^[a-z]+\\.[a-z_]+$"},
+    "seed": {"type": "integer", "minimum": 0},
+    "build": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gameVersion", "hookManifestHash"],
+      "properties": {
+        "gameVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "hookManifestHash": {"type": "string", "pattern": "^(UNVERIFIED|[0-9a-f]{64})$"}
+      }
+    },
+    "mode": {"enum": ["observe"]},
+    "workBudget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["maxEvents", "maxStateEntries", "maxWorkUnits"],
+      "properties": {
+        "maxEvents": {"type": "integer", "minimum": 1, "maximum": 100000},
+        "maxStateEntries": {"type": "integer", "minimum": 1, "maximum": 100000},
+        "maxWorkUnits": {"type": "integer", "minimum": 1, "maximum": 1000000}
+      }
+    },
+    "cases": {
+      "type": "array", "minItems": 2,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "class", "events", "expect"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
+          "class": {"enum": ["normal", "violation"]},
+          "events": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["sequence", "tick", "type", "sessionEpoch", "containerVersion", "values", "authoritative"],
+              "properties": {
+                "sequence": {"type": "integer", "minimum": 1},
+                "tick": {"type": "integer", "minimum": 0},
+                "type": {"enum": ["inventory.transaction"]},
+                "sessionEpoch": {"type": "integer", "minimum": 1},
+                "containerVersion": {"type": "integer", "minimum": 0},
+                "values": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["claimedDestinationQuantity"],
+                  "properties": {"claimedDestinationQuantity": {"type": "integer", "minimum": 0}}
+                },
+                "authoritative": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["itemStackLimit"],
+                  "properties": {"itemStackLimit": {"type": "integer", "minimum": 1}}
+                }
+              }
+            }
+          },
+          "expect": {
+            "type": "object", "additionalProperties": false,
+            "required": ["findingDetectorIds", "actions", "maxWorkUnits"],
+            "properties": {
+              "findingDetectorIds": {"type": "array", "items": {"type": "string", "pattern": "^[a-z]+\\.[a-z_]+$"}},
+              "actions": {"type": "array", "maxItems": 0},
+              "maxWorkUnits": {"type": "integer", "minimum": 1, "maximum": 1000000}
+            }
+          }
+        }
+      }
+    }
+  }
+}

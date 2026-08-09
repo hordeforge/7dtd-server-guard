@@ -9,10 +9,10 @@
 5. Server availability under malformed, repeated, or adversarial requests.
 6. Evidence quality sufficient for a moderator to reproduce and review a decision.
 
-The table below maps each outcome to the signal families that protect it and the strongest
+The table below maps each outcome to the detector families that protect it and the strongest
 response those signals may justify alone:
 
-| Outcome | Signal families (SIGNALS.md) | Severity ceiling | Strongest response alone |
+| Outcome | Detector families (DETECTORS.md) | Severity ceiling | Strongest response alone |
 |---|---|---|---|
 | 1 Movement and combat fairness | Movement, Combat | Strong (Hard only where every decision input is server-authoritative) | `correct` (Hard); record/review otherwise |
 | 2 Conservation | Inventory and economy, Progression | Hard where authoritative, else Strong | `correct`; cause-token ledger |
@@ -39,7 +39,7 @@ Each adversary is implemented as at least one fixture in TEST_PLAN.md → Advers
 
 ## Attack scenarios
 
-Concrete narratives; each maps to an adversary above and a signal family in SIGNALS.md.
+Concrete narratives; each maps to an adversary above and a detector family in DETECTORS.md.
 
 | Scenario | Exploit | Signal and response |
 |---|---|---|
@@ -83,4 +83,3 @@ threshold increase.
 - Automatically proving aimbot, ESP, or wallhack use from behavioral coincidence.
 - Moderating ordinary chat content. Spam rate can be availability evidence; content policy is separate.
 - Protecting against a compromised host, malicious server admin, or malicious same-process DLL.
-

@@ -117,7 +117,7 @@ see note).
 - **Alternatives:** Whitelist mods and trust them silently (rejected: an over-broad or
   buggy cause call would blind the ledger invisibly); no API (rejected: would force
   false findings on modded servers).
-- **Consequence:** SIGNALS.md -> Inventory, TODO.md Phase 7 (first consumers CPM /
+- **Consequence:** SIGNALS.md -> Causal capabilities and Conservation ledger, TODO.md Phase 7 (first consumers CPM /
   ServerTools admin item grants), SCHEMAS.md `cause` record type, and TEST_PLAN.md
   admin/mod-origin fixtures.
 
@@ -129,7 +129,7 @@ see note).
 - **Alternatives:** Count floods toward kick gates (rejected: DoS victims and shared-IP
   households would be punished); only firewall-level protection (rejected: the game thread
   still needs defense in depth; THREAT_MODEL.md).
-- **Consequence:** SIGNALS.md -> Availability; POLICY.md action set; DETECTORS.md
+- **Consequence:** SIGNALS.md -> Cost and amplification budget; POLICY.md action set; DETECTORS.md
   `protocol.flood`, `availability.cost`, `availability.churn` rows.
 
 ## D-11: Bounded main-thread budget with drop-soft-first queues and a dedicated writer
@@ -154,7 +154,7 @@ see note).
 - **Alternatives:** Treat any client teleport package as a violation (rejected: stock
   rubber-banding after chunk stalls is legal play); require token for every delta (rejected:
   impossible without enumerating all origins).
-- **Consequence:** SIGNALS.md -> Movement; DETECTORS.md `movement.teleport_token` is Hard
+- **Consequence:** SIGNALS.md -> Causal capabilities; DETECTORS.md `movement.teleport_token` is Hard
   only after Phase 1 enumerates every origin; TEST_PLAN.md teleport fixture family.
 
 ## D-13: Both damage paths must be hooked together
@@ -164,7 +164,7 @@ see note).
   `NetPackageRangeCheckDamageEntity`; a validator on one path only protects nothing.
 - **Alternatives:** Hook the common post-damage sink only (rejected: the range-check path
   bypasses the sink; the at-risk seam list names it).
-- **Consequence:** RESEARCH.md open question, SIGNALS.md -> Combat, TODO.md Phase 6,
+- **Consequence:** RESEARCH.md open question, SIGNALS.md -> Correlation graph, TODO.md Phase 6,
   TEST_PLAN.md adversarial combat coverage.
 
 ## D-14: Scope exclusions are product boundaries, not convenience
@@ -189,7 +189,7 @@ see note).
   client-declared decision input is capped below `Hard` unless a `hard_condition` documents
   complete server-side determination.
 - **Alternatives:** Keep the unqualified rule "any client-declared input caps below Hard"
-  (rejected: it contradicted the progression rows in SIGNALS.md that are Hard by fully
+  (rejected: it contradicted registry entries that are Hard by fully
   server-side recomputation, and it misclassified `inventory.stack`, whose claimed stack
   is the observed quantity, not trusted input); treat observed inputs as trusted
   (rejected: the observed quantity must still be validated, it just does not set the
@@ -198,6 +198,35 @@ see note).
   spec (`tools/detector_spec.yaml`), and the doccheck gate all encode the two roles. The
   hard-condition carve-out is reserved for completeness-of-server-state cases (teleport
   origin enumeration, craft/trader seams) and is reviewed per detector.
+
+## D-16: Separate validation primitives, registered detectors, and proposals
+
+- **Status:** accepted.
+- **Decision:** SIGNALS.md owns reusable validation mechanics, the generated detector spec
+  owns committed detector contracts, and PROPOSALS.md holds non-binding ideas. A proposal
+  must pass a seam, authority, context, privacy, cost, and fixture gate before it receives a
+  stable detector ID.
+- **Alternatives:** keep a second prose detector catalog (rejected: it duplicated algorithms,
+  ceilings, contexts, and thresholds from the generated registry); add every plausible idea
+  directly to the registry (rejected: registry membership creates config, fixture, and phase
+  obligations before authority is known).
+- **Consequence:** New ideas begin in PROPOSALS.md. DETECTORS.md and
+  `tools/detector_spec.yaml` remain the only canonical detector list. Shared mechanics are
+  implemented once and referenced by detectors instead of copied per family.
+
+## D-17: Replay inputs and evidence outputs use separate contracts
+
+- **Status:** accepted.
+- **Decision:** replay-trace v1 represents synthetic input events, authoritative decision
+  state, work bounds, and expectations. Evidence v1 represents detector output. Replay
+  fixtures are observe-only and cannot assert gameplay actions.
+- **Alternatives:** reuse evidence JSONL as replay input (rejected: output findings do not
+  represent the pre-state, authoritative snapshot, or negative expectations a deterministic
+  replay needs); allow corrective expectations in early replay (rejected: it bypasses live
+  authority, legal-context, and co-patching gates).
+- **Consequence:** TEST_PLAN.md Layer 4, SCHEMAS.md, and the fixture layout use replay-trace v1.
+  `make exercise` checks a synthetic `inventory.stack` normal/violation vector while clearly
+  leaving the live hook and detector unimplemented.
 
 ## Decision process
 

@@ -38,6 +38,8 @@ REQUIRED_DOCS = [
     "docs/ARCHITECTURE.md",
     "docs/SCHEMAS.md",
     "docs/SIGNALS.md",
+    "docs/PROPOSALS.md",
+    "docs/EXECUTION.md",
     "docs/RESEARCH.md",
     "docs/TEST_PLAN.md",
     "docs/DECISIONS.md",
@@ -373,9 +375,18 @@ def _schema_validate(instance, schema, path="$") -> list[str]:
         for req in schema.get("required", []):
             if req not in instance:
                 errs.append(f"{path}: missing required key {req!r}")
-    if isinstance(instance, list) and "items" in schema:
-        for i, v in enumerate(instance):
-            errs += _schema_validate(v, schema["items"], f"{path}[{i}]")
+    if isinstance(instance, list):
+        if "minItems" in schema and len(instance) < schema["minItems"]:
+            errs.append(f"{path}: {len(instance)} items < minItems {schema['minItems']}")
+        if "maxItems" in schema and len(instance) > schema["maxItems"]:
+            errs.append(f"{path}: {len(instance)} items > maxItems {schema['maxItems']}")
+        if schema.get("uniqueItems"):
+            canonical = [json.dumps(v, sort_keys=True) for v in instance]
+            if len(canonical) != len(set(canonical)):
+                errs.append(f"{path}: array items are not unique")
+        if "items" in schema:
+            for i, v in enumerate(instance):
+                errs += _schema_validate(v, schema["items"], f"{path}[{i}]")
     return errs
 
 
@@ -390,6 +401,17 @@ def check_evidence_sample_chain() -> list[str]:
     return []
 
 
+def check_replay_contract() -> list[str]:
+    """The design-time vertical-slice vector must satisfy its semantic expectations."""
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "replay_contract_check.py")],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    if proc.returncode != 0:
+        return [proc.stdout.strip() or proc.stderr.strip() or "replay contract failed"]
+    return []
+
+
 def check_config_schemas() -> list[str]:
     """Validate the shipped JSON Schemas parse and the example config and generated
     manifest conform to them."""
@@ -401,6 +423,8 @@ def check_config_schemas() -> list[str]:
          ROOT / "config" / "detector-config-manifest.json"),
         (ROOT / "config" / "schemas" / "evidence.v1.schema.json",
          ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"),
+        (ROOT / "config" / "schemas" / "replay-trace.v1.schema.json",
+         ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json"),
     ]
     # A JSONL file is validated line by line (one record per line).
     jsonl_targets = {ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"}
@@ -489,6 +513,7 @@ def main() -> int:
         "config example vs schema": check_config_example_keys(),
         "config JSON schemas": check_config_schemas(),
         "evidence sample chain": check_evidence_sample_chain(),
+        "replay contract": check_replay_contract(),
         "folder structure": check_folder_structure(),
         "required docs": check_required_docs(),
     }

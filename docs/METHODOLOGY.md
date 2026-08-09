@@ -26,8 +26,9 @@ design consequence.
 From idea to enforcement, a detector passes through eight steps. Steps 1-3 may run in any
 order; 4-8 are gated:
 
-1. **Idea**: record the open question in RESEARCH.md (with the signal family and the
-   authority concern). If the idea is rejected, record why in DECISIONS.md.
+1. **Idea**: record the candidate and promotion evidence in PROPOSALS.md. Put stock-game
+   unknowns in RESEARCH.md. If the idea is rejected, keep the reason in PROPOSALS.md and
+   record policy or architecture consequences in DECISIONS.md.
 2. **Seam and authority**: Phase 1 verifies the candidate seam (the detector spec's `seam`
    field) against the pinned build and publishes each input's authority and role.
 3. **Spec**: add the detector to `tools/detector_spec.yaml` (id, family, phase, ceiling,
@@ -179,4 +180,3 @@ artifact is not closed.
 - Offutt and Untch, *Mutation 2000: Uniting the Orthogonal* (2001); mutation testing
   operators and kill criteria (section 5).
 - The workspace evidence loop: `../AGENTS.md` (baseline, one change, compare, soak).
-

@@ -10,8 +10,10 @@ bug to fix in the same change.
 |---|---|---|
 | [POLICY.md](POLICY.md) | Decision vocabulary: modes, actions, severity, confidence, gates, override, appeals, roles, glossary | `Hard`/`Strong`/`Weak`, mode ladder, action set, enforcement gates, appeal dispositions, glossary terms |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | What we protect, who attacks, attack scenarios, trust boundaries, out of scope | Protected outcomes, adversaries, trust boundaries, introduced attack surface |
-| [SIGNALS.md](SIGNALS.md) | Signal families and validation math per family; threshold placeholders | What each signal validates, authority notes, at-risk seams |
+| [SIGNALS.md](SIGNALS.md) | Shared validation primitives: capabilities, conservation, envelopes, state machines, geometry, cost, correlation | Reusable validation mechanics and composition rules |
 | [DETECTORS.md](DETECTORS.md) | Stable detector IDs and per-detector ceilings, contexts, lifecycle | The canonical detector list; config/evidence/fixtures reference IDs from here |
+| [PROPOSALS.md](PROPOSALS.md) | Non-binding detector idea incubator, promotion gate, rejected ideas | Candidate status only; never detector identity or enforcement behavior |
+| [EXECUTION.md](EXECUTION.md) | Prioritized delivery order, inventory contract, dependency behavior, first vertical slice, cross-repo scenarios | What work happens next and its executable exit evidence |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Runtime pipeline, components, hook policy, input authority, ledgers, performance budget, source layout | Component responsibilities, thread rules, hook policy, ledger math, budget |
 | [SCHEMAS.md](SCHEMAS.md) | Concrete data contracts: config v1, evidence v1, hook manifest v1, audit v1, health v1, metrics naming | Field-level schema, strict-versioning rules, config keys |
 | [RESEARCH.md](RESEARCH.md) | External findings, community survey, open questions, references | Where findings landed; open questions that block or downgrade detectors |
@@ -28,7 +30,9 @@ bug to fix in the same change.
 
 - **New contributor:** INDEX -> DETECTORS -> POLICY -> ARCHITECTURE -> SCHEMAS ->
   TEST_PLAN -> METHODOLOGY -> TODO.
-- **Adding a detector:** DETECTORS.md lifecycle (1. Phase 1 seam + authority, 2. registry
+- **Starting implementation:** EXECUTION -> TODO Phase 0/1 -> ARCHITECTURE -> TEST_PLAN.
+- **Proposing a detector:** start in PROPOSALS.md and satisfy its promotion gate. **Adding a
+  detector:** DETECTORS.md lifecycle (1. Phase 1 seam + authority, 2. registry
   row, 3. config keys + hook stub + evidence + metrics from SCHEMAS.md, 4. fixture family
   from TEST_PLAN.md Layer 4, 5. calibration in Phase 10). Record the decision in
   DECISIONS.md.
@@ -50,7 +54,7 @@ bug to fix in the same change.
 │   ├── server-guard.example.json     example config v1
 │   ├── detector-config-manifest.json generated per-detector thresholds (make detectors)
 │   └── schemas/                      JSON Schema: config.v1, config-manifest.v1
-├── docs/                      this design contract
+├── docs/                      indexed contracts plus the non-binding proposal incubator
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects
 └── tools/

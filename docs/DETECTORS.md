@@ -1,7 +1,7 @@
 # Detector registry
 
-This is the canonical registry of every planned detector. The signal catalog
-([SIGNALS.md](SIGNALS.md)) describes *what* to watch, the policy contract
+This is the canonical registry of every planned detector. The validation-primitives contract
+([SIGNALS.md](SIGNALS.md)) describes shared mechanics, the policy contract
 ([POLICY.md](POLICY.md)) defines *how* a signal may act, and this registry names each
 detector with a stable ID so config, evidence, fixtures, metrics, and phases all refer to
 the same thing. Add a detector to `tools/detector_spec.yaml` first and re-render
@@ -222,4 +222,4 @@ a hook is written. Declared per detector in `tools/detector_spec.yaml`.
 3. Phase 4+ fixture work adds the normal, violation, and context families from TEST_PLAN.md
    Layer 4 for every row; a detector is not considered for mode raise until its fixture set
    is green in observe mode.
-4. Phase 10 calibrates thresholds; placeholder thresholds in SIGNALS.md never gate anything.
+4. Phase 10 calibrates thresholds; placeholder thresholds in the detector spec never gate anything.

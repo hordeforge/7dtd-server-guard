@@ -75,6 +75,23 @@ computed after defaults are applied. The hash is written into every evidence rec
 health report, and the hook manifest so a finding can always be traced to the config that
 produced it.
 
+## Replay trace (replay-trace v1)
+
+Replay traces are deterministic detector inputs and expectations; they are not evidence
+records. The machine contract is `config/schemas/replay-trace.v1.schema.json`. A trace names
+its detector, seed, build and hook-manifest identity, observe-only mode, bounded work, cases,
+ordered synthetic events, authoritative decision state, and expected findings/actions.
+
+Design-time samples may use `UNVERIFIED` as the hook-manifest hash only before Phase 1 emits
+the pinned manifest. The Phase 4 harness skips `UNVERIFIED` and mismatched hashes rather than
+replaying them as build evidence. Shipped regression fixtures require a 64-character lowercase
+SHA-256 hash.
+
+The schema deliberately requires observe mode and an empty action list. Corrective behavior
+belongs to live integration tests after authority and legal-context gates pass. Replay events
+contain synthetic pseudonymous state only and must never carry platform identities, auth data,
+raw packets, chat, or copied server data.
+
 ## Evidence stream (evidence v1)
 
 Append-only JSONL, one object per line, hash-chained. Segment files
