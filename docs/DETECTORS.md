@@ -104,8 +104,9 @@ hooked for every combat detector; a validator on one path only protects nothing.
 1. Phase 1 records the authoritative seam, input authority classes, and hook manifest entry
    for a candidate detector. If no authoritative seam exists, the detector is deferred or
    demoted (for example `inventory.craft` -> `inventory.delta`).
-2. Phase 2 scaffolding generates the config keys, hook stub, evidence fields, and metrics
-   counters from this table.
+2. Phase 2 scaffolding generates the config keys, the per-detector config manifest
+   ([SCHEMAS.md](SCHEMAS.md) -> Per-detector config manifest), hook stub, evidence fields,
+   and metrics counters from this table.
 3. Phase 4+ fixture work adds the normal, violation, and context families from TEST_PLAN.md
    Layer 4 for every row; a detector is not considered for mode raise until its fixture set
    is green in observe mode.

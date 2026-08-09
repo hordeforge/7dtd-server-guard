@@ -132,7 +132,46 @@ Purge semantics: replacing a record with a `tombstone` keeps `chainPrev`/hash co
 the chain still verifies. Purge of a `finding` also purges its referenced `cause` records in
 the same operation, and the operation is written as an `audit` record.
 
+## Per-detector config manifest (config-manifest v1)
+
+The `thresholds.<detectorId>.<key>` keys are not free-form: each detector declares the
+threshold keys it accepts, with type, range, and a placeholder default, so the strict config
+loader can reject unknown or out-of-range threshold keys with the same rule as top-level
+keys. The manifest is emitted as part of Phase 2 scaffolding from the detector registry
+([DETECTORS.md](DETECTORS.md)) and is machine-checkable.
+
+```json
+{
+  "manifestVersion": 1,
+  "detectors": [
+    {
+      "detectorId": "movement.displacement",
+      "thresholds": [
+        { "key": "maxSpeedMps", "type": "float", "range": [0.5, 100.0], "default": 10.0 },
+        { "key": "latencyWindowMs", "type": "int", "range": [0, 5000], "default": 200 },
+        { "key": "jitterAllowanceM", "type": "float", "range": [0.0, 50.0], "default": 1.0 }
+      ]
+    },
+    {
+      "detectorId": "availability.cost",
+      "thresholds": [
+        { "key": "tiny", "type": "int", "range": [1, 1000], "default": 1 },
+        { "key": "play", "type": "int", "range": [1, 1000], "default": 2 },
+        { "key": "state", "type": "int", "range": [1, 1000], "default": 5 },
+        { "key": "expensive", "type": "int", "range": [1, 1000], "default": 20 }
+      ]
+    }
+  ]
+}
+```
+
+Rules: a detector with no declared thresholds has no `thresholds` keys; the config loader
+rejects any `thresholds.<id>.<key>` not declared here. Threshold defaults are placeholders
+until Phase 10 calibration; changing a default in the manifest is a config-schema change,
+not a code edit, and bumps the effective-config hash.
+
 ## Hook manifest (manifest v1)
+
 
 Machine-readable JSON emitted by Phase 1 tooling, consumed by `HookRegistry` at startup and
 by the metadata-contract tests (TEST_PLAN.md Layer 3). One entry per hook:
