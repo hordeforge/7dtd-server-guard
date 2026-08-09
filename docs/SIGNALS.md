@@ -149,12 +149,12 @@ enforcement gate.
 Cost classes define per-package weight in the token buckets (placeholders until profiled
 against the pinned build):
 
-| Class | Example packages | Weight |
+| Class | Example packages (V3.1.0 census names) | Weight |
 |---|---|---|
-| Tiny | ping, keep-alive, ack | 1 |
-| Play | position, rotation, action, use | 2 |
-| State | block change, inventory slot, container move | 5 |
-| Expensive | chunk request, map fetch, full inventory sync | 20 |
+| Tiny | `NetPackageInfo`, `NetPackageMeasure`, `NetPackageNetMetrics`, keep-alive/ack | 1 |
+| Play | `NetPackageEntityPosAndRot`, `NetPackageEntityRelPosAndRot`, `NetPackageEntityRotation`, `NetPackageDamageEntity`, `NetPackageItemReload` | 2 |
+| State | `NetPackageSetBlock`, `NetPackageInventoryTransactionRequest`, `NetPackageTileEntity`, `NetPackageWireActions`, `NetPackagePickupBlock` | 5 |
+| Expensive | `NetPackageChunk`, `NetPackageMapChunks`, `NetPackagePOIAround`, `NetPackageWorldInitInfoRequest`, `NetPackageInventoryDataRequest/Response`, `NetPackageDynamicMesh` | 20 |
 
 Each connection starts with a burst allowance and refills at a fixed per-second rate
 (per-class or global, configurable). Global load shedding caps the cross-connection

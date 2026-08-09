@@ -159,6 +159,56 @@ raise until its declared fixture set is green in observe mode.
 | `availability.cost` | X | X | X |  |  |  |  |  |
 | `availability.churn` | X | X |  | X |  |  |  |  |
 
+## Seam map (V3.1.0 census candidates)
+
+Candidate authoritative seams from `7dtd-research/il/netpackages-v3.1.0/INDEX.md`
+(193 types) and the protocol narratives; every seam is verified in Phase 1 before
+a hook is written. Declared per detector in `tools/detector_spec.yaml`.
+
+| Detector | Candidate seam |
+|---|---|
+| `protocol.stage_order` | NetPackage*.ProcessPackage stage gating (ConnectionManager.ProcessPackages) |
+| `protocol.entity_owner` | process-time ownership resolution; NetPackageOwnedEntitySync |
+| `protocol.permission` | NetPackageConsoleCmdClient/Server, NetPackageDebug, NetPackageModifyCVar execution seams |
+| `protocol.duplicate_session` | NetPackagePlayerLogin, NetPackageRequestToEnterGame handlers |
+| `protocol.malformed` | NetPackage read/decode boundaries across all census types |
+| `protocol.flood` | ConnectionManager.ProcessPackages intake; cost classes per package |
+| `movement.displacement` | NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics, NetPackagePlayerStats |
+| `movement.flight` | NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics |
+| `movement.vertical_accel` | NetPackageEntityVelocity, NetPackageEntityAddVelocity, NetPackageEntityPosAndRot |
+| `movement.noclip` | NetPackageEntityPosAndRot/RelPosAndRot plus voxel sweep |
+| `movement.teleport_token` | NetPackageEntityTeleport (client discontinuity), NetPackageTeleportPlayer (server origin) |
+| `movement.vehicle` | NetPackageVehicleDataSync, NetPackageVehiclePositions |
+| `movement.edge_distribution` | ledger output; no direct seam |
+| `combat.cadence` | NetPackageDamageEntity, NetPackageRangeCheckDamageEntity |
+| `combat.held_item_ammo` | NetPackageHoldingItem, NetPackageItemReload plus damage application seam |
+| `combat.reach` | damage application seam plus server geometry |
+| `combat.damage` | NetPackageDamageEntity, NetPackageRangeCheckDamageEntity |
+| `combat.geometry` | damage application seam plus voxel ray test |
+| `combat.state` | entity state at NetPackageDamageEntity/RangeCheck process |
+| `combat.target_set` | NetPackageDamageEntity correlation; NetPackageEntityAwardKillServer |
+| `combat.aim` | NetPackageEntityRotation (quantized rotation series) |
+| `combat.acquisition` | NetEntityDistribution / NetPackageEntitySpawn visibility history |
+| `progression.xp_rate` | NetPackageEntityAddExpServer |
+| `progression.skill_prereq` | NetPackageEntitySetSkillLevelServer |
+| `progression.health_stamina` | NetPackageEntityStatChanged, NetPackageEntityStatsBuff, NetPackageGameStats |
+| `inventory.delta` | NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag |
+| `inventory.stack` | NetPackageInventoryTransactionRequest, NetPackagePlayerInventory |
+| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.1.0 census) |
+| `inventory.replay` | NetPackageInventoryTransactionRequest (transaction idempotency) |
+| `inventory.container_race` | NetPackageInventoryTransactionRequest (atomic slot check) |
+| `inventory.quality` | NetPackageInventoryTransactionRequest, NetPackagePlayerInventory |
+| `inventory.trader` | NetPackageTraderData (sync only; no price/currency transaction package in the census) |
+| `inventory.rollback` | save epoch / NetPackagePlayerDisconnect / reconnect handlers |
+| `world.block` | NetPackageSetBlock, NetPackagePickupBlock, NetPackageAnimateBlock, NetPackageLandClaimRepair |
+| `world.claim` | NetPackageLockRequest/Response plus claim database at access seam |
+| `world.wire` | NetPackageWireActions, NetPackageWireToolActions |
+| `world.entity_spawn` | NetPackageRequestToSpawnEntity, NetPackageEntitySpawn/Response, NetPackageQuestEntitySpawn |
+| `world.explosion` | NetPackageExplosionInitiate, NetPackageExplosionClient |
+| `world.budget` | NetPackageMapChunks, NetPackagePOIAround, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes) |
+| `availability.cost` | package decode counters across all census types |
+| `availability.churn` | NetPackagePlayerLogin, NetPackageRequestToEnterGame |
+
 <!-- REGISTRY:END -->
 
 ## Lifecycle

@@ -91,6 +91,17 @@ def render_fixture_matrix(detectors: list[dict]) -> str:
     return "\n".join(out) + "\n"
 
 
+def render_seam_map(detectors: list[dict]) -> str:
+    out = ["## Seam map (V3.1.0 census candidates)\n",
+           "Candidate authoritative seams from `7dtd-research/il/netpackages-v3.1.0/INDEX.md`",
+           "(193 types) and the protocol narratives; every seam is verified in Phase 1 before",
+           "a hook is written. Declared per detector in `tools/detector_spec.yaml`.\n",
+           "| Detector | Candidate seam |", "|---|---|"]
+    for d in detectors:
+        out.append(f"| `{d['id']}` | {d.get('seam', 'TBD (Phase 1 inventory)')} |")
+    return "\n".join(out) + "\n"
+
+
 def render_registry(detectors: list[dict]) -> str:
     txt = REGISTRY.read_text(encoding="utf-8")
     start = txt.find("<!-- REGISTRY:START -->")
@@ -99,7 +110,8 @@ def render_registry(detectors: list[dict]) -> str:
         sys.exit("DETECTORS.md is missing REGISTRY:START/END markers; re-add them before rendering")
     tables = render_tables(detectors)
     matrix = render_fixture_matrix(detectors)
-    body = tables + "\n" + matrix
+    seam_map = render_seam_map(detectors)
+    body = tables + "\n" + matrix + "\n" + seam_map
     return txt[: start + len("<!-- REGISTRY:START -->")] + "\n\n" + body + "\n" + txt[end:]
 
 
