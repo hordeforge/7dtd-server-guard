@@ -120,7 +120,7 @@ raise until its declared fixture set is green in observe mode.
 | `protocol.stage_order` | X | X |  | X |  |  |  |  |
 | `protocol.entity_owner` | X | X |  |  |  | X |  |  |
 | `protocol.permission` | X | X |  |  |  | X |  |  |
-| `protocol.duplicate_session` |  |  |  | X |  |  |  | X |
+| `protocol.duplicate_session` | X | X |  | X |  |  |  | X |
 | `protocol.malformed` | X | X |  |  |  |  |  |  |
 | `protocol.flood` | X | X | X |  |  |  |  |  |
 | `movement.displacement` | X | X | X |  | X |  |  | X |
@@ -129,7 +129,7 @@ raise until its declared fixture set is green in observe mode.
 | `movement.noclip` | X | X | X |  |  |  |  |  |
 | `movement.teleport_token` | X | X | X |  | X |  |  |  |
 | `movement.vehicle` | X | X |  |  | X |  |  |  |
-| `movement.edge_distribution` | X |  | X |  |  |  |  |  |
+| `movement.edge_distribution` | X | X | X |  |  |  |  |  |
 | `combat.cadence` | X | X | X |  |  |  |  |  |
 | `combat.held_item_ammo` | X | X |  |  |  | X |  |  |
 | `combat.reach` | X | X | X |  |  |  |  |  |
@@ -137,8 +137,8 @@ raise until its declared fixture set is green in observe mode.
 | `combat.geometry` | X | X |  |  |  |  |  |  |
 | `combat.state` | X | X |  |  |  |  |  |  |
 | `combat.target_set` | X | X |  |  |  |  |  |  |
-| `combat.aim` | X |  |  |  |  |  |  |  |
-| `combat.acquisition` | X |  |  |  |  |  |  |  |
+| `combat.aim` | X | X |  |  |  |  |  |  |
+| `combat.acquisition` | X | X |  |  |  |  |  |  |
 | `progression.xp_rate` | X | X |  |  |  | X |  |  |
 | `progression.skill_prereq` | X | X |  |  |  | X |  |  |
 | `progression.health_stamina` | X | X |  |  |  |  |  |  |
@@ -149,7 +149,7 @@ raise until its declared fixture set is green in observe mode.
 | `inventory.container_race` | X | X |  |  |  |  |  | X |
 | `inventory.quality` | X | X |  |  |  |  |  |  |
 | `inventory.trader` | X | X |  |  |  |  | X |  |
-| `inventory.rollback` | X |  |  | X |  |  | X |  |
+| `inventory.rollback` | X | X |  | X |  |  | X |  |
 | `world.block` | X | X |  |  |  | X |  |  |
 | `world.claim` | X | X |  |  |  | X |  |  |
 | `world.wire` | X | X |  |  |  |  |  |  |

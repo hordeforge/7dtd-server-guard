@@ -91,7 +91,7 @@ detectors:
       Stale disconnects and reconnect grace windows are exemptions.
     state: "Live session map with epochs and grace timers."
     contexts: [stale-disconnect, reconnect-grace]
-    fixtures: [reconnect-duplicate-session, induced-finding]
+    fixtures: [normal, violation, reconnect-duplicate-session, induced-finding]
 
   - id: protocol.malformed
     seam: "package decode/deserialize boundary"
@@ -287,7 +287,7 @@ detectors:
       - {key: window_samples, type: int, range: [60, 10000], default: 600}
       - {key: tail_percentile, type: float, range: [0.5, 1.0], default: 0.95, note: "fraction treated as edge"}
     contexts: [all movement discontinuity contexts]
-    fixtures: [normal, latency-stall]
+    fixtures: [normal, violation, latency-stall]
 
   # ---------------------------------------------------------------- combat (phase 6)
   - id: combat.cadence
@@ -453,7 +453,7 @@ detectors:
       - {key: snap_degrees_threshold, type: float, range: [0.0, 180.0], default: 45.0, unit: deg}
       - {key: min_reaction_time_ms, type: int, range: [0, 5000], default: 150, unit: ms}
     contexts: [skilled-play, accessibility-device, interpolation, pve]
-    fixtures: [normal]
+    fixtures: [normal, violation]
 
   - id: combat.acquisition
     seam: "interest/visibility sync (TBD Phase 1 inventory)"
@@ -470,7 +470,7 @@ detectors:
       low priority; do not invest in Phase 1 seam hunting before the other families.
     state: "Per-player bounded interest history."
     contexts: [pve]
-    fixtures: [normal]
+    fixtures: [normal, violation]
 
   # ---------------------------------------------------------------- progression (phase 8)
   - id: progression.xp_rate
@@ -693,7 +693,7 @@ detectors:
     thresholds:
       - {key: reconcile_window_minutes, type: int, range: [1, 1440], default: 60, unit: min}
     contexts: [crash-recovery, disconnect, save-rollback]
-    fixtures: [rollback, normal, reconnect-duplicate-session]
+    fixtures: [normal, violation, rollback, reconnect-duplicate-session]
 
   # ---------------------------------------------------------------- world and entity (phase 8)
   - id: world.block

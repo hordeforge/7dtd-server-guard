@@ -173,9 +173,13 @@ def check_spec() -> list[str]:
             out.append(f"{did}: missing seam (Phase 1 probe target)")
         if not d.get("state"):
             out.append(f"{did}: missing state")
-        for f in d.get("fixtures", []):
+        fixtures = set(d.get("fixtures", []))
+        for f in fixtures:
             if f not in ALLOWED_FIXTURES:
                 out.append(f"{did}: fixture {f} outside TEST_PLAN families")
+        # TEST_PLAN.md Layer 4: every detector ships normal and violation traces.
+        if "normal" not in fixtures or "violation" not in fixtures:
+            out.append(f"{did}: must declare normal and violation fixtures (TEST_PLAN Layer 4)")
         # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
         decision_client = [
             i["name"] for i in inputs
