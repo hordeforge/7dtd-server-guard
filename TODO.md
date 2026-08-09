@@ -78,6 +78,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 ## Phase 2: scaffold and safe runtime
 
 - [ ] Add `net48` solution, `ServerGuard` source project, test project, `ModInfo.xml`, and Makefile.
+- [ ] Wire CI to run `make ci` (docs gate now; TEST_PLAN.md layers 1-4 on every change once tests exist).
 - [ ] Reference installed assemblies by configurable path; never copy game DLLs.
 - [ ] Implement strict versioned config with unknown-key and invalid-range rejection (config v1, [SCHEMAS.md](docs/SCHEMAS.md)); scaffold one stub per [DETECTORS.md](docs/DETECTORS.md) row.
 - [ ] Implement exact hook resolver, status report, fail-open startup, and clean unpatch/shutdown.

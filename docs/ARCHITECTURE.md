@@ -233,7 +233,42 @@ limit, that entity's corrective responses are suspended and the detector reports
 suppression. This prevents a borderline legitimate state (low-credibility signal, unlucky
 jitter pattern) from being hammered into a false-correction spiral.
 
+## Worked example: one finding end to end
+
+Trace a single stack-overflow attempt through the pipeline to show how the layers, thread
+rules, and evidence contract compose. The scenario: a client sends a container move that
+would place 100 units of an item whose authoritative stack limit is 50
+(`inventory.stack`, Hard, `correct` in `Correct` mode; [DETECTORS.md](DETECTORS.md)).
+
+1. `NetPackage` decode on the network thread: `ObservationAdapter` copies the claimed
+   item ID, claimed quantity, target container, and slot into a pooled readonly struct.
+   No allocation in steady state; no game state touched here.
+2. `ProtocolState` validates the package is legal at this connection stage and the target
+   container is owned or shared with this connection. A stage or ownership failure enqueues
+   a decision, it does not reject inline.
+3. The observation is enqueued to the main-thread action queue. `ContextSnapshot` adds
+   server tick, tick health, latency, and admin status at dequeue time, not at arrival
+   time, so context is authoritative.
+4. `InventoryLedger` checks the transition against the double-entry ledger and the item
+   definition's authoritative stack limit (server-derived input only). This is the
+   `inventory.stack` Hard invariant with complete authoritative inputs.
+5. `InvariantEngine` emits a finding: detector ID, severity `hard`, confidence 1.0 for the
+   invariant branch, mode `correct`, observed quantity 100, expected bound 50, cause event
+   IDs from the original package. The finding is enqueued to the evidence writer.
+6. `ResponseCoordinator` applies `correct`: the transition is rejected at the seam. The
+   per-entity correction cooldown (20 ticks default) is armed, so a follow-up attempt the
+   same tick cannot trigger a second correction.
+7. `EvidenceStore` writes the finding on the dedicated writer thread with the chain hash,
+   config hash, build ID, and hook manifest hash. A crash between steps 5 and 7 loses at
+   most the in-flight finding; the chain re-verifies on next start.
+
+The same skeleton covers a Strong observe-only detector (`movement.displacement`): steps 1-4
+identical, step 5 records severity `strong` with `suppressedReason` when context demands it,
+step 6 does nothing in `observe` mode, step 7 writes the record for review. The only
+differences are the ledger math, the severity/confidence, and what the response may do.
+
 ## Performance budget
+
 
 At 64 players, target under 0.5 ms p95 added main-thread time per tick, under 1 percent CPU
 on worker threads, bounded queues, and zero steady-state allocations in movement sampling.
