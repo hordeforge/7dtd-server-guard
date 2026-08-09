@@ -151,9 +151,11 @@ packet bodies, or inventory names supplied by a client into logs without normali
 ## Scoring and response
 
 - Hard invariant: a game rule with exact authoritative inputs. May reject in `Correct` mode.
-  Every validator declares the authority class of each input (server-derived or
-  client-declared); a validator that consumes any client-declared input is capped below Hard
-  (see [SIGNALS.md](SIGNALS.md)).
+  Every validator declares each input's authority class and role (observed or decision); a
+  detector with any client-declared *decision* input is capped below Hard unless a hard
+  condition documents complete server-side determination (see [POLICY.md](POLICY.md) →
+  Severity and DECISIONS.md D-15; enforced mechanically by `make check` against
+  `tools/detector_spec.yaml`).
 - Strong signal: near-impossible alone but still needs repeated evidence before kick.
 - Weak signal: behavioral anomaly. Never enforces alone.
 - Score decay is per detector. Independent categories combine; repeated copies of the same

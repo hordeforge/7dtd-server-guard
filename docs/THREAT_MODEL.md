@@ -14,7 +14,7 @@ response those signals may justify alone:
 
 | Outcome | Signal families (SIGNALS.md) | Severity ceiling | Strongest response alone |
 |---|---|---|---|
-| 1 Movement and combat fairness | Movement, Combat | Strong (Hard only where every input is server-authoritative) | `correct` (Hard); record/review otherwise |
+| 1 Movement and combat fairness | Movement, Combat | Strong (Hard only where every decision input is server-authoritative) | `correct` (Hard); record/review otherwise |
 | 2 Conservation | Inventory and economy, Progression | Hard where authoritative, else Strong | `correct`; cause-token ledger |
 | 3 World integrity | World and entity, Inventory | Hard for authorization | `correct`, `quarantine` |
 | 4 Account and permission integrity | Protocol, Progression | Hard | reject at execution point |
