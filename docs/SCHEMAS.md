@@ -83,6 +83,12 @@ Append-only JSONL, one object per line, hash-chained. Segment files
 canonical serialization (sorted keys, no whitespace) of the previous record in the chain;
 the first record of a segment chains to the last record of the previous segment.
 
+The machine form of this section is the JSON Schema at
+`config/schemas/evidence.v1.schema.json` with a one-record-per-type sample at
+`config/schemas/evidence.v1.sample.jsonl`; the doccheck gate validates the sample, and the
+EvidenceStore and replay harness validate against the schema. Machine `severity` values are
+lowercase (`hard`/`strong`/`weak`); POLICY.md terms are the display vocabulary.
+
 Record types and their extra fields:
 
 | `type` | Purpose | Extra fields |

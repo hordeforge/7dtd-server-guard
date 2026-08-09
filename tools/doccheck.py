@@ -318,6 +318,7 @@ def _schema_type_ok(instance, t) -> bool:
         "number": isinstance(instance, (int, float)) and not isinstance(instance, bool),
         "object": isinstance(instance, dict),
         "array": isinstance(instance, list),
+        "null": instance is None,
     }.get(t, False)
 
 
@@ -339,7 +340,20 @@ def _schema_validate(instance, schema, path="$") -> list[str]:
         errs.append(f"{path}: {instance} > maximum {schema['maximum']}")
     if "pattern" in schema and isinstance(instance, str) and not re.match(schema["pattern"], instance):
         errs.append(f"{path}: {instance!r} does not match {schema['pattern']}")
+    if "minLength" in schema and isinstance(instance, str) and len(instance) < schema["minLength"]:
+        errs.append(f"{path}: length {len(instance)} < minLength {schema['minLength']}")
+    if "maxLength" in schema and isinstance(instance, str) and len(instance) > schema["maxLength"]:
+        errs.append(f"{path}: length {len(instance)} > maxLength {schema['maxLength']}")
+    if "oneOf" in schema:
+        matched = [i for i, sub in enumerate(schema["oneOf"]) if not _schema_validate(instance, sub, path)]
+        if len(matched) != 1:
+            errs.append(f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)")
+        return errs
     if isinstance(instance, dict):
+        if "maxProperties" in schema and len(instance) > schema["maxProperties"]:
+            errs.append(f"{path}: {len(instance)} properties > maxProperties {schema['maxProperties']}")
+        if "minProperties" in schema and len(instance) < schema["minProperties"]:
+            errs.append(f"{path}: {len(instance)} properties < minProperties {schema['minProperties']}")
         props = schema.get("properties", {})
         pats = schema.get("patternProperties", {})
         for k, v in instance.items():
@@ -372,12 +386,27 @@ def check_config_schemas() -> list[str]:
          ROOT / "config" / "server-guard.example.json"),
         (ROOT / "config" / "schemas" / "config-manifest.v1.schema.json",
          ROOT / "config" / "detector-config-manifest.json"),
+        (ROOT / "config" / "schemas" / "evidence.v1.schema.json",
+         ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"),
     ]
+    # A JSONL file is validated line by line (one record per line).
+    jsonl_targets = {ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"}
     for schema_path, data_path in pairs:
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
         except Exception as exc:  # noqa: BLE001
             out.append(f"{schema_path.relative_to(ROOT)} unparseable: {exc}")
+            continue
+        if data_path in jsonl_targets:
+            try:
+                lines = [l for l in data_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+                data = [json.loads(l) for l in lines]
+            except Exception as exc:  # noqa: BLE001
+                out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
+                continue
+            for i, rec in enumerate(data, 1):
+                for err in _schema_validate(rec, schema):
+                    out.append(f"{data_path.relative_to(ROOT)} line {i}: {err}")
             continue
         try:
             data = json.loads(data_path.read_text(encoding="utf-8"))

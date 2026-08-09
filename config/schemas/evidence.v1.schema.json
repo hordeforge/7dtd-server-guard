@@ -1,0 +1,495 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://7dtd-server-guard/evidence.v1.schema.json",
+  "title": "Server Guard evidence stream v1",
+  "description": "Append-only JSONL records (docs/SCHEMAS.md -> Evidence stream). One object per line; chainPrev links the hash chain. Machine severity/mode values are lowercase; POLICY.md terms (Hard/Strong/Weak, Observe/Correct/Enforce) are the display vocabulary.",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "eventId",
+        "chainPrev",
+        "utc",
+        "monotonicMs",
+        "tick",
+        "buildId",
+        "configHash",
+        "sessionEpoch",
+        "pseudonym",
+        "detectorId",
+        "detectorVersion",
+        "severity",
+        "confidence",
+        "mode",
+        "context",
+        "observations",
+        "expected",
+        "actual",
+        "causeEventIds",
+        "action"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "chainPrev": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "type": {
+          "const": "finding"
+        },
+        "utc": {
+          "type": "string"
+        },
+        "monotonicMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tickHealthMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latencyMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buildId": {
+          "type": "string"
+        },
+        "configHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "hookManifestHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "sessionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pseudonym": {
+          "type": "string",
+          "pattern": "^p-[0-9a-f]{8,64}$"
+        },
+        "entityId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detectorId": {
+          "type": "string",
+          "pattern": "^[a-z]+\\.[a-z_]+$"
+        },
+        "detectorVersion": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "hard",
+            "strong",
+            "weak"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "mode": {
+          "enum": [
+            "observe",
+            "correct",
+            "enforce"
+          ]
+        },
+        "suppressedReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "type": "object",
+          "maxProperties": 8
+        },
+        "observations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "maxProperties": 4
+          }
+        },
+        "expected": {
+          "type": "object"
+        },
+        "actual": {
+          "type": "object"
+        },
+        "causeEventIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "action": {
+          "enum": [
+            "record",
+            "correct",
+            "quarantine",
+            "throttle",
+            "kick",
+            "temp-ban (local)"
+          ]
+        },
+        "disposition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "confirmed",
+            "benign",
+            "uncertain",
+            "detector-bug",
+            null
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "eventId",
+        "chainPrev",
+        "causeToken",
+        "modIdentity",
+        "sessionEpoch",
+        "pseudonym",
+        "causeEventIds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "chainPrev": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "type": {
+          "const": "cause"
+        },
+        "causeToken": {
+          "type": "string",
+          "pattern": "^[a-z0-9._-]{1,64}$"
+        },
+        "modIdentity": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "itemId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delta": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sessionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pseudonym": {
+          "type": "string",
+          "pattern": "^p-[0-9a-f]{8,64}$"
+        },
+        "causeEventIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "eventId",
+        "chainPrev",
+        "scope",
+        "savedAt",
+        "marker"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "chainPrev": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "type": {
+          "const": "reconciliation"
+        },
+        "scope": {
+          "enum": [
+            "player",
+            "container"
+          ]
+        },
+        "savedAt": {
+          "type": "string"
+        },
+        "replayedFrom": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "deltaItems": {
+          "type": "array",
+          "maxItems": 64
+        },
+        "marker": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "eventId",
+        "chainPrev",
+        "detectors",
+        "queueDepth",
+        "uptimeS"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "chainPrev": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "type": {
+          "const": "health"
+        },
+        "detectors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "detectorId",
+              "version",
+              "mode",
+              "hookResolved",
+              "state",
+              "faults",
+              "findingsThisEpoch"
+            ],
+            "properties": {
+              "detectorId": {
+                "type": "string",
+                "pattern": "^[a-z]+\\.[a-z_]+$"
+              },
+              "version": {
+                "type": "string"
+              },
+              "mode": {
+                "enum": [
+                  "observe",
+                  "correct",
+                  "enforce"
+                ]
+              },
+              "hookResolved": {
+                "type": "boolean"
+              },
+              "state": {
+                "enum": [
+                  "active",
+                  "self-disabled",
+                  "fail-open",
+                  "off"
+                ]
+              },
+              "faults": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "findingsThisEpoch": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "queueDepth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drops": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "faults": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uptimeS": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "epochs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "eventId",
+        "chainPrev",
+        "utc",
+        "actor",
+        "action",
+        "reason",
+        "evidenceIds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "chainPrev": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "type": {
+          "const": "audit"
+        },
+        "utc": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "action": {
+          "enum": [
+            "override",
+            "unban",
+            "purge",
+            "config-reload",
+            "emergency-disable",
+            "appeal-disposition"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "eventId",
+        "chainPrev",
+        "replaces",
+        "reasonClass",
+        "payloadHash"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "chainPrev": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        },
+        "type": {
+          "const": "tombstone"
+        },
+        "replaces": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "reasonClass": {
+          "enum": [
+            "operator-purge",
+            "erasure-request",
+            "retention-expiry"
+          ]
+        },
+        "payloadHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8,64}$"
+        }
+      }
+    }
+  ]
+}
