@@ -109,7 +109,10 @@ def check_links() -> list[str]:
         text = p.read_text(encoding="utf-8")
         for m in LINK_RE.finditer(text):
             target = m.group(1)
-            if target.startswith(("http://", "https://", "#", "mailto:")):
+            if target.startswith(("http://", "https://", "#", "mailto:", "../")):
+                # "../" links point at sibling repos (7dtd-research etc.), which
+                # do not exist in a single-repo checkout; they are audited by
+                # the cross-repo link pass, not by this per-repo gate.
                 continue
             path_part, _, anchor = target.partition("#")
             if not path_part:
