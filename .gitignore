@@ -12,3 +12,4 @@ evidence/
 *.dll
 *.key
 __pycache__/
+*.lock
