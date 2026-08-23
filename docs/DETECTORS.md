@@ -161,7 +161,7 @@ raise until its declared fixture set is green in observe mode.
 
 ## Seam map (V3.1.0 census candidates)
 
-Candidate authoritative seams from `7dtd-research/il/netpackages-v3.1.0/INDEX.md`
+Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.1.0/INDEX.md`
 (193 types) and the protocol narratives; every seam is verified in Phase 1 before
 a hook is written. Declared per detector in `tools/detector_spec.yaml`.
 

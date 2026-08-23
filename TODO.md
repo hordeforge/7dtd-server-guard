@@ -98,7 +98,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
   self-disable; a throwing hook must never break the connection's package loop.
 - [ ] Register lifecycle `ModEvents`; add per-session epochs and disconnect cleanup.
 - [ ] Add bounded main-thread action queue and dedicated evidence writer.
-- [ ] Add allocation and timing counters compatible with `7dtd-apm`.
+- [ ] Add allocation and timing counters compatible with `7dtd-server-apm`.
 - [ ] Ship observe-only defaults and an emergency global disable.
 - [ ] Exit: empty detector set loads/unloads and survives 64-client soak within overhead budget.
 
@@ -197,7 +197,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 ## Phase 10: calibration and release
 
 - [ ] Establish clean baselines by game build, server config, mods, biome, player count, and latency (calibration methodology, [docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Calibration).
-- [ ] Use `7dtd-loadgen` for deterministic legal/adversarial scenarios and `7dtd-apm` for A/B cost.
+- [ ] Use `7dtd-loadgen` for deterministic legal/adversarial scenarios and `7dtd-server-apm` for A/B cost.
 - [ ] Conduct shadow deployment, moderator labeling (labeling methodology), threshold tuning, and holdout evaluation ([docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Calibration and Labeling).
 - [ ] Publish precision, recall where labels permit, false-positive confidence interval, and blind spots.
 - [ ] Red-team malformed packets, races, evasion, identity churn, evidence injection, and resource abuse (red-team methodology, [docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Red-team).

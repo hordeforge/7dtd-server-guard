@@ -110,7 +110,7 @@ def check_links() -> list[str]:
         for m in LINK_RE.finditer(text):
             target = m.group(1)
             if target.startswith(("http://", "https://", "#", "mailto:", "../")):
-                # "../" links point at sibling repos (7dtd-research etc.), which
+                # "../" links point at sibling repos (7dtd-engine-research etc.), which
                 # do not exist in a single-repo checkout; they are audited by
                 # the cross-repo link pass, not by this per-repo gate.
                 continue

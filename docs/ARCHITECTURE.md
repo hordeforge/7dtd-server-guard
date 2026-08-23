@@ -287,5 +287,5 @@ swept no-clip voxel test (per-sample world queries; cap samples per tick and def
 and full-inventory diffing on inventory syncs (cap diffs per tick, diff lazily on change
 signal). The p95 gate is measured during a 64-player bloodmoon damage burst, not idle load.
 If a queue is full, drop soft observations first, increment a drop counter, and never block the
-game thread. Validate overhead with `7dtd-apm` under identical `7dtd-loadgen` scenarios.
+game thread. Validate overhead with `7dtd-server-apm` under identical `7dtd-loadgen` scenarios.
 

@@ -20,7 +20,7 @@ see note).
   (rejected: doubles Phase 1 surface-inventory work and the compatibility matrix is not yet
   built); version-dispatch at runtime (rejected: complexity with no measured need).
 - **Consequence:** Phase 1 must re-verify every surface against the pinned build; the V3.0.1
-  evidence in `7dtd-research` is directional only. Hook manifest v1 and build fingerprint
+  evidence in `7dtd-engine-research` is directional only. Hook manifest v1 and build fingerprint
   (SCHEMAS.md) make the pin checkable in CI.
 
 ## D-02: Observe -> Correct -> Enforce ladder, never automatic permanent ban

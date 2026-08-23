@@ -49,7 +49,7 @@ The surface probe emits one entry per candidate hook with:
 | Safety | Reject capability, co-patch behavior, failure behavior, fallback event |
 | Verification | Probe result, smoke-test result, reviewer, and manifest-entry hash |
 
-The probe studies installed stock assemblies in `../7dtd-research/` and emits only metadata
+The probe studies installed stock assemblies in `../7dtd-engine-research/` and emits only metadata
 facts here. It never copies game assemblies or reverse-engineering narratives into this repo.
 
 ### Questions resolved first
@@ -133,14 +133,14 @@ normal and violation contract now. It is a design/test vector, not proof of a li
 
 ## Cross-repository scenario contract
 
-`7dtd-loadgen` owns scenario execution; `7dtd-apm` owns overhead collection. This repository
+`7dtd-loadgen` owns scenario execution; `7dtd-server-apm` owns overhead collection. This repository
 owns the inputs and outputs it requires from them.
 
 | Producer | Required contract |
 |---|---|
 | `7dtd-loadgen` | Scenario ID/version, seed, pinned build, config/mod-stack hash, actor roles, event clock, expected legal/violation labels, disconnect-at-step controls |
 | Server Guard | Hook-manifest/config hashes, findings/actions, detector health, queue drops, per-detector work counters, replay export |
-| `7dtd-apm` | Host identity class, warmup/duration, p50/p95/p99 tick delta, worker CPU, allocations, memory, queue depth, disconnect count, confidence intervals |
+| `7dtd-server-apm` | Host identity class, warmup/duration, p50/p95/p99 tick delta, worker CPU, allocations, memory, queue depth, disconnect count, confidence intervals |
 
 First loadgen additions are container split/merge and concurrent moves, disconnect at every
 transaction step, save rollback, trader purchase, and craft start/cancel/complete. Performance

@@ -17,7 +17,7 @@ trail stays intact:
    (`make detectors`), then update the affected fixtures in TEST_PLAN.md Layer 4.
 5. Re-run `make check`; the doccheck gate fails if the contract is inconsistent.
 
-Boundary: stock-game reverse engineering lives in `../7dtd-research/`, never here; this
+Boundary: stock-game reverse engineering lives in `../7dtd-engine-research/`, never here; this
 repo cites the regenerable dumps (for example the V3.1.0 netpackage census) and records the
 design consequence.
 
@@ -110,7 +110,7 @@ trace stays legal), so every validator input is exercised.
 
 ## 6. A/B overhead methodology (Layer 6)
 
-- **Design**: paired runs with `7dtd-apm` on the same world, seed, bot count, duration,
+- **Design**: paired runs with `7dtd-server-apm` on the same world, seed, bot count, duration,
   collectors, and config, with and without Server Guard, after a warmup period, across at
   least three seeds. The budget gate is measured during a 64-client bloodmoon damage burst,
   not idle load.

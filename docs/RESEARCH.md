@@ -1,7 +1,7 @@
 # Research and constraints
 
 Research date: 2026-07-21. Local target: 7 Days to Die dedicated V3.1.0 (b14), Unity Mono
-(the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-research` narratives under Local
+(the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research` narratives under Local
 evidence now include **V3.1.0** regenerable dumps (`il/netpackages-v3.1.0/`,
 `il/dedi-complete-v3.1.0/`, `il/deep-v3.1.0/`, `il/loop-complete-v3.1.0/`); older narrative
 text was produced against V3.0.1 (b4). Phase 1 still re-verifies every surface against the
@@ -118,11 +118,11 @@ inventory against the pinned build, unless noted otherwise.
 
 ## Local evidence
 
-- `../../7dtd-research/il/netpackages-v3.1.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
-- `../../7dtd-research/docs/managers.md`: `ModEvents` inventory.
-- `../../7dtd-research/docs/inventories/netpackages.md`: network package inventory and complexity.
-- `../../7dtd-research/docs/protocol-frames.md`: decoded movement and damage frame structure.
-- `../../7dtd-research/docs/inventories/gaps.md`: EAC and authoritative method surface inventory.
+- `../../7dtd-engine-research/il/netpackages-v3.1.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
+- `../../7dtd-engine-research/docs/managers.md`: `ModEvents` inventory.
+- `../../7dtd-engine-research/docs/inventories/netpackages.md`: network package inventory and complexity.
+- `../../7dtd-engine-research/docs/protocol-frames.md`: decoded movement and damage frame structure.
+- `../../7dtd-engine-research/docs/inventories/gaps.md`: EAC and authoritative method surface inventory.
 - `../AGENTS.md`: workspace EAC, runtime, build, and evidence constraints.
 
 These local files are regenerable metadata narratives. No game assembly is copied into this project.

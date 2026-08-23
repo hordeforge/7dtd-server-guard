@@ -20,7 +20,7 @@ calibration.
 | 3 | Metadata contract | Exact type, full method signature, parameter role, return type, metadata token against the installed assembly; fail-open resolution and runtime fault guard | `HookRegistry`, build fingerprint, hook manifest | 1, 2 |
 | 4 | Offline replay | Deterministic replay of versioned synthetic traces; expected findings per trace | Detector set, evidence pipeline | 5, 6, 7, 8 |
 | 5 | Integration | Stock clients and `7dtd-loadgen` on a live server; observe first, then one corrective invariant per run; co-patching | Full pipeline | 4, 5, 6, 7, 8, 10 |
-| 6 | Performance A/B | Overhead vs baseline with `7dtd-apm` under identical scenarios | Hot path, evidence writer, queues | 2, 10 |
+| 6 | Performance A/B | Overhead vs baseline with `7dtd-server-apm` under identical scenarios | Hot path, evidence writer, queues | 2, 10 |
 | 7 | Human soak and review | Labeled long-run findings; label feedback into the regression corpus | Evidence, review tooling | 5, 9, 10 |
 
 ### 1. Unit tests
@@ -112,7 +112,7 @@ Exit: zero false corrections in the legal matrix; rejects coexist with the mod s
 
 ### 6. Performance A/B
 
-Paired runs with `7dtd-apm` on the same world, seed, bot count, duration, collectors, and
+Paired runs with `7dtd-server-apm` on the same world, seed, bot count, duration, collectors, and
 config, with and without Server Guard, after a warmup period and across at least three seeds.
 Measured during a 64-client bloodmoon damage burst, per the architecture budget: under 0.5 ms
 p95 added main-thread time per tick, under 1 percent worker CPU, bounded queues, zero

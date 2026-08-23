@@ -271,7 +271,7 @@ on shutdown (ARCHITECTURE.md -> Runtime lifecycle).
 
 ## Metrics naming
 
-Counters compatible with `7dtd-apm` collectors; Prometheus-style dotted names, no player
+Counters compatible with `7dtd-server-apm` collectors; Prometheus-style dotted names, no player
 identity labels:
 
 | Counter | Meaning |

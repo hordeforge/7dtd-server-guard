@@ -16,6 +16,10 @@ that a player uses an aimbot or wallhack from one event. A C# mod requires an EA
 server, so this project complements server administration on modded servers and is not
 a replacement for Easy Anti-Cheat.
 
+## 📚 Modding Best Practices
+
+See the canonical **[HordeForge 7DTD Modding Best Practices Guide](https://github.com/hordeforge/.github/blob/main/MODDING_BEST_PRACTICES.md)** for engine load order rules, EAC-off requirements, `ModInfo.xml` specifications, and V3.1.0 compatibility notes.
+
 ## Safety defaults
 
 Detector **mode** (Observe/Correct/Enforce) and the **actions** those modes may take are defined
