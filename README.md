@@ -1,7 +1,8 @@
-# 7DTD Server Guard
+# 🛡️ Landclaim (7DTD ServerGuard)
 
-Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die
-dedicated servers. The target is the locally installed dedicated V3.1.0 (b14) Mono server.
+> **Part of [HordeForge](https://github.com/hordeforge)** — High-Performance Systems Engineering for 7 Days to Die.
+
+Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die dedicated servers. The target is the locally installed dedicated V3.1.0 (b14) Mono server.
 
 ## Scope
 
