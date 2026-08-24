@@ -1,6 +1,6 @@
 # 🛡️ Landclaim (7DTD ServerGuard)
 
-> **Part of [HordeForge](https://github.com/hordeforge)** — High-Performance Systems Engineering for 7 Days to Die.
+> **Part of [HordeForge](https://github.com/hordeforge)** - High-Performance Systems Engineering for 7 Days to Die.
 
 ![CI](https://github.com/hordeforge/7dtd-server-guard/actions/workflows/ci.yml/badge.svg)
 ![license](https://img.shields.io/github/license/hordeforge/7dtd-server-guard)
