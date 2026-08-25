@@ -23,13 +23,18 @@ import re
 import subprocess
 import sys
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit("doccheck: missing dependency PyYAML; run `make setup` (or pip install -r requirements.txt)")
 
 import render_detectors
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MD_FILES = sorted(
-    p for p in ROOT.rglob("*.md") if ".git" not in p.parts and "third-party" not in p.parts
+    p
+    for p in ROOT.rglob("*.md")
+    if ".git" not in p.parts and ".venv" not in p.parts and "third-party" not in p.parts
 )
 
 REQUIRED_DOCS = [

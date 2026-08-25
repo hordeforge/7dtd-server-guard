@@ -14,7 +14,10 @@ import json
 import pathlib
 import sys
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit("render-detectors: missing dependency PyYAML; run `make setup` (or pip install -r requirements.txt)")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC = ROOT / "tools" / "detector_spec.yaml"

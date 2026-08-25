@@ -49,7 +49,7 @@ bug to fix in the same change.
 ├── AGENTS.md                  workspace and repo boundaries
 ├── README.md                  public entry point
 ├── TODO.md                    phase ledger
-├── Makefile                   docs quality gates (make check)
+├── Makefile                   setup, docs quality gate, tool tests (make help)
 ├── config/
 │   ├── server-guard.example.json     example config v1
 │   ├── detector-config-manifest.json generated per-detector thresholds (make detectors)

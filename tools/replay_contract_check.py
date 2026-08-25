@@ -6,7 +6,10 @@ import json
 import pathlib
 import sys
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit("replay-contract: missing dependency PyYAML; run `make setup` (or pip install -r requirements.txt)")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACE = ROOT / "tools/fixtures/traces/inventory/stack.v1.sample.json"

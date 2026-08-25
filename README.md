@@ -89,12 +89,21 @@ the ledger, exit criteria, and known at-risk seams live in [TODO.md](TODO.md).
 
 ## Development
 
+Bootstrap (once per clone; needs Python 3.9+):
+
+- `make setup`: create a project-local `.venv` and install the dependencies declared
+  in `requirements.txt`. Nothing is installed globally.
+
+Loop:
+
 - `make check`: docs quality gate (em dashes, internal links, detector spec and ceiling
   rule, registry sync, JSON Schemas, config/schema cross-references). Run before opening
   any change.
 - `make detectors`: re-render the detector registry tables and the per-detector config
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
-- `make ci`: CI entry point (docs gate now; build and test layers 1-4 land in Phase 2).
+- `make exercise`: validate the design-time replay contract against the sample trace.
+- `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzer.
+- `make ci`: everything CI runs, locally in one step (`check` + `test-tools`).
 
 The detector spec, data schemas, and methodology are the design contract; see
 [docs/INDEX.md](docs/INDEX.md) for who owns what.
