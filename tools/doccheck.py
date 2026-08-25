@@ -35,11 +35,7 @@ import re
 import subprocess
 import sys
 
-try:
-    import yaml
-except ModuleNotFoundError:
-    sys.exit("doccheck: missing dependency PyYAML; run `make setup` (or pip install -r requirements.txt)")
-
+# Spec loading (and its PyYAML dependency guard) lives in render_detectors.
 import render_detectors
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -71,8 +67,7 @@ REQUIRED_DOCS = [
     "AGENTS.md",
 ]
 
-SPEC_PATH = ROOT / "tools" / "detector_spec.yaml"
-SPEC_FAMILIES = {"protocol", "movement", "combat", "progression", "inventory", "world", "availability"}
+SPEC_FAMILIES = frozenset(render_detectors.FAMILY_ORDER)
 SPEC_CEILINGS = {"Hard", "Strong", "Weak"}
 SPEC_ROLES = {"observed", "decision"}
 SPEC_AUTHORITIES = {"server-derived", "client-declared"}
@@ -82,29 +77,37 @@ SPEC_THRESHOLD_TYPES = {"int", "float", "string"}
 ALLOWED_FIXTURES = frozenset(render_detectors.FIXTURE_FAMILIES)
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
-DETECTOR_ID_RE = re.compile(r"(?<![\w-])([a-z]+\.[a-z_]+)(?![\w-])")
 
-# Families that own detectors; tokens from these families must be in the registry.
-# Config key paths (actions.correct, evidence.dir, webhook.enabled, ...) are not
-# detector IDs and are checked against the schema instead.
-DETECTOR_FAMILIES = SPEC_FAMILIES
+# Key patterns declared in the SCHEMAS.md config table. They share the dotted
+# family.subject shape with detector IDs, but rows like actions.correct or
+# availability.burst are schema keys, not detectors; placeholder segments such
+# as <detectorId> stand in for per-detector subtrees.
+SCHEMA_TABLE_RE = re.compile(r"^\| `([^`]+)` \| (?:int|bool|string|number|number/string) \|", re.M)
 
-# Config key paths declared in the SCHEMAS.md config table; they share the dotted
-# family.subject shape with detector IDs but are schema keys, not detectors.
-CONFIG_SCHEMA_KEYS: frozenset[str] = frozenset(
-    m.group(1)
-    for m in re.finditer(
-        r"^\| `([a-z][a-z0-9.]+)` \| (?:int|bool|string|number|number/string) \|",
-        (ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8"),
-        re.M,
-    )
-)
-CHECKBOX_RE = re.compile(r"^\s*[-*] \[[ xX]\] .+", re.M)
+
+def _schema_table_keys() -> list[str]:
+    return SCHEMA_TABLE_RE.findall((ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8"))
+
+
+CONFIG_SCHEMA_KEYS: frozenset[str] = frozenset(_schema_table_keys())
 
 # Validator recursion bound. Shipped schemas nest at most ~6 levels; the cap only
 # bites on pathological documents (deeply nested or self-referential schemas), where
 # unbounded recursion would end in RecursionError instead of a reported error.
 MAX_SCHEMA_DEPTH = 100
+
+# Every shipped (JSON Schema, data) pair: gated by check_config_schemas and fuzzed
+# by tools/fuzz_schema_validate.py, which imports this list to stay in sync.
+SCHEMA_DATA_PAIRS = [
+    (ROOT / "config" / "schemas" / "config.v1.schema.json",
+     ROOT / "config" / "server-guard.example.json"),
+    (ROOT / "config" / "schemas" / "config-manifest.v1.schema.json",
+     ROOT / "config" / "detector-config-manifest.json"),
+    (ROOT / "config" / "schemas" / "evidence.v1.schema.json",
+     ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"),
+    (ROOT / "config" / "schemas" / "replay-trace.v1.schema.json",
+     ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json"),
+]
 
 
 def detector_ids_in(text: str) -> set[str]:
@@ -112,7 +115,7 @@ def detector_ids_in(text: str) -> set[str]:
     ids: set[str] = set()
     for m in re.finditer(r"`([a-z]+\.[a-z_]+)`", text):
         family = m.group(1).split(".", 1)[0]
-        if family in DETECTOR_FAMILIES and m.group(1) not in CONFIG_SCHEMA_KEYS:
+        if family in SPEC_FAMILIES and m.group(1) not in CONFIG_SCHEMA_KEYS:
             ids.add(m.group(1))
     return ids
 
@@ -137,7 +140,7 @@ def check_links() -> list[str]:
                 # do not exist in a single-repo checkout; they are audited by
                 # the cross-repo link pass, not by this per-repo gate.
                 continue
-            path_part, _, anchor = target.partition("#")
+            path_part = target.partition("#")[0]
             if not path_part:
                 continue
             resolved = (p.parent / path_part).resolve()
@@ -158,18 +161,14 @@ def check_todo_format() -> list[str]:
     return out
 
 
-def _load_spec() -> list[dict]:
-    return yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))["detectors"]
-
-
 def spec_ids() -> set[str]:
-    return {d["id"] for d in _load_spec()}
+    return {d["id"] for d in render_detectors.load_spec()}
 
 
 def check_spec() -> list[str]:
     """Validate tools/detector_spec.yaml and the D-07 ceiling rule."""
     try:
-        detectors = _load_spec()
+        detectors = render_detectors.load_spec()
     except Exception as exc:  # noqa: BLE001
         return [f"tools/detector_spec.yaml unparseable: {exc}"]
 
@@ -265,7 +264,7 @@ def check_detector_ids() -> list[str]:
     # Every threshold key in the generated config manifest must be declared in the spec,
     # and every example-config threshold key must exist in the generated manifest.
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
-    spec_by_id = {d["id"]: d for d in _load_spec()}
+    spec_by_id = {d["id"]: d for d in render_detectors.load_spec()}
     manifest_keys: dict[str, set[str]] = {}
     for entry in manifest["detectors"]:
         spec_entry = spec_by_id.get(entry["detectorId"])
@@ -281,7 +280,6 @@ def check_detector_ids() -> list[str]:
         for t in entry.get("thresholds", []):
             if t["key"] not in declared:
                 out.append(f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec")
-    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
     for did, keys in example.get("thresholds", {}).items():
         for key in keys:
             if key not in manifest_keys.get(did, set()):
@@ -301,43 +299,30 @@ def _flatten(obj: dict, prefix: str = "") -> list[str]:
     return out
 
 
-def _schema_key_patterns() -> list[str]:
-    schemas = (ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8")
-    return [
-        m.group(1)
-        for line in schemas.splitlines()
-        if line.startswith("| `")
-        for m in [re.match(r"\| `([^`]+)` \| (?:int|bool|string|number|number/string) \|", line)]
-        if m
-    ]
+def _schema_key_patterns() -> list[re.Pattern[str]]:
+    """Compiled matchers for the SCHEMAS.md config-table key patterns."""
+    return [_pattern_to_regex(pat) for pat in _schema_table_keys()]
 
 
-def _matches_schema(path: str, patterns: list[str]) -> bool:
-    """Match an example dotted path against schema key patterns.
+def _pattern_to_regex(pat: str) -> re.Pattern[str]:
+    """Compile a dotted schema key pattern; `<placeholder>` consumes one or more
+    segments (detector IDs are family.subject, so usually two)."""
+    parts = (
+        ".+" if seg.startswith("<") and seg.endswith(">") else re.escape(seg)
+        for seg in pat.split(".")
+    )
+    return re.compile(r"^" + r"\.".join(parts) + r"$")
 
-    A placeholder segment like <detectorId> consumes one or more path segments
-    (detector IDs are family.subject), so modes.<detectorId> matches
-    modes.protocol.stage_order but not modes.protocol.
+
+def _matches_schema(path: str, patterns: list[re.Pattern[str]]) -> bool:
+    """Match an example dotted path against compiled schema key patterns.
+
+    A placeholder segment like <detectorId> consumes one or more dotted
+    segments, so modes.<detectorId> matches modes.inventory.stack but not
+    modes itself, and thresholds.<detectorId>.<key> matches
+    thresholds.inventory.stack.stage_order.
     """
-    segs = path.split(".")
-    for pat in patterns:
-        psegs = pat.split(".")
-        fixed = []
-        placeholders = 0
-        for ps in psegs:
-            if ps.startswith("<") and ps.endswith(">"):
-                placeholders += 1
-            else:
-                fixed.append(ps)
-        if segs[: len(fixed)] != fixed:
-            continue
-        remaining = len(segs) - len(fixed)
-        if placeholders == 0:
-            if remaining == 0:
-                return True
-        elif remaining >= placeholders:
-            return True
-    return False
+    return any(p.match(path) for p in patterns)
 
 
 def _schema_type_ok(instance, t) -> bool:
@@ -446,28 +431,17 @@ def check_config_schemas() -> list[str]:
     """Validate the shipped JSON Schemas parse and the example config and generated
     manifest conform to them."""
     out = []
-    pairs = [
-        (ROOT / "config" / "schemas" / "config.v1.schema.json",
-         ROOT / "config" / "server-guard.example.json"),
-        (ROOT / "config" / "schemas" / "config-manifest.v1.schema.json",
-         ROOT / "config" / "detector-config-manifest.json"),
-        (ROOT / "config" / "schemas" / "evidence.v1.schema.json",
-         ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"),
-        (ROOT / "config" / "schemas" / "replay-trace.v1.schema.json",
-         ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json"),
-    ]
-    # A JSONL file is validated line by line (one record per line).
-    jsonl_targets = {ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"}
-    for schema_path, data_path in pairs:
+    # A JSONL data file is validated line by line (one record per line).
+    for schema_path, data_path in SCHEMA_DATA_PAIRS:
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
         except Exception as exc:  # noqa: BLE001
             out.append(f"{schema_path.relative_to(ROOT)} unparseable: {exc}")
             continue
-        if data_path in jsonl_targets:
+        if data_path.suffix == ".jsonl":
             try:
-                lines = [l for l in data_path.read_text(encoding="utf-8").splitlines() if l.strip()]
-                data = [json.loads(l) for l in lines]
+                lines = [ln for ln in data_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                data = [json.loads(ln) for ln in lines]
             except Exception as exc:  # noqa: BLE001
                 out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
                 continue

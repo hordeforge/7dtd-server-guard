@@ -34,15 +34,9 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec  # noqa: E402
+from fuzz_common import InvariantBroken, Mutator  # noqa: E402
 
 SAMPLE = ec.ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
-
-WEIRD_STRINGS = [
-    "", " ", "\x00", "\n", "\r\n", "0" * 64, "Z" * 65, "g" * 64,
-    "0" * 63, "ffff", "Ünïcödé", "‮rtl", "\udcff", "%s%s%n", "../../etc/passwd",
-    "-" * 4096, "\\u0000", "\"'", "𝟘" * 70,
-]
-NUMBERS = [0, 1, -1, 2**31, -(2**31), 2**63, 10**400, 3.14, float("inf"), -0.0]
 
 
 def seed_records() -> list[dict]:
@@ -56,37 +50,6 @@ def seed_records() -> list[dict]:
     second = {"schemaVersion": 1, "type": "kill", "eventId": "fuzz-tail",
               "chainPrev": ec.record_hash(first)}
     return recs + [first, second]
-
-
-def mutate_value(rng: random.Random, v):
-    roll = rng.random()
-    if roll < 0.25:
-        return rng.choice([None, True, False, [], {}, rng.choice(NUMBERS)])
-    if roll < 0.45:
-        return rng.choice(WEIRD_STRINGS)
-    if roll < 0.60 and isinstance(v, str) and v:
-        i = rng.randrange(len(v))
-        return v[:i]  # truncation
-    if roll < 0.72:
-        return rng.choice(NUMBERS)
-    if roll < 0.84:
-        return {"nested": [{"deeper": v}]}
-    if roll < 0.92:
-        return "".join(rng.choice(string.printable) for _ in range(rng.randrange(1, 48)))
-    return v
-
-
-def mutate_record(rng: random.Random, rec: dict) -> dict:
-    out = dict(rec)
-    action = rng.random()
-    if action < 0.15 and out:
-        del out[rng.choice(sorted(out))]  # drop required field
-    elif action < 0.30:
-        out["extra_" + str(rng.randrange(8))] = mutate_value(rng, None)
-    else:
-        key = rng.choice(sorted(out))
-        out[key] = mutate_value(rng, out[key])
-    return out
 
 
 def mutate_line_bytes(rng: random.Random, line: bytes) -> bytes:
@@ -105,10 +68,6 @@ def mutate_line_bytes(rng: random.Random, line: bytes) -> bytes:
     if roll < 0.50:
         return b"null\n"
     return line
-
-
-class InvariantBroken(AssertionError):
-    pass
 
 
 def check_load_records(tmp: pathlib.Path, lines: list[bytes]) -> int:
@@ -173,7 +132,7 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=0x5EED)
     args = ap.parse_args()
     rng = random.Random(args.seed)
-
+    mut = Mutator(rng, max_depth=1)  # record-level surgery, values replaced whole
     seeds = seed_records()
     stats = {"t1_records": 0, "t1_rejected": 0, "t2_runs": 0, "clean_chain_ok": False}
 
@@ -185,7 +144,7 @@ def main() -> int:
             n_lines = rng.randrange(1, 6)
             lines = []
             for _ in range(n_lines):
-                rec = mutate_record(rng, rng.choice(seeds))
+                rec = mut.mutate(rng.choice(seeds))
                 raw = json.dumps(rec)
                 lines.append(mutate_line_bytes(rng, raw.encode("utf-8")))
             try:
@@ -201,8 +160,8 @@ def main() -> int:
 
         # target 2: directory-level verification incl. index
         for _ in range(args.iterations):
-            seg_a = [mutate_record(rng, rng.choice(seeds)) for _ in range(rng.randrange(1, 4))]
-            seg_b = [mutate_record(rng, rng.choice(seeds)) for _ in range(rng.randrange(1, 4))]
+            seg_a = [mut.mutate(rng.choice(seeds)) for _ in range(rng.randrange(1, 4))]
+            seg_b = [mut.mutate(rng.choice(seeds)) for _ in range(rng.randrange(1, 4))]
             files = {
                 "evidence-1.jsonl": ("\n".join(json.dumps(r) for r in seg_a)).encode("utf-8"),
                 "evidence-2.jsonl": ("\n".join(json.dumps(r) for r in seg_b)).encode("utf-8"),
@@ -213,7 +172,7 @@ def main() -> int:
             if rng.random() < 0.7:
                 idx = dict(VALID_INDEX)
                 if rng.random() < 0.6:
-                    idx["segments"] = mutate_value(rng, [{"file": "evidence-1.jsonl"}])
+                    idx["segments"] = mut.value([{"file": "evidence-1.jsonl"}])
                 index = json.dumps(idx).encode("utf-8")
                 if rng.random() < 0.3:
                     index = mutate_line_bytes(rng, index)

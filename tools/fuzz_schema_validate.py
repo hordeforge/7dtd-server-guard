@@ -31,41 +31,22 @@ import argparse
 import json
 import pathlib
 import random
-import string
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc  # noqa: E402
+from fuzz_common import InvariantBroken, Mutator, nested  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-
-PAIRS = [
-    (ROOT / "config/schemas/config.v1.schema.json",
-     ROOT / "config/server-guard.example.json"),
-    (ROOT / "config/schemas/config-manifest.v1.schema.json",
-     ROOT / "config/detector-config-manifest.json"),
-    (ROOT / "config/schemas/evidence.v1.schema.json",
-     ROOT / "config/schemas/evidence.v1.sample.jsonl"),
-    (ROOT / "config/schemas/replay-trace.v1.schema.json",
-     ROOT / "tools/fixtures/traces/inventory/stack.v1.sample.json"),
-]
-
-WEIRD_STRINGS = ["", " ", "\x00", "\n", "0" * 300, "Ünïcödé", "%s%n", "-1",
-                 "../../etc/passwd", "\\u0000", "\"'", "𝟘" * 40]
-NUMBERS = [0, 1, -1, 2**31, -(2**31), 2**63, 10**400, 3.14, -0.0]
-
-
-class InvariantBroken(AssertionError):
-    pass
 
 
 def load_pairs() -> list[tuple[str, dict, list]]:
     out = []
-    for schema_path, data_path in PAIRS:
+    for schema_path, data_path in dc.SCHEMA_DATA_PAIRS:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         text = data_path.read_text(encoding="utf-8")
         if data_path.suffix == ".jsonl":
-            instances = [json.loads(l) for l in text.splitlines() if l.strip()]
+            instances = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
         else:
             instances = [json.loads(text)]
         name = f"{schema_path.name} vs {data_path.name}"
@@ -75,47 +56,6 @@ def load_pairs() -> list[tuple[str, dict, list]]:
                 raise InvariantBroken(f"pristine shipped pair {name} reports errors: {errs}")
         out.append((name, schema, instances))
     return out
-
-
-def scalar(rng: random.Random, v):
-    roll = rng.random()
-    if roll < 0.22:
-        return rng.choice([None, True, False, [], {}, rng.choice(NUMBERS)])
-    if roll < 0.42:
-        return rng.choice(WEIRD_STRINGS)
-    if roll < 0.54 and isinstance(v, str) and v:
-        i = rng.randrange(len(v))
-        return v[:i]  # truncation
-    if roll < 0.66:
-        return rng.choice(NUMBERS)
-    if roll < 0.76:
-        return [{"nested": [{"deeper": v}]}]  # unexpected structure under typed slot
-    if roll < 0.86:
-        return "".join(rng.choice(string.printable) for _ in range(rng.randrange(1, 32)))
-    return v
-
-
-def mutate(rng: random.Random, v, depth: int = 0):
-    """Structure-aware mutation of a JSON value; recurses into containers."""
-    if depth < 3 and isinstance(v, dict) and v:
-        roll = rng.random()
-        if roll < 0.15:
-            out = dict(v)
-            del out[rng.choice(sorted(out))]  # drop required field
-            return out
-        if roll < 0.25:
-            return {**v, rng.choice(["extra", "", "\x00", "a" * 200]): scalar(rng, None)}
-        key = rng.choice(sorted(v))
-        return {**v, key: mutate(rng, v[key], depth + 1)}
-    if depth < 3 and isinstance(v, list) and v:
-        out = list(v)
-        i = rng.randrange(len(out))
-        if rng.random() < 0.7:
-            out[i] = mutate(rng, out[i], depth + 1)
-        else:
-            out.insert(i, scalar(rng, None))
-        return out
-    return scalar(rng, v)
 
 
 def check_totality(schema, instance):
@@ -128,7 +68,7 @@ def check_totality(schema, instance):
     return errs
 
 
-def check_sensitivity(name: str, schema: dict, instance):
+def check_sensitivity(rng: random.Random, name: str, schema: dict, instance):
     """Deleting a required top-level key from a valid instance must be caught."""
     required = schema.get("required") or []
     if not required or not isinstance(instance, dict):
@@ -138,16 +78,6 @@ def check_sensitivity(name: str, schema: dict, instance):
     if not dc._schema_validate(bad, schema):
         raise InvariantBroken(f"{name}: deleting required key was accepted")
     return True
-
-
-def nested_list(depth: int) -> list:
-    node: list = []
-    inner = node
-    for _ in range(depth):
-        nxt: list = []
-        inner.append(nxt)
-        inner = nxt
-    return node
 
 
 def check_deep_nesting() -> None:
@@ -168,11 +98,11 @@ def check_deep_nesting() -> None:
         cur["a"] = {}
         cur = cur["a"]
     cases = [
-        ("cyclic schema", cyclic, nested_list(4 * dc.MAX_SCHEMA_DEPTH)),
+        ("cyclic schema", cyclic, nested(4 * dc.MAX_SCHEMA_DEPTH)),
         ("deep schema", deep, deep_inst),
         ("shallow schema", {"type": "array", "items": {"type": "integer"}},
-         nested_list(dc.MAX_SCHEMA_DEPTH + 1)),
-        ("at the bound", cyclic, nested_list(dc.MAX_SCHEMA_DEPTH)),
+         nested(dc.MAX_SCHEMA_DEPTH + 1)),
+        ("at the bound", cyclic, nested(dc.MAX_SCHEMA_DEPTH)),
     ]
     for name, schema, inst in cases:
         try:
@@ -199,8 +129,8 @@ def main() -> int:
     ap.add_argument("--iterations", type=int, default=1500)
     ap.add_argument("--seed", type=int, default=0x5EED)
     args = ap.parse_args()
-    global rng
     rng = random.Random(args.seed)
+    mut = Mutator(rng)
 
     try:
         pairs = load_pairs()
@@ -208,7 +138,7 @@ def main() -> int:
         for _ in range(args.iterations):
             name, schema, instances = rng.choice(pairs)
             instance = rng.choice(instances)
-            mutant = mutate(rng, mutate(rng, instance))
+            mutant = mut.mutate(mut.mutate(instance))
             try:
                 errs = check_totality(schema, mutant)
             except InvariantBroken as exc:
@@ -218,7 +148,7 @@ def main() -> int:
             stats["runs"] += 1
             if errs:
                 stats["rejected"] += 1
-            if check_sensitivity(name, schema, instance):
+            if check_sensitivity(rng, name, schema, instance):
                 stats["sensitivity"] += 1
 
         check_deep_nesting()
