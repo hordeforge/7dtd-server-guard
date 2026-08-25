@@ -16,7 +16,7 @@ Canonical modding guide: [MODDING_BEST_PRACTICES.md](https://github.com/hordefor
 - Never commit game assemblies, authentication material, player evidence, or server data.
 - Use full method signatures and build fingerprints for Harmony hooks. Fail open on mismatch.
 - Use `7dtd-loadgen` for repeatable scenarios and `7dtd-server-apm` for overhead/regression evidence.
-- Follow the parent workspace naming, EAC, secret, source-distribution, and writing rules.
+- Follow the parent workspace rules in [`../AGENTS.md`](../AGENTS.md): naming, EAC, secrets, source distribution, writing.
 
 The documents in `docs/` (indexed in `docs/INDEX.md`) and the phase gates in `TODO.md` are the
 design contract. Update them when evidence changes an assumption; record why in
