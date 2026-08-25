@@ -1,8 +1,20 @@
 name: ci
 on: [push, pull_request]
+
+# Workflows get a read-only token by default; nothing here needs write access.
+permissions:
+  contents: read
+
+# Push and pull_request both fire for PR branches; cancel superseded runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   server-guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v4.2.2. SHA-pinned per dependabot.yml: these actions
+      # are the whole dependency surface, so tags must not be mutable refs.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: make check
