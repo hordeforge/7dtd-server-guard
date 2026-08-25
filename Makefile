@@ -1,7 +1,8 @@
 # 7dtd-server-guard
 
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
-# links, TODO checkbox format, detector-registry coverage, and config example vs schema.
+# links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
+# Schemas, config/schema cross-references, evidence chain, replay contract.
 .PHONY: setup check ci detectors exercise test-tools verify-evidence help
 
 # Python tools run in the project-local venv created by `make setup`; fall back

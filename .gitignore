@@ -7,7 +7,7 @@ dist/
 artifacts/
 captures/
 server-data/
-Config/server-guard.local.json
+config/server-guard.local.json
 evidence/
 *.dll
 *.key

@@ -4,14 +4,25 @@
 Run from the repo root:  python3 tools/doccheck.py   (or `make check`)
 
 Checks:
-  1. No em dashes (U+2014) in any markdown file (workspace rule).
-  2. Every internal markdown link resolves to an existing file or anchor.
-  3. TODO.md checkboxes use the canonical `- [ ]` / `- [x]` format.
-  4. Every backticked detector ID token (`family.subject`) used across docs is present in
-     the detector registry (docs/DETECTORS.md). Unknown IDs are a registry miss.
-  5. config/server-guard.example.json top-level keys all appear in the config-schema table
-     of docs/SCHEMAS.md.
-  6. Required contract documents exist.
+   1. No em dashes (U+2014) in any markdown file (workspace rule).
+   2. Every internal markdown link resolves to an existing file or anchor.
+   3. TODO.md checkboxes use the canonical `- [ ]` / `- [x]` format.
+   4. tools/detector_spec.yaml is well-formed and satisfies the D-07/D-15 ceiling
+      rule plus the normal+violation fixture requirement per detector.
+   5. docs/DETECTORS.md matches the rendered output of render_detectors.py.
+   6. Every backticked detector ID token (`family.subject`) used across docs is present in
+      the spec; example-config mode keys match the registry both ways.
+   7. The generated config manifest matches the spec's phase/ceiling/mode metadata and
+      declares exactly the spec's threshold keys; every example-config threshold key
+      exists in the manifest.
+   8. Every key path in config/server-guard.example.json is declared in the config-schema
+      table of docs/SCHEMAS.md.
+   9. The shipped JSON Schemas parse, and the example config, generated manifest,
+      evidence sample JSONL, and replay-trace fixture conform to them.
+  10. The shipped evidence sample verifies as a hash chain (tools/evidence_check.py).
+  11. The design-time replay contract vector passes its semantic checks.
+  12. Documented folder structure holds: required docs exist and every planned directory
+      under src/, tests/, tools/, config/ carries a README.
 
 Exit code 0 when clean; 1 otherwise. Prints a summary and any failures.
 """

@@ -102,7 +102,8 @@ Loop:
 - `make detectors`: re-render the detector registry tables and the per-detector config
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
 - `make exercise`: validate the design-time replay contract against the sample trace.
-- `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzer.
+- `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
+  (evidence parser, schema validator, replay-trace contract checker).
 - `make ci`: everything CI runs, locally in one step (`check` + `test-tools`).
 
 The detector spec, data schemas, and methodology are the design contract; see

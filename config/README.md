@@ -12,5 +12,8 @@ Operator-facing configuration.
   `tools/detector_spec.yaml`; declares every detector's accepted threshold keys, types,
   ranges, and defaults. Edit the YAML, never this file.
 - `schemas/`: JSON Schema (draft-07) files, the machine form of SCHEMAS.md's tables:
-  `config.v1.schema.json` (strict config contract) and `config-manifest.v1.schema.json`.
-  The doccheck gate validates the example config and the generated manifest against them.
+  `config.v1.schema.json` (strict config contract), `config-manifest.v1.schema.json`
+  (per-detector threshold manifest), `evidence.v1.schema.json` plus the
+  `evidence.v1.sample.jsonl` chain sample, and `replay-trace.v1.schema.json`. The doccheck
+  gate validates the example config, the generated manifest, the evidence sample, and the
+  replay-trace fixture against them.
