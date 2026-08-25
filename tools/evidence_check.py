@@ -169,12 +169,9 @@ def self_test() -> list[str]:
     found = verify_chain(from_tuples, first_of_stream=True)
     if not found:
         errs.append("self-test: tamper was not detected")
-    # bad genesis
-    bad_gen = [(1, dict(recs[0]), "")]  # keep genesis hash but mark first_of_stream=False scenario
-    errs2 = verify_chain(bad_gen, first_of_stream=False)
-    # a non-first segment first record with a random parent is checked by caller; just ensure
-    # the function runs without raising
-    _ = errs2
+    # non-first-segment links are checked by the caller (verify_dir); exercise the skip
+    # branch so it keeps running without raising.
+    verify_chain([(1, dict(recs[0]), "")], first_of_stream=False)
     return errs
 
 

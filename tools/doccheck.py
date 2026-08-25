@@ -25,6 +25,8 @@ import sys
 
 import yaml
 
+import render_detectors
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MD_FILES = sorted(
     p for p in ROOT.rglob("*.md") if ".git" not in p.parts and "third-party" not in p.parts
@@ -58,10 +60,9 @@ SPEC_CEILINGS = {"Hard", "Strong", "Weak"}
 SPEC_ROLES = {"observed", "decision"}
 SPEC_AUTHORITIES = {"server-derived", "client-declared"}
 SPEC_THRESHOLD_TYPES = {"int", "float", "string"}
-ALLOWED_FIXTURES = {
-    "normal", "violation", "latency-stall", "reconnect-duplicate-session",
-    "teleport-vehicle-death", "admin-mod-origin", "rollback", "induced-finding",
-}
+# Fixture families are owned by render_detectors.py (they head the registry matrix);
+# importing keeps this validator from drifting from the rendered table.
+ALLOWED_FIXTURES = frozenset(render_detectors.FIXTURE_FAMILIES)
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 DETECTOR_ID_RE = re.compile(r"(?<![\w-])([a-z]+\.[a-z_]+)(?![\w-])")
@@ -249,7 +250,9 @@ def check_detector_ids() -> list[str]:
         if spec_entry is None:
             out.append(f"manifest detector {entry.get('detectorId')} not in spec")
             continue
-        if entry.get("phase") != spec_entry["phase"] or entry.get("ceiling") != spec_entry["ceiling"]                 or entry.get("defaultMode") != spec_entry["default_mode"]:
+        if (entry.get("phase") != spec_entry["phase"]
+                or entry.get("ceiling") != spec_entry["ceiling"]
+                or entry.get("defaultMode") != spec_entry["default_mode"]):
             out.append(f"manifest metadata drift for {entry['detectorId']}; re-run make detectors")
         declared = {t["key"] for t in spec_entry.get("thresholds", [])}
         manifest_keys[entry["detectorId"]] = {t["key"] for t in entry.get("thresholds", [])}
