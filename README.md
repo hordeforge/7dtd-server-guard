@@ -89,7 +89,8 @@ the ledger, exit criteria, and known at-risk seams live in [TODO.md](TODO.md).
 
 ## Development
 
-Bootstrap (once per clone; needs Python 3.9+):
+Bootstrap (once per clone; needs Python 3.12+, the minor pinned in
+[.python-version](.python-version), which CI installs exactly):
 
 - `make setup`: create a project-local `.venv` and install the dependencies declared
   in `requirements.txt`. Nothing is installed globally.

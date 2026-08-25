@@ -3,11 +3,17 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci detectors exercise test-tools verify-evidence help
+.PHONY: setup check ci detectors exercise test-tools verify-evidence guard-python help
 
 # Python tools run in the project-local venv created by `make setup`; fall back
 # to the system python3 when no venv exists.
 PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+
+# The pinned minor in .python-version is the single source of truth for the
+# interpreter toolchain: CI installs exactly it (actions/setup-python reads the
+# same file) and local builds enforce it as a floor before any tool runs.
+guard-python:
+	@$(PY) tools/guard_python.py
 
 # One-time bootstrap on a fresh clone: create .venv and install the declared
 # dependencies (requirements.txt) into it. Nothing is installed globally.
@@ -15,7 +21,7 @@ setup:
 	python3 -m venv .venv
 	.venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt
 
-check:
+check: guard-python
 	$(PY) tools/doccheck.py
 
 # Regenerate the detector registry tables and the per-detector config manifest
@@ -25,13 +31,13 @@ detectors:
 	$(PY) tools/render_detectors.py --manifest
 
 # Exercise the pre-implementation replay contract and representative vertical-slice vector.
-exercise:
+exercise: guard-python
 	$(PY) tools/replay_contract_check.py
 
 # Tests for the shipped Python tooling: evidence hash-chain negative self-tests
 # plus seeded structure-aware fuzzers over the evidence parser, the JSON Schema
 # validator, and the replay-trace contract checker.
-test-tools:
+test-tools: guard-python
 	$(PY) tools/evidence_check.py --self-test
 	$(PY) tools/fuzz_evidence_check.py
 	$(PY) tools/fuzz_schema_validate.py
@@ -56,4 +62,5 @@ help:
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
 	@echo "  make ci              everything CI runs locally in one step (check + test-tools)"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
+	@echo "Python floor: .python-version (CI installs exactly it; local builds enforce it)."
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."
