@@ -90,6 +90,11 @@ CONFIG_SCHEMA_KEYS: frozenset[str] = frozenset(
 )
 CHECKBOX_RE = re.compile(r"^\s*[-*] \[[ xX]\] .+", re.M)
 
+# Validator recursion bound. Shipped schemas nest at most ~6 levels; the cap only
+# bites on pathological documents (deeply nested or self-referential schemas), where
+# unbounded recursion would end in RecursionError instead of a reported error.
+MAX_SCHEMA_DEPTH = 100
+
 
 def detector_ids_in(text: str) -> set[str]:
     """Collect backticked `family.subject` tokens from a doc for detector families."""
@@ -338,8 +343,10 @@ def _schema_type_ok(instance, t) -> bool:
     }.get(t, False)
 
 
-def _schema_validate(instance, schema, path="$") -> list[str]:
+def _schema_validate(instance, schema, path="$", _depth: int = 0) -> list[str]:
     """Minimal JSON Schema (draft-07 subset) validator for the schemas we ship."""
+    if _depth > MAX_SCHEMA_DEPTH:
+        return [f"{path}: nesting deeper than {MAX_SCHEMA_DEPTH} levels"]
     errs = []
     if "const" in schema:
         if instance != schema["const"]:
@@ -361,7 +368,7 @@ def _schema_validate(instance, schema, path="$") -> list[str]:
     if "maxLength" in schema and isinstance(instance, str) and len(instance) > schema["maxLength"]:
         errs.append(f"{path}: length {len(instance)} > maxLength {schema['maxLength']}")
     if "oneOf" in schema:
-        matched = [i for i, sub in enumerate(schema["oneOf"]) if not _schema_validate(instance, sub, path)]
+        matched = [i for i, sub in enumerate(schema["oneOf"]) if not _schema_validate(instance, sub, path, _depth + 1)]
         if len(matched) != 1:
             errs.append(f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)")
         return errs
@@ -374,12 +381,12 @@ def _schema_validate(instance, schema, path="$") -> list[str]:
         pats = schema.get("patternProperties", {})
         for k, v in instance.items():
             if k in props:
-                errs += _schema_validate(v, props[k], f"{path}.{k}")
+                errs += _schema_validate(v, props[k], f"{path}.{k}", _depth + 1)
                 continue
             matched = False
             for pat, sub in pats.items():
                 if re.match(pat, k):
-                    errs += _schema_validate(v, sub, f"{path}.{k}")
+                    errs += _schema_validate(v, sub, f"{path}.{k}", _depth + 1)
                     matched = True
                     break
             if not matched and schema.get("additionalProperties") is False:
@@ -398,7 +405,7 @@ def _schema_validate(instance, schema, path="$") -> list[str]:
                 errs.append(f"{path}: array items are not unique")
         if "items" in schema:
             for i, v in enumerate(instance):
-                errs += _schema_validate(v, schema["items"], f"{path}[{i}]")
+                errs += _schema_validate(v, schema["items"], f"{path}[{i}]", _depth + 1)
     return errs
 
 

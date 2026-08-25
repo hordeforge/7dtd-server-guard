@@ -28,10 +28,13 @@ exercise:
 	$(PY) tools/replay_contract_check.py
 
 # Tests for the shipped Python tooling: evidence hash-chain negative self-tests
-# plus the seeded structure-aware fuzzer over the evidence parser.
+# plus seeded structure-aware fuzzers over the evidence parser, the JSON Schema
+# validator, and the replay-trace contract checker.
 test-tools:
 	$(PY) tools/evidence_check.py --self-test
 	$(PY) tools/fuzz_evidence_check.py
+	$(PY) tools/fuzz_schema_validate.py
+	$(PY) tools/fuzz_replay_trace.py
 
 # CI entry point: everything CI runs, runnable locally as one step.
 # C# build + test layers 1-4 are added here in Phase 2 (TODO.md).
@@ -49,7 +52,7 @@ help:
 	@echo "  make check           run the docs quality gate (tools/doccheck.py)"
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
-	@echo "  make test-tools      self-tests + fuzzer for the Python tooling"
+	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
 	@echo "  make ci              everything CI runs locally in one step (check + test-tools)"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."
