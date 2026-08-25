@@ -191,8 +191,8 @@ def main() -> int:
             try:
                 got = check_load_records(tmp, lines)
             except InvariantBroken as exc:
-                print("FAIL target1:", exc)
-                print("input:", b"\n".join(lines)[:400])
+                print(f"fuzz-evidence-check: FAIL target1: {exc}", file=sys.stderr)
+                print("input:", b"\n".join(lines)[:400], file=sys.stderr)
                 return 1
             if got:
                 stats["t1_records"] += got
@@ -220,7 +220,7 @@ def main() -> int:
             try:
                 check_verify_dir(tmp, files, index)
             except InvariantBroken as exc:
-                print("FAIL target2:", exc)
+                print(f"fuzz-evidence-check: FAIL target2: {exc}", file=sys.stderr)
                 return 1
             stats["t2_runs"] += 1
 
@@ -230,7 +230,9 @@ def main() -> int:
         index = json.dumps({"segments": [{"file": "evidence-1.jsonl"}]}).encode("utf-8")
         errs = check_verify_dir(tmp, files, index)
         if errs:
-            raise SystemExit(f"FAIL pair assertion: valid chain reported broken: {errs}")
+            print(f"fuzz-evidence-check: FAIL pair assertion: valid chain reported broken: {errs}",
+                  file=sys.stderr)
+            return 1
         stats["clean_chain_ok"] = True
 
     print(

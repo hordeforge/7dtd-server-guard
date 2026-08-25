@@ -177,15 +177,16 @@ def self_test() -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dir", type=pathlib.Path, help="evidence directory with evidence-*.jsonl segments")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--dir", type=pathlib.Path, help="evidence directory with evidence-*.jsonl segments")
+    mode.add_argument("--sample", action="store_true", help="verify the shipped sample chain")
+    mode.add_argument("--self-test", action="store_true", help="run negative tests and exit")
     ap.add_argument("--index", default="segment-index.json", help="segment index file name inside --dir")
-    ap.add_argument("--sample", action="store_true", help="verify the shipped sample chain")
-    ap.add_argument("--self-test", action="store_true", help="run negative tests and exit")
     args = ap.parse_args()
 
     if args.self_test:
         errs = self_test()
-        print(f"evidence_check self-test: {len(errs)} failure(s)")
+        print(f"evidence-check self-test: {len(errs)} failure(s)")
         for e in errs:
             print("  " + e)
         return 1 if errs else 0
@@ -198,6 +199,10 @@ def main() -> int:
         return 1 if errs else 0
 
     if args.dir:
+        if not args.dir.is_dir():
+            print(f"evidence chain ({args.dir}): 1 issue(s)")
+            print(f"  {args.dir}: no such directory")
+            return 1
         errs = verify_dir(args.dir, args.index)
         print(f"evidence chain ({args.dir}): {len(errs)} issue(s)")
         for e in errs:

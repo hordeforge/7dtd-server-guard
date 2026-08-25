@@ -2,6 +2,7 @@
 """Exercise design-time replay contracts before the Phase 4 replay harness exists."""
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import sys
@@ -17,8 +18,15 @@ SPEC = ROOT / "tools/detector_spec.yaml"
 
 
 def main() -> int:
-    trace = json.loads(TRACE.read_text(encoding="utf-8"))
-    detector_ids = {d["id"] for d in yaml.safe_load(SPEC.read_text(encoding="utf-8"))["detectors"]}
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.parse_args()
+
+    try:
+        trace = json.loads(TRACE.read_text(encoding="utf-8"))
+        detector_ids = {d["id"] for d in yaml.safe_load(SPEC.read_text(encoding="utf-8"))["detectors"]}
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+        print(f"replay-contract: unreadable fixture or spec: {exc}", file=sys.stderr)
+        return 1
     errors: list[str] = []
     if trace["detectorId"] not in detector_ids:
         errors.append(f"unknown detector: {trace['detectorId']}")

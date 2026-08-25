@@ -141,9 +141,10 @@ def render_manifest(detectors: list[dict]) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--check", action="store_true", help="exit 1 if docs/DETECTORS.md is stale")
-    ap.add_argument("--manifest", action="store_true", help="emit config/detector-config-manifest.json")
+    ap = argparse.ArgumentParser(description=__doc__)
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="exit 1 if docs/DETECTORS.md is stale")
+    mode.add_argument("--manifest", action="store_true", help="emit config/detector-config-manifest.json")
     args = ap.parse_args()
 
     detectors = load_spec()

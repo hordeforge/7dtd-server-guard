@@ -17,6 +17,7 @@ Exit code 0 when clean; 1 otherwise. Prints a summary and any failures.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import re
@@ -514,6 +515,9 @@ def check_required_docs() -> list[str]:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.parse_args()
+
     failures: dict[str, list[str]] = {
         "em dashes": check_em_dashes(),
         "links": check_links(),
