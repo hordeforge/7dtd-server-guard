@@ -86,6 +86,11 @@ is the gate checklist for this layer:
 | induced finding | a second player racing a victim's container, knockback/explosion impulses against a victim; the victim must accrue nothing |
 | review-surface | evidence injection, tamper, truncation, and purge/redaction tombstones preserving the hash chain |
 
+The registry coverage matrix in [DETECTORS.md](DETECTORS.md) renders the eight per-detector
+families declared in `tools/detector_spec.yaml`. The `review-surface` family targets the
+evidence pipeline itself (EvidenceStore, replay harness) rather than any single detector, so
+it is gated by this layer and Layer 1 instead of appearing as a matrix column.
+
 Mutation tests perturb a single field of a legal trace and assert the expected finding appears
 (or that the trace stays legal). Mutations cover every validator input, including authority
 class: any validator with a client-declared input is exercised in observe-only and never

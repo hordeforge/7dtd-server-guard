@@ -28,8 +28,10 @@ see note).
 - **Status:** accepted.
 - **Decision:** Every detector defaults to `observe`. `correct` requires a Hard invariant
   with complete authoritative inputs. `enforce` actions (quarantine, kick) require the
-  policy gates (two independent Strong categories, or operator-approved policy for repeated
-  Hard protocol invariants). `permanent-ban` is never issued by the mod.
+  policy gates (POLICY.md -> Enforcement gates: quarantine needs one Strong category with
+  repeated findings across the minimum observation window; kick needs two independent Strong
+  categories, or operator-approved policy for repeated Hard protocol invariants).
+  `permanent-ban` is never issued by the mod.
 - **Alternatives:** Single-threshold auto-ban like ServerTools/Botman (rejected: surveyed
   false-positive stories; see RESEARCH.md); ban on first Hard hit (rejected: Hard is
   impossible-by-construction but the *path* must still be proven legal-context-clean first).
@@ -85,7 +87,8 @@ see note).
 
 ## D-07: Input authority classes cap severity
 
-- **Status:** accepted.
+- **Status:** accepted (capping rule refined by D-15; read the Decision below together
+  with D-15, which is authoritative for the observed/decision split).
 - **Decision:** Every validator input is classified server-derived or client-declared; any
   client-declared input caps the detector below `Hard`, regardless of server-derived inputs
   also checked.
@@ -182,7 +185,7 @@ see note).
 ## D-15: Input roles (observed vs decision) refine the authority rule
 
 - **Status:** accepted.
-- **Decision:** Every validator input carries an authority (server-derived or
+- **Decision:** Refines D-07. Every validator input carries an authority (server-derived or
   client-declared) and a role (observed or decision). Observed inputs are the quantity
   being checked and may be client-declared; decision inputs are the state the verdict
   depends on and must be server-derived for a `Hard` ceiling. A detector with a
