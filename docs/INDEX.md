@@ -58,13 +58,18 @@ bug to fix in the same change.
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects
 └── tools/
-    ├── detector_spec.yaml     canonical detector spec (single source of truth)
-    ├── render_detectors.py    renders DETECTORS.md and the config manifest from the spec
-    ├── doccheck.py            docs quality gate (em dashes, links, spec, schemas, chain)
-    ├── evidence_check.py      evidence hash-chain verifier (make verify-evidence)
-    ├── fixtures/              traces/, regression/, generators/ (traces/ holds the
-    │                          inventory design vector now; the rest fill in at Phase 4)
-    └── surface_inventory/     Phase 1 Mono.Cecil metadata probe (planned)
+    ├── detector_spec.yaml       canonical detector spec (single source of truth)
+    ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
+    ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain)
+    ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
+    ├── replay_contract_check.py replay-trace semantic contract gate (make exercise)
+    ├── fuzz_evidence_check.py   seeded fuzzer over the evidence parser (make test-tools)
+    ├── fuzz_schema_validate.py  seeded fuzzer over the JSON Schema validator (make test-tools)
+    ├── fuzz_replay_trace.py     seeded fuzzer over the replay-trace contract checker
+    │                            (make test-tools)
+    ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
+    │                            inventory design vector now; the rest fill in at Phase 4)
+    └── surface_inventory/       Phase 1 Mono.Cecil metadata probe (planned)
 ```
 
 `docs/` and `TODO.md` are the design contract per AGENTS.md. Everything in `src/`, `tests/`,

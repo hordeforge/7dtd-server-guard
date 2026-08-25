@@ -8,10 +8,15 @@
 - `evidence_check.py`: verifies evidence hash chains (canonical serialization, genesis,
   cross-segment links, tamper/truncation) with negative self-tests; the doccheck gate runs
   it on the sample, and `make verify-evidence DIR=...` targets operator evidence dirs.
+- `replay_contract_check.py`: semantic contract checks over design-time replay traces;
+  `make exercise` runs it on the shipped inventory stack vector.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
   format, detector-spec validity (including the D-07 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
   schema/data pairs, evidence sample chain, replay-contract vector, and folder structure.
+- `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`: seeded,
+  deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator
+  in doccheck.py, and the replay-trace contract checker (`make test-tools`).
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
   (SCHEMAS.md). Planned; does not exist yet.
 - `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression
