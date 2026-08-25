@@ -36,8 +36,12 @@ def record_hash(record: dict) -> str:
 
 def load_records(path: pathlib.Path) -> list[tuple[int, dict, str]]:
     """Return (line_no, record, raw) for non-empty lines."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path.name}: not valid UTF-8: {exc}") from exc
     out = []
-    for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for i, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line:
             continue
@@ -50,6 +54,8 @@ def load_records(path: pathlib.Path) -> list[tuple[int, dict, str]]:
         for field in ("schemaVersion", "type", "eventId", "chainPrev"):
             if field not in rec:
                 raise ValueError(f"{path.name}:{i}: missing field {field!r}")
+        if not isinstance(rec["chainPrev"], str):
+            raise ValueError(f"{path.name}:{i}: chainPrev must be a string")
         if rec["schemaVersion"] != 1:
             raise ValueError(f"{path.name}:{i}: unsupported schemaVersion {rec['schemaVersion']}")
         out.append((i, rec, line))
@@ -90,6 +96,12 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
             index = json.loads(index_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             errs.append(f"{index_name} unparseable: {exc}")
+        except UnicodeDecodeError as exc:
+            errs.append(f"{index_name} not valid UTF-8: {exc}")
+        else:
+            if not isinstance(index, dict):
+                errs.append(f"{index_name}: must be a JSON object")
+                index = None
 
     prev_segment_last_hash = None
     for si, seg in enumerate(segments):
@@ -118,7 +130,9 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
 
     # cross-check the index if present
     if index and "segments" in index:
-        index_files = [e.get("file") for e in index["segments"]]
+        entries = index["segments"]
+        well_formed = isinstance(entries, list) and all(isinstance(e, dict) for e in entries)
+        index_files = [e.get("file") for e in entries] if well_formed else None
         actual = [s.name for s in segments]
         if index_files != actual:
             errs.append(f"{index_name}: segment list does not match files on disk")
