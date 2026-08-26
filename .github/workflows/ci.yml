@@ -22,7 +22,7 @@ jobs:
       # astral-sh/setup-uv v5: uv installs the interpreter minor declared in
       # .python-version and the locked dependency set, instead of whatever the
       # runner image happens to ship.
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
       # Same bootstrap path as a fresh local clone; CI carries no second,
