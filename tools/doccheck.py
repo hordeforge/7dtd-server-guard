@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 """Docs quality gate for 7dtd-server-guard.
 
-Run from the repo root:  python3 tools/doccheck.py   (or `make check`)
+Run from the repo root:  uv run python tools/doccheck.py   (or `make check`)
 
 Checks:
-   1. No em dashes (U+2014) in any markdown file (workspace rule).
+   1. No em dashes (U+2014) in any markdown file or shipped source file (workspace rule).
    2. Every internal markdown link resolves to an existing file or anchor.
    3. TODO.md checkboxes use the canonical `- [ ]` / `- [x]` format.
    4. tools/detector_spec.yaml is well-formed and satisfies the D-07/D-15 ceiling
@@ -26,6 +25,7 @@ Checks:
 
 Exit code 0 when clean; 1 otherwise. Prints a summary and any failures.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,15 +34,35 @@ import pathlib
 import re
 import subprocess
 import sys
+from typing import Any
 
 # Spec loading (and its PyYAML dependency guard) lives in render_detectors.
 import render_detectors
+
+# A parsed JSON Schema or instance: shape is what the validator below checks, so
+# it cannot be narrowed statically.
+Json = Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MD_FILES = sorted(
     p
     for p in ROOT.rglob("*.md")
     if ".git" not in p.parts and ".venv" not in p.parts and "third-party" not in p.parts
+)
+# The em-dash ban covers code comments and CI files, not just prose, so the gate
+# reads every text file this repo ships.
+SOURCE_FILES = sorted(
+    p
+    for p in [
+        ROOT / "Makefile",
+        *ROOT.glob("*.toml"),
+        *ROOT.glob("*.ini"),
+        *(ROOT / "tools").glob("*.py"),
+        *(ROOT / "tools").glob("*.yaml"),
+        *(ROOT / "config").rglob("*.json"),
+        *(ROOT / ".github").rglob("*.yml"),
+    ]
+    if p.is_file()
 )
 
 REQUIRED_DOCS = [
@@ -82,7 +102,9 @@ LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 # family.subject shape with detector IDs, but rows like actions.correct or
 # availability.burst are schema keys, not detectors; placeholder segments such
 # as <detectorId> stand in for per-detector subtrees.
-SCHEMA_TABLE_RE = re.compile(r"^\| `([^`]+)` \| (?:int|bool|string|number|number/string) \|", re.M)
+SCHEMA_TABLE_RE = re.compile(
+    r"^\| `([^`]+)` \| (?:int|bool|string|number|number/string) \|", re.MULTILINE
+)
 
 
 def _schema_table_keys() -> list[str]:
@@ -96,17 +118,30 @@ CONFIG_SCHEMA_KEYS: frozenset[str] = frozenset(_schema_table_keys())
 # unbounded recursion would end in RecursionError instead of a reported error.
 MAX_SCHEMA_DEPTH = 100
 
+# A numeric threshold range in the spec is a [min, max] pair.
+RANGE_BOUNDS = 2
+# Per-check cap on printed failures; the rest are summarized as a count.
+MAX_REPORTED = 40
+
 # Every shipped (JSON Schema, data) pair: gated by check_config_schemas and fuzzed
 # by tools/fuzz_schema_validate.py, which imports this list to stay in sync.
 SCHEMA_DATA_PAIRS = [
-    (ROOT / "config" / "schemas" / "config.v1.schema.json",
-     ROOT / "config" / "server-guard.example.json"),
-    (ROOT / "config" / "schemas" / "config-manifest.v1.schema.json",
-     ROOT / "config" / "detector-config-manifest.json"),
-    (ROOT / "config" / "schemas" / "evidence.v1.schema.json",
-     ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"),
-    (ROOT / "config" / "schemas" / "replay-trace.v1.schema.json",
-     ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json"),
+    (
+        ROOT / "config" / "schemas" / "config.v1.schema.json",
+        ROOT / "config" / "server-guard.example.json",
+    ),
+    (
+        ROOT / "config" / "schemas" / "config-manifest.v1.schema.json",
+        ROOT / "config" / "detector-config-manifest.json",
+    ),
+    (
+        ROOT / "config" / "schemas" / "evidence.v1.schema.json",
+        ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl",
+    ),
+    (
+        ROOT / "config" / "schemas" / "replay-trace.v1.schema.json",
+        ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json",
+    ),
 ]
 
 
@@ -122,7 +157,7 @@ def detector_ids_in(text: str) -> set[str]:
 
 def check_em_dashes() -> list[str]:
     out = []
-    for p in MD_FILES:
+    for p in MD_FILES + SOURCE_FILES:
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             if "\u2014" in line:
                 out.append(f"{p.relative_to(ROOT)}:{i}: em dash: {line.strip()[:80]}")
@@ -165,11 +200,81 @@ def spec_ids() -> set[str]:
     return {d["id"] for d in render_detectors.load_spec()}
 
 
+def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
+    """Threshold keys are unique, typed, and carry a sane range and default."""
+    out = []
+    keys = [t["key"] for t in thresholds]
+    if len(keys) != len(set(keys)):
+        out.append(f"{did}: duplicate threshold keys")
+    for t in thresholds:
+        if t.get("type") not in SPEC_THRESHOLD_TYPES:
+            out.append(f"{did}: threshold {t.get('key')} bad type {t.get('type')}")
+        rng = t.get("range")
+        if t["type"] not in {"int", "float"} or not isinstance(rng, list):
+            continue
+        if len(rng) != RANGE_BOUNDS or rng[0] > rng[1]:
+            out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
+        elif isinstance(t.get("default"), (int, float)) and not rng[0] <= t["default"] <= rng[1]:
+            out.append(
+                f"{did}: threshold {t.get('key')} default {t.get('default')} "
+                f"outside range {rng}"
+            )
+    return out
+
+
+def _detector_errors(d: Json) -> list[str]:
+    """Required fields, input authority/role vocabulary, fixtures, and the D-07 rule."""
+    did = d["id"]
+    out = []
+    if d.get("family") not in SPEC_FAMILIES:
+        out.append(f"{did}: bad family {d.get('family')}")
+    if d.get("ceiling") not in SPEC_CEILINGS:
+        out.append(f"{did}: bad ceiling {d.get('ceiling')}")
+    if d.get("default_mode") not in {"observe", "correct", "enforce"}:
+        out.append(f"{did}: bad default_mode {d.get('default_mode')}")
+    for field, note in (
+        ("summary", ""),
+        ("algorithm", ""),
+        ("seam", " (Phase 1 probe target)"),
+        ("state", ""),
+    ):
+        if not d.get(field):
+            out.append(f"{did}: missing {field}{note}")
+    inputs = d.get("inputs", [])
+    if not inputs:
+        out.append(f"{did}: no inputs")
+    for i in inputs:
+        if i.get("authority") not in SPEC_AUTHORITIES:
+            out.append(f"{did}: input {i.get('name')} bad authority {i.get('authority')}")
+        if i.get("role") not in SPEC_ROLES:
+            out.append(f"{did}: input {i.get('name')} bad role {i.get('role')}")
+    fixtures = set(d.get("fixtures", []))
+    out.extend(
+        f"{did}: fixture {f} outside TEST_PLAN families"
+        for f in sorted(fixtures - ALLOWED_FIXTURES)
+    )
+    # TEST_PLAN.md Layer 4: every detector ships normal and violation traces.
+    if "normal" not in fixtures or "violation" not in fixtures:
+        out.append(f"{did}: must declare normal and violation fixtures (TEST_PLAN Layer 4)")
+    # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
+    decision_client = [
+        i["name"]
+        for i in inputs
+        if i.get("role") == "decision" and i.get("authority") == "client-declared"
+    ]
+    if d.get("ceiling") == "Hard" and decision_client and not d.get("hard_condition"):
+        out.append(
+            f"{did}: ceiling Hard with client-declared decision inputs "
+            f"({', '.join(decision_client)}) and no hard_condition (POLICY.md D-07/D-15)"
+        )
+    return out + _threshold_errors(did, d.get("thresholds", []))
+
+
 def check_spec() -> list[str]:
     """Validate tools/detector_spec.yaml and the D-07 ceiling rule."""
     try:
         detectors = render_detectors.load_spec()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return [f"tools/detector_spec.yaml unparseable: {exc}"]
 
     out = []
@@ -178,91 +283,35 @@ def check_spec() -> list[str]:
         dups = sorted({i for i in ids if ids.count(i) > 1})
         out.append(f"duplicate detector ids in spec: {dups}")
     for d in detectors:
-        did = d["id"]
-        if d.get("family") not in SPEC_FAMILIES:
-            out.append(f"{did}: bad family {d.get('family')}")
-        if d.get("ceiling") not in SPEC_CEILINGS:
-            out.append(f"{did}: bad ceiling {d.get('ceiling')}")
-        if d.get("default_mode") not in {"observe", "correct", "enforce"}:
-            out.append(f"{did}: bad default_mode {d.get('default_mode')}")
-        if not d.get("summary"):
-            out.append(f"{did}: missing summary")
-        inputs = d.get("inputs", [])
-        if not inputs:
-            out.append(f"{did}: no inputs")
-        for i in inputs:
-            if i.get("authority") not in SPEC_AUTHORITIES:
-                out.append(f"{did}: input {i.get('name')} bad authority {i.get('authority')}")
-            if i.get("role") not in SPEC_ROLES:
-                out.append(f"{did}: input {i.get('name')} bad role {i.get('role')}")
-        if not d.get("algorithm"):
-            out.append(f"{did}: missing algorithm")
-        if not d.get("seam"):
-            out.append(f"{did}: missing seam (Phase 1 probe target)")
-        if not d.get("state"):
-            out.append(f"{did}: missing state")
-        fixtures = set(d.get("fixtures", []))
-        for f in fixtures:
-            if f not in ALLOWED_FIXTURES:
-                out.append(f"{did}: fixture {f} outside TEST_PLAN families")
-        # TEST_PLAN.md Layer 4: every detector ships normal and violation traces.
-        if "normal" not in fixtures or "violation" not in fixtures:
-            out.append(f"{did}: must declare normal and violation fixtures (TEST_PLAN Layer 4)")
-        # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
-        decision_client = [
-            i["name"] for i in inputs
-            if i.get("role") == "decision" and i.get("authority") == "client-declared"
-        ]
-        if d.get("ceiling") == "Hard" and decision_client and not d.get("hard_condition"):
-            out.append(
-                f"{did}: ceiling Hard with client-declared decision inputs "
-                f"({', '.join(decision_client)}) and no hard_condition (POLICY.md D-07/D-15)"
-            )
-        # Thresholds: unique keys, valid type, sane range, default within range.
-        keys = [t["key"] for t in d.get("thresholds", [])]
-        if len(keys) != len(set(keys)):
-            out.append(f"{did}: duplicate threshold keys")
-        for t in d.get("thresholds", []):
-            if t.get("type") not in SPEC_THRESHOLD_TYPES:
-                out.append(f"{did}: threshold {t.get('key')} bad type {t.get('type')}")
-            rng = t.get("range")
-            if t["type"] in {"int", "float"} and isinstance(rng, list):
-                if len(rng) != 2 or rng[0] > rng[1]:
-                    out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
-                elif isinstance(t.get("default"), (int, float)) and not (rng[0] <= t["default"] <= rng[1]):
-                    out.append(f"{did}: threshold {t.get('key')} default {t.get('default')} outside range {rng}")
+        out += _detector_errors(d)
     return out
+
+
+def _run_tool(script: str, *args: str, on_failure: str) -> list[str]:
+    """Run a sibling tool as a gate. Returns its output as errors when it exits nonzero.
+
+    A separate process keeps each tool's argparse and exit-code contract as the gated
+    surface, instead of importing internals the CLI does not expose.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / script), *args],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return [proc.stdout.strip() or proc.stderr.strip() or on_failure]
+    return []
 
 
 def check_registry_sync() -> list[str]:
     """docs/DETECTORS.md tables must match the rendered output from the spec."""
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "render_detectors.py"), "--check"],
-        capture_output=True, text=True, cwd=ROOT,
-    )
-    if proc.returncode != 0:
-        return [proc.stdout.strip() or proc.stderr.strip() or "registry is stale"]
-    return []
+    return _run_tool("render_detectors.py", "--check", on_failure="registry is stale")
 
 
-def check_detector_ids() -> list[str]:
-    registered = spec_ids()
-    out = []
-    for p in MD_FILES:
-        text = p.read_text(encoding="utf-8")
-        for tid in sorted(detector_ids_in(text)):
-            if tid not in registered:
-                out.append(f"{p.relative_to(ROOT)}: detector ID not in registry: {tid}")
-
-    # Every mode key in the example config must exist in the spec.
-    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
-    example_modes = set(example.get("modes", {}).keys())
-    for mode_id in sorted(example_modes - registered):
-        out.append(f"config example mode key not in registry: {mode_id}")
-    for mode_id in sorted(registered - example_modes):
-        out.append(f"config example missing mode key for registered detector: {mode_id}")
-    # Every threshold key in the generated config manifest must be declared in the spec,
-    # and every example-config threshold key must exist in the generated manifest.
+def _manifest_errors(example: Json, out: list[str]) -> None:
+    """Manifest metadata must track the spec, and both must cover the example config."""
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
     spec_by_id = {d["id"]: d for d in render_detectors.load_spec()}
     manifest_keys: dict[str, set[str]] = {}
@@ -271,23 +320,55 @@ def check_detector_ids() -> list[str]:
         if spec_entry is None:
             out.append(f"manifest detector {entry.get('detectorId')} not in spec")
             continue
-        if (entry.get("phase") != spec_entry["phase"]
-                or entry.get("ceiling") != spec_entry["ceiling"]
-                or entry.get("defaultMode") != spec_entry["default_mode"]):
+        if (
+            entry.get("phase") != spec_entry["phase"]
+            or entry.get("ceiling") != spec_entry["ceiling"]
+            or entry.get("defaultMode") != spec_entry["default_mode"]
+        ):
             out.append(f"manifest metadata drift for {entry['detectorId']}; re-run make detectors")
         declared = {t["key"] for t in spec_entry.get("thresholds", [])}
         manifest_keys[entry["detectorId"]] = {t["key"] for t in entry.get("thresholds", [])}
-        for t in entry.get("thresholds", []):
-            if t["key"] not in declared:
-                out.append(f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec")
+        out.extend(
+            f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec"
+            for t in entry.get("thresholds", [])
+            if t["key"] not in declared
+        )
     for did, keys in example.get("thresholds", {}).items():
-        for key in keys:
-            if key not in manifest_keys.get(did, set()):
-                out.append(f"example config threshold {did}.{key} not in generated manifest")
+        out.extend(
+            f"example config threshold {did}.{key} not in generated manifest"
+            for key in keys
+            if key not in manifest_keys.get(did, set())
+        )
+
+
+def check_detector_ids() -> list[str]:
+    registered = spec_ids()
+    out: list[str] = []
+    for p in MD_FILES:
+        text = p.read_text(encoding="utf-8")
+        out.extend(
+            f"{p.relative_to(ROOT)}: detector ID not in registry: {tid}"
+            for tid in sorted(detector_ids_in(text))
+            if tid not in registered
+        )
+
+    # Every mode key in the example config must exist in the spec, and every
+    # registered detector must have one.
+    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    example_modes = set(example.get("modes", {}).keys())
+    out.extend(
+        f"config example mode key not in registry: {mode_id}"
+        for mode_id in sorted(example_modes - registered)
+    )
+    out.extend(
+        f"config example missing mode key for registered detector: {mode_id}"
+        for mode_id in sorted(registered - example_modes)
+    )
+    _manifest_errors(example, out)
     return out
 
 
-def _flatten(obj: dict, prefix: str = "") -> list[str]:
+def _flatten(obj: dict[str, Json], prefix: str = "") -> list[str]:
     """Dotted paths for every leaf in a nested dict."""
     out = []
     for k, v in obj.items():
@@ -325,7 +406,7 @@ def _matches_schema(path: str, patterns: list[re.Pattern[str]]) -> bool:
     return any(p.match(path) for p in patterns)
 
 
-def _schema_type_ok(instance, t) -> bool:
+def _schema_type_ok(instance: Json, t: Json) -> bool:
     if isinstance(t, list):
         return any(_schema_type_ok(instance, tt) for tt in t)
     return {
@@ -339,92 +420,107 @@ def _schema_type_ok(instance, t) -> bool:
     }.get(t, False)
 
 
-def _schema_validate(instance, schema, path="$", _depth: int = 0) -> list[str]:
+def _scalar_errors(instance: Json, schema: Json, path: str) -> list[str]:
+    """Range, pattern, and length keywords, which apply to numbers and strings."""
+    errs = []
+    numeric = isinstance(instance, (int, float)) and not isinstance(instance, bool)
+    if "minimum" in schema and numeric and instance < schema["minimum"]:
+        errs.append(f"{path}: {instance} < minimum {schema['minimum']}")
+    if "maximum" in schema and numeric and instance > schema["maximum"]:
+        errs.append(f"{path}: {instance} > maximum {schema['maximum']}")
+    if not isinstance(instance, str):
+        return errs
+    if "pattern" in schema and not re.match(schema["pattern"], instance):
+        errs.append(f"{path}: {instance!r} does not match {schema['pattern']}")
+    if "minLength" in schema and len(instance) < schema["minLength"]:
+        errs.append(f"{path}: length {len(instance)} < minLength {schema['minLength']}")
+    if "maxLength" in schema and len(instance) > schema["maxLength"]:
+        errs.append(f"{path}: length {len(instance)} > maxLength {schema['maxLength']}")
+    return errs
+
+
+def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: int) -> list[str]:
+    """Property count, declared properties, pattern properties, and required keys."""
+    errs = []
+    if "maxProperties" in schema and len(instance) > schema["maxProperties"]:
+        errs.append(f"{path}: {len(instance)} properties > maxProperties {schema['maxProperties']}")
+    if "minProperties" in schema and len(instance) < schema["minProperties"]:
+        errs.append(f"{path}: {len(instance)} properties < minProperties {schema['minProperties']}")
+    props = schema.get("properties", {})
+    pats = schema.get("patternProperties", {})
+    for k, v in instance.items():
+        if k in props:
+            errs += _schema_validate(v, props[k], f"{path}.{k}", depth + 1)
+            continue
+        pattern_schema = next((sub for pat, sub in pats.items() if re.match(pat, k)), None)
+        if pattern_schema is not None:
+            errs += _schema_validate(v, pattern_schema, f"{path}.{k}", depth + 1)
+        elif schema.get("additionalProperties") is False:
+            errs.append(f"{path}: unexpected key {k!r}")
+    errs.extend(
+        f"{path}: missing required key {req!r}"
+        for req in schema.get("required", [])
+        if req not in instance
+    )
+    return errs
+
+
+def _array_errors(instance: list[Json], schema: Json, path: str, depth: int) -> list[str]:
+    """Item count, uniqueness, and the per-item schema."""
+    errs = []
+    if "minItems" in schema and len(instance) < schema["minItems"]:
+        errs.append(f"{path}: {len(instance)} items < minItems {schema['minItems']}")
+    if "maxItems" in schema and len(instance) > schema["maxItems"]:
+        errs.append(f"{path}: {len(instance)} items > maxItems {schema['maxItems']}")
+    if schema.get("uniqueItems"):
+        canonical = [json.dumps(v, sort_keys=True) for v in instance]
+        if len(canonical) != len(set(canonical)):
+            errs.append(f"{path}: array items are not unique")
+    if "items" in schema:
+        for i, v in enumerate(instance):
+            errs += _schema_validate(v, schema["items"], f"{path}[{i}]", depth + 1)
+    return errs
+
+
+def _schema_validate(instance: Json, schema: Json, path: str = "$", _depth: int = 0) -> list[str]:
     """Minimal JSON Schema (draft-07 subset) validator for the schemas we ship."""
     if _depth > MAX_SCHEMA_DEPTH:
         return [f"{path}: nesting deeper than {MAX_SCHEMA_DEPTH} levels"]
-    errs = []
     if "const" in schema:
         if instance != schema["const"]:
-            errs.append(f"{path}: expected const {schema['const']!r}, got {instance!r}")
-        return errs
+            return [f"{path}: expected const {schema['const']!r}, got {instance!r}"]
+        return []
+    errs = []
     if "enum" in schema and instance not in schema["enum"]:
         errs.append(f"{path}: {instance!r} not in {schema['enum']}")
     if "type" in schema and not _schema_type_ok(instance, schema["type"]):
         errs.append(f"{path}: expected type {schema['type']}, got {type(instance).__name__}")
         return errs
-    if "minimum" in schema and isinstance(instance, (int, float)) and not isinstance(instance, bool) and instance < schema["minimum"]:
-        errs.append(f"{path}: {instance} < minimum {schema['minimum']}")
-    if "maximum" in schema and isinstance(instance, (int, float)) and not isinstance(instance, bool) and instance > schema["maximum"]:
-        errs.append(f"{path}: {instance} > maximum {schema['maximum']}")
-    if "pattern" in schema and isinstance(instance, str) and not re.match(schema["pattern"], instance):
-        errs.append(f"{path}: {instance!r} does not match {schema['pattern']}")
-    if "minLength" in schema and isinstance(instance, str) and len(instance) < schema["minLength"]:
-        errs.append(f"{path}: length {len(instance)} < minLength {schema['minLength']}")
-    if "maxLength" in schema and isinstance(instance, str) and len(instance) > schema["maxLength"]:
-        errs.append(f"{path}: length {len(instance)} > maxLength {schema['maxLength']}")
+    errs += _scalar_errors(instance, schema, path)
     if "oneOf" in schema:
-        matched = [i for i, sub in enumerate(schema["oneOf"]) if not _schema_validate(instance, sub, path, _depth + 1)]
+        matched = [
+            i
+            for i, sub in enumerate(schema["oneOf"])
+            if not _schema_validate(instance, sub, path, _depth + 1)
+        ]
         if len(matched) != 1:
             errs.append(f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)")
         return errs
     if isinstance(instance, dict):
-        if "maxProperties" in schema and len(instance) > schema["maxProperties"]:
-            errs.append(f"{path}: {len(instance)} properties > maxProperties {schema['maxProperties']}")
-        if "minProperties" in schema and len(instance) < schema["minProperties"]:
-            errs.append(f"{path}: {len(instance)} properties < minProperties {schema['minProperties']}")
-        props = schema.get("properties", {})
-        pats = schema.get("patternProperties", {})
-        for k, v in instance.items():
-            if k in props:
-                errs += _schema_validate(v, props[k], f"{path}.{k}", _depth + 1)
-                continue
-            matched = False
-            for pat, sub in pats.items():
-                if re.match(pat, k):
-                    errs += _schema_validate(v, sub, f"{path}.{k}", _depth + 1)
-                    matched = True
-                    break
-            if not matched and schema.get("additionalProperties") is False:
-                errs.append(f"{path}: unexpected key {k!r}")
-        for req in schema.get("required", []):
-            if req not in instance:
-                errs.append(f"{path}: missing required key {req!r}")
+        errs += _object_errors(instance, schema, path, _depth)
     if isinstance(instance, list):
-        if "minItems" in schema and len(instance) < schema["minItems"]:
-            errs.append(f"{path}: {len(instance)} items < minItems {schema['minItems']}")
-        if "maxItems" in schema and len(instance) > schema["maxItems"]:
-            errs.append(f"{path}: {len(instance)} items > maxItems {schema['maxItems']}")
-        if schema.get("uniqueItems"):
-            canonical = [json.dumps(v, sort_keys=True) for v in instance]
-            if len(canonical) != len(set(canonical)):
-                errs.append(f"{path}: array items are not unique")
-        if "items" in schema:
-            for i, v in enumerate(instance):
-                errs += _schema_validate(v, schema["items"], f"{path}[{i}]", _depth + 1)
+        errs += _array_errors(instance, schema, path, _depth)
     return errs
 
 
 def check_evidence_sample_chain() -> list[str]:
     """The shipped evidence sample must verify as a hash chain."""
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "evidence_check.py"), "--sample"],
-        capture_output=True, text=True, cwd=ROOT,
-    )
-    if proc.returncode != 0:
-        return [proc.stdout.strip() or proc.stderr.strip() or "evidence sample chain broken"]
-    return []
+    return _run_tool("evidence_check.py", "--sample", on_failure="evidence sample chain broken")
 
 
 def check_replay_contract() -> list[str]:
     """The design-time vertical-slice vector must satisfy its semantic expectations."""
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "replay_contract_check.py")],
-        capture_output=True, text=True, cwd=ROOT,
-    )
-    if proc.returncode != 0:
-        return [proc.stdout.strip() or proc.stderr.strip() or "replay contract failed"]
-    return []
+    return _run_tool("replay_contract_check.py", on_failure="replay contract failed")
 
 
 def check_config_schemas() -> list[str]:
@@ -435,27 +531,32 @@ def check_config_schemas() -> list[str]:
     for schema_path, data_path in SCHEMA_DATA_PAIRS:
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             out.append(f"{schema_path.relative_to(ROOT)} unparseable: {exc}")
             continue
         if data_path.suffix == ".jsonl":
             try:
-                lines = [ln for ln in data_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                lines = [
+                    ln for ln in data_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+                ]
                 data = [json.loads(ln) for ln in lines]
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
                 continue
             for i, rec in enumerate(data, 1):
-                for err in _schema_validate(rec, schema):
-                    out.append(f"{data_path.relative_to(ROOT)} line {i}: {err}")
+                out.extend(
+                    f"{data_path.relative_to(ROOT)} line {i}: {err}"
+                    for err in _schema_validate(rec, schema)
+                )
             continue
         try:
             data = json.loads(data_path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
             continue
-        for err in _schema_validate(data, schema):
-            out.append(f"{data_path.relative_to(ROOT)}: {err}")
+        out.extend(
+            f"{data_path.relative_to(ROOT)}: {err}" for err in _schema_validate(data, schema)
+        )
     return out
 
 
@@ -463,11 +564,11 @@ def check_folder_structure() -> list[str]:
     """The documented layout (docs/INDEX.md -> Repo layout) must hold: every directory
     under src/, tests/, tools/, config/ carries a README (empty dirs document their
     purpose), and the planned subfolders exist."""
-    out = []
+    out: list[str] = []
     root_dirs = ["docs", "config", "src", "tests", "tools"]
-    for d in root_dirs:
-        if not (ROOT / d).is_dir():
-            out.append(f"missing documented directory: {d}/")
+    out.extend(
+        f"missing documented directory: {name}/" for name in root_dirs if not (ROOT / name).is_dir()
+    )
     for base in ["src", "tests", "tools", "config"]:
         for d in sorted((ROOT / base).rglob("*")):
             if not d.is_dir() or "__pycache__" in d.parts:
@@ -484,22 +585,20 @@ def check_folder_structure() -> list[str]:
         ROOT / "tests" / "ServerGuard.MetadataTests",
         ROOT / "tests" / "ServerGuard.Replay",
     ]
-    for d in planned:
-        if not d.is_dir():
-            out.append(f"missing planned directory: {d.relative_to(ROOT)}/")
+    out.extend(
+        f"missing planned directory: {d.relative_to(ROOT)}/" for d in planned if not d.is_dir()
+    )
     return out
 
 
 def check_config_example_keys() -> list[str]:
     patterns = _schema_key_patterns()
     example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
-    out = []
-    for path in _flatten(example):
-        if path == "schemaVersion":
-            continue
-        if not _matches_schema(path, patterns):
-            out.append(f"config key '{path}' not declared in SCHEMAS.md config table")
-    return out
+    return [
+        f"config key '{path}' not declared in SCHEMAS.md config table"
+        for path in _flatten(example)
+        if path != "schemaVersion" and not _matches_schema(path, patterns)
+    ]
 
 
 def check_required_docs() -> list[str]:
@@ -525,14 +624,17 @@ def main() -> int:
         "required docs": check_required_docs(),
     }
     total = sum(len(v) for v in failures.values())
-    print(f"doccheck: {total} issue(s) across {len(MD_FILES)} markdown files")
+    print(
+        f"doccheck: {total} issue(s) across {len(MD_FILES)} markdown "
+        f"and {len(SOURCE_FILES)} source files"
+    )
     for name, items in failures.items():
         if items:
             print(f"\n[{name}]")
-            for item in items[:40]:
+            for item in items[:MAX_REPORTED]:
                 print("  " + item)
-            if len(items) > 40:
-                print(f"  ... and {len(items) - 40} more")
+            if len(items) > MAX_REPORTED:
+                print(f"  ... and {len(items) - MAX_REPORTED} more")
     return 1 if total else 0
 
 

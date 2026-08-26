@@ -105,7 +105,7 @@ Canonical serialization (pinned by `tools/evidence_check.py`):
 the first record of the very first segment has `chainPrev` equal to 64 zeros. A chain
 detects tampering of any record except the last one; tampering the last record is only
 detected when the next record is appended, because an append-only chain has no later
-record to cross-check. The verifier is `python3 tools/evidence_check.py --dir <evidence-dir>`
+record to cross-check. The verifier is `make verify-evidence DIR=<evidence-dir>`
 and the shipped sample (`config/schemas/evidence.v1.sample.jsonl`) is a real, verifiable
 chain run by the doccheck gate.
 

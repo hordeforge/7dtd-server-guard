@@ -49,7 +49,15 @@ bug to fix in the same change.
 ├── AGENTS.md                  workspace and repo boundaries
 ├── README.md                  public entry point
 ├── TODO.md                    phase ledger
-├── Makefile                   setup, docs quality gate, tool tests (make help)
+├── CHANGELOG.md               release notes per tag
+├── PRIVACY.md                 player-monitoring notice and retention
+├── SECURITY.md                vulnerability reporting and disclosure
+├── LICENSE                    AGPL-3.0
+├── Makefile                   setup, docs gate, lint, tool tests (make help)
+├── pyproject.toml             tool dependencies and black config (uv, uv.lock)
+├── ruff.toml, mypy.ini        lint and type-check settings (make lint)
+├── .python-version            pinned interpreter minor; uv installs exactly it
+├── .github/                   CI workflow, dependabot, review prompts
 ├── config/
 │   ├── server-guard.example.json     example config v1
 │   ├── detector-config-manifest.json generated per-detector thresholds (make detectors)
@@ -67,6 +75,8 @@ bug to fix in the same change.
     ├── fuzz_schema_validate.py  seeded fuzzer over the JSON Schema validator (make test-tools)
     ├── fuzz_replay_trace.py     seeded fuzzer over the replay-trace contract checker
     │                            (make test-tools)
+    ├── fuzz_common.py           mutation engine shared by the three fuzzers
+    ├── guard_python.py          enforces the .python-version floor before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
     │                            inventory design vector now; the rest fill in at Phase 4)
     └── surface_inventory/       Phase 1 Mono.Cecil metadata probe (planned)

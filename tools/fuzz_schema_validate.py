@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fuzz the JSON Schema validator (tools/doccheck.py -> _schema_validate).
 
 _schema_validate is the reference validator behind every schema gate in this repo:
@@ -23,8 +22,9 @@ Invariants asserted per iteration:
 Deterministic (seeded PRNG), stdlib only, no external fuzzer required.
 
 Usage:
-  python3 tools/fuzz_schema_validate.py [--iterations N] [--seed S]
+  uv run python tools/fuzz_schema_validate.py [--iterations N] [--seed S]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,15 +32,20 @@ import json
 import pathlib
 import random
 import sys
+from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import doccheck as dc  # noqa: E402
-from fuzz_common import InvariantBroken, Mutator, nested  # noqa: E402
+import doccheck as dc
+from fuzz_common import InvariantBroken, Mutator, nested
+
+# Schemas and instances are arbitrary JSON by construction here: the harness
+# exists to feed the validator documents no static type would admit.
+Json = Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-def load_pairs() -> list[tuple[str, dict, list]]:
+def load_pairs() -> list[tuple[str, Json, list[Json]]]:
     out = []
     for schema_path, data_path in dc.SCHEMA_DATA_PAIRS:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -58,9 +63,11 @@ def load_pairs() -> list[tuple[str, dict, list]]:
     return out
 
 
-def check_totality(schema, instance):
+def check_totality(schema: Json, instance: Json) -> list[str]:
+    # The list-ness of the result is now statically guaranteed; the element types
+    # are not, because the validator builds messages from mutated content.
     errs = dc._schema_validate(instance, schema)
-    if not isinstance(errs, list) or not all(isinstance(e, str) for e in errs):
+    if not all(isinstance(e, str) for e in errs):
         raise InvariantBroken(f"non-list-of-str result: {errs!r}")
     again = dc._schema_validate(instance, schema)
     if again != errs:
@@ -68,7 +75,7 @@ def check_totality(schema, instance):
     return errs
 
 
-def check_sensitivity(rng: random.Random, name: str, schema: dict, instance):
+def check_sensitivity(rng: random.Random, name: str, schema: Json, instance: Json) -> bool:
     """Deleting a required top-level key from a valid instance must be caught."""
     required = schema.get("required") or []
     if not required or not isinstance(instance, dict):
@@ -83,16 +90,16 @@ def check_sensitivity(rng: random.Random, name: str, schema: dict, instance):
 def check_deep_nesting() -> None:
     """Deeply nested / self-referential schemas must yield errors, never RecursionError."""
     # Self-referential (aliased) schema: validator recursion tracks instance depth.
-    cyclic = {"type": "array"}
+    cyclic: dict[str, Any] = {"type": "array"}
     cyclic["items"] = cyclic
     # Deep linear schema walked by a matching deep instance.
-    deep = {"type": "object"}
+    deep: dict[str, Any] = {"type": "object"}
     node = deep
     for _ in range(4 * dc.MAX_SCHEMA_DEPTH):
         child = {"type": "object"}
         node["properties"] = {"a": child}
         node = child
-    deep_inst = {}
+    deep_inst: dict[str, Any] = {}
     cur = deep_inst
     for _ in range(4 * dc.MAX_SCHEMA_DEPTH):
         cur["a"] = {}
@@ -100,14 +107,17 @@ def check_deep_nesting() -> None:
     cases = [
         ("cyclic schema", cyclic, nested(4 * dc.MAX_SCHEMA_DEPTH)),
         ("deep schema", deep, deep_inst),
-        ("shallow schema", {"type": "array", "items": {"type": "integer"}},
-         nested(dc.MAX_SCHEMA_DEPTH + 1)),
+        (
+            "shallow schema",
+            {"type": "array", "items": {"type": "integer"}},
+            nested(dc.MAX_SCHEMA_DEPTH + 1),
+        ),
         ("at the bound", cyclic, nested(dc.MAX_SCHEMA_DEPTH)),
     ]
     for name, schema, inst in cases:
         try:
             errs = dc._schema_validate(inst, schema)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise InvariantBroken(f"{name} raised {type(exc).__name__}") from exc
         if not isinstance(errs, list):
             raise InvariantBroken(f"{name}: non-list result {errs!r}")

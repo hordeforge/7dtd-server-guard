@@ -20,7 +20,8 @@ Canonical modding guide: [MODDING_BEST_PRACTICES.md](https://github.com/hordefor
 
 The documents in `docs/` (indexed in `docs/INDEX.md`) and the phase gates in `TODO.md` are the
 design contract. Update them when evidence changes an assumption; record why in
-`docs/DECISIONS.md`. Run `make check` before opening a docs change.
+`docs/DECISIONS.md`. Run `make check` before opening a docs change and `make ci`
+(gate plus black, ruff, mypy, and the fuzzers) before touching `tools/`.
 
 
 ## Stock-game research -> 7dtd-engine-research

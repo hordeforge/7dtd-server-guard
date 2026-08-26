@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Verify the evidence hash chain (docs/SCHEMAS.md -> Evidence stream).
 
 Canonical serialization (pinned): JSON with sorted keys, no whitespace:
@@ -9,10 +8,11 @@ Segment linking: the first record of a segment chains to the last record of the
 previous segment (in file order).
 
 Usage:
-  python3 tools/evidence_check.py --dir <evidence-dir> [--index segment-index.json]
-  python3 tools/evidence_check.py --sample        verify the shipped sample chain
-  python3 tools/evidence_check.py --self-test     run negative tests (tamper, genesis)
+  uv run python tools/evidence_check.py --dir <evidence-dir> [--index segment-index.json]
+  uv run python tools/evidence_check.py --sample        verify the shipped sample chain
+  uv run python tools/evidence_check.py --self-test     run negative tests (tamper, genesis)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,21 +20,30 @@ import hashlib
 import json
 import pathlib
 import sys
+from typing import Any
 
-GENESIS = "0" * 64
+# An evidence record as parsed from a segment line. Fields are validated by
+# load_records and the evidence.v1 JSON Schema, not by the type.
+Record = dict[str, Any]
+# (line number, record, raw line) for one non-empty segment line.
+ParsedLine = tuple[int, Record, str]
+
+# sha256 rendered as lowercase hex.
+SHA256_HEX_LEN = 64
+GENESIS = "0" * SHA256_HEX_LEN
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
 
 
-def canonical(record: dict) -> str:
+def canonical(record: Record) -> str:
     return json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
-def record_hash(record: dict) -> str:
+def record_hash(record: Record) -> str:
     return hashlib.sha256(canonical(record).encode("utf-8")).hexdigest()
 
 
-def load_records(path: pathlib.Path) -> list[tuple[int, dict, str]]:
+def load_records(path: pathlib.Path) -> list[ParsedLine]:
     """Return (line_no, record, raw) for non-empty lines."""
     try:
         text = path.read_text(encoding="utf-8")
@@ -62,7 +71,7 @@ def load_records(path: pathlib.Path) -> list[tuple[int, dict, str]]:
     return out
 
 
-def verify_chain(records: list[tuple[int, dict, str]], first_of_stream: bool) -> list[str]:
+def verify_chain(records: list[ParsedLine], first_of_stream: bool) -> list[str]:
     """Verify chainPrev continuity within one segment.
 
     first_of_stream: True for the very first segment (genesis applies to its first record).
@@ -70,7 +79,11 @@ def verify_chain(records: list[tuple[int, dict, str]], first_of_stream: bool) ->
     errs = []
     prev_hash = None
     for idx, (line_no, rec, _raw) in enumerate(records):
-        expected = prev_hash if prev_hash is not None else (GENESIS if first_of_stream and idx == 0 else None)
+        expected = (
+            prev_hash
+            if prev_hash is not None
+            else (GENESIS if first_of_stream and idx == 0 else None)
+        )
         actual = rec["chainPrev"]
         if expected is None:
             # first record of a non-first segment: caller checks the cross-segment link.
@@ -78,30 +91,35 @@ def verify_chain(records: list[tuple[int, dict, str]], first_of_stream: bool) ->
         if actual != expected:
             errs.append(
                 f"line {line_no}: chainPrev mismatch; expected {expected[:16]}... ("
-                + ("previous record" if prev_hash else "genesis") + f"), got {actual[:16]}..."
+                + ("previous record" if prev_hash else "genesis")
+                + f"), got {actual[:16]}..."
             )
         prev_hash = record_hash(rec)
     return errs
 
 
+def load_index(index_path: pathlib.Path) -> tuple[dict[str, Any] | None, list[str]]:
+    """Read the optional segment index. Returns (index, errors); index is None when absent
+    or unusable."""
+    if not index_path.exists():
+        return None, []
+    name = index_path.name
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return None, [f"{name} unparseable: {exc}"]
+    except UnicodeDecodeError as exc:
+        return None, [f"{name} not valid UTF-8: {exc}"]
+    if not isinstance(index, dict):
+        return None, [f"{name}: must be a JSON object"]
+    return index, []
+
+
 def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
-    errs = []
     segments = sorted(evidence_dir.glob("evidence-*.jsonl"))
     if not segments:
         return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
-    index_path = evidence_dir / index_name
-    index = None
-    if index_path.exists():
-        try:
-            index = json.loads(index_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            errs.append(f"{index_name} unparseable: {exc}")
-        except UnicodeDecodeError as exc:
-            errs.append(f"{index_name} not valid UTF-8: {exc}")
-        else:
-            if not isinstance(index, dict):
-                errs.append(f"{index_name}: must be a JSON object")
-                index = None
+    index, errs = load_index(evidence_dir / index_name)
 
     prev_segment_last_hash = None
     for si, seg in enumerate(segments):
@@ -155,11 +173,11 @@ def self_test() -> list[str]:
         {"schemaVersion": 1, "type": "health", "eventId": "b", "chainPrev": "", "x": 2},
     ]
     # build a valid chain first
-    recs = []
-    for i, r in enumerate(base):
-        r = dict(r)
-        r["chainPrev"] = GENESIS if i == 0 else record_hash(recs[-1])
-        recs.append(r)
+    recs: list[Record] = []
+    for i, template in enumerate(base):
+        rec = dict(template)
+        rec["chainPrev"] = GENESIS if i == 0 else record_hash(recs[-1])
+        recs.append(rec)
     # tamper: change an earlier record without fixing downstream hashes. Tampering the
     # last record alone is NOT detectable until the next append; that is inherent to an
     # append-only chain and is documented in SCHEMAS.md.
@@ -178,10 +196,14 @@ def self_test() -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--dir", type=pathlib.Path, help="evidence directory with evidence-*.jsonl segments")
+    mode.add_argument(
+        "--dir", type=pathlib.Path, help="evidence directory with evidence-*.jsonl segments"
+    )
     mode.add_argument("--sample", action="store_true", help="verify the shipped sample chain")
     mode.add_argument("--self-test", action="store_true", help="run negative tests and exit")
-    ap.add_argument("--index", default="segment-index.json", help="segment index file name inside --dir")
+    ap.add_argument(
+        "--index", default="segment-index.json", help="segment index file name inside --dir"
+    )
     args = ap.parse_args()
 
     if args.self_test:

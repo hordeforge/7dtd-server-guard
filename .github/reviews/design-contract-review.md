@@ -51,7 +51,7 @@ Review the following:
    source is still correct.
 
 If available, use: `rg` for cross-document sweeps of repeated facts and "Document ->
-Section" pointers; `python3` with stdlib only (json, re, pathlib) for comparisons such as
+Section" pointers; `uv run python` with stdlib only (json, re, pathlib) for comparisons such as
 INDEX rows versus directory listings. Never install packages. Re-run `make check` before
 finishing so your edits keep the gate green.
 

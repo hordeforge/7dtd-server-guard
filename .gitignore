@@ -13,6 +13,7 @@ evidence/
 *.key
 __pycache__/
 *.lock
+!uv.lock
 .venv/
 
 # Scratch: every temporary, experimental, or bisect file lives here and is

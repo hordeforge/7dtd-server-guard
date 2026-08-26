@@ -76,6 +76,7 @@ with the policy contract in [docs/POLICY.md](docs/POLICY.md).
 
 - [Privacy and player-monitoring notice](PRIVACY.md)
 - [Security and disclosure policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 - [License: AGPL-3.0](LICENSE)
 
 ## Roadmap
@@ -89,23 +90,24 @@ the ledger, exit criteria, and known at-risk seams live in [TODO.md](TODO.md).
 
 ## Development
 
-Bootstrap (once per clone; needs Python 3.12+, the minor pinned in
-[.python-version](.python-version), which CI installs exactly):
+Bootstrap (once per clone; needs [uv](https://docs.astral.sh/uv/), which installs the
+interpreter minor pinned in [.python-version](.python-version) on its own):
 
-- `make setup`: create a project-local `.venv` and install the dependencies declared
-  in `requirements.txt`. Nothing is installed globally.
+- `make setup`: `uv sync --frozen`, materializing `.venv` from `uv.lock`. Nothing is
+  installed globally.
 
 Loop:
 
 - `make check`: docs quality gate (em dashes, internal links, detector spec and ceiling
   rule, registry sync, JSON Schemas, config/schema cross-references). Run before opening
   any change.
+- `make lint`: black, ruff, and mypy over `tools/`.
 - `make detectors`: re-render the detector registry tables and the per-detector config
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
 - `make exercise`: validate the design-time replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
   (evidence parser, schema validator, replay-trace contract checker).
-- `make ci`: everything CI runs, locally in one step (`check` + `test-tools`).
+- `make ci`: everything CI runs, locally in one step (`lint` + `check` + `test-tools`).
 
 The detector spec, data schemas, and methodology are the design contract; see
 [docs/INDEX.md](docs/INDEX.md) for who owns what.

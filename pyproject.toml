@@ -1,0 +1,29 @@
+[project]
+name = "7dtd-server-guard-tools"
+version = "0.3.0"
+description = "Docs gate, detector renderer, evidence verifier, and fuzzers for 7dtd-server-guard"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-only" }
+dependencies = [
+  "PyYAML>=6,<7",
+]
+
+[dependency-groups]
+dev = [
+  "black==25.9.0",
+  "ruff==0.16.4",
+  "mypy==2.3.1",
+  "types-PyYAML==6.0.12.20250915",
+]
+
+# Lint and typecheck settings live in ruff.toml and mypy.ini: those filenames
+# outrank [tool.*] sections here (first config found wins, no merging), so
+# keeping them out of this file avoids two drifting copies of each setting.
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.uv]
+package = false
