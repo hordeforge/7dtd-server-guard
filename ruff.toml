@@ -1,0 +1,27 @@
+# Project-wide ruff config: deterministic linting regardless of user-level
+# ~/.config/ruff settings (ruff falls back to those when no project config
+# exists, which makes local runs diverge from CI).
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors, incl. E501 hard 100-column cap
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes: unused imports/vars, undefined names
+    "B",   # flake8-bugbear: bug-prone constructs
+    "I",   # import sorting
+    "UP",  # pyupgrade: modern syntax
+    "RUF", # ruff-native rules
+    "EXE", # shebang/executable-bit hygiene
+    "PL",  # pylint-derived correctness checks
+    "A",   # builtin shadowing
+    "ARG", # unused function arguments
+    "C4",  # comprehension simplification
+    "DTZ", # naive datetime construction
+    "FURB",# refurb modernization checks
+    "PTH", # os.path -> pathlib
+    "PERF",# performance lints
+    "RET", # return simplification
+    "RSE", # unnecessary parens on raise
+]

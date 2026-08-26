@@ -112,8 +112,8 @@ not the tables. The per-detector config manifest
 ## Fixture coverage
 
 X marks the fixture families a detector must ship in TEST_PLAN.md Layer 4;
-declared per detector in `tools/detector_spec.yaml`. A detector is not considered for a mode
-raise until its declared fixture set is green in observe mode.
+declared per detector in `tools/detector_spec.yaml`. A detector is not considered
+for a mode raise until its declared fixture set is green in observe mode.
 
 | ID | normal | violation | latency-stall | reconnect-duplicate-session | teleport-vehicle-death | admin-mod-origin | rollback | induced-finding |
 |---|---|---|---|---|---|---|---|---|

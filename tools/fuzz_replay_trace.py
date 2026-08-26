@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fuzz the replay-trace contract checker (tools/replay_contract_check.py).
 
 Replay traces (config/schemas/replay-trace.v1.schema.json) are the interchange
@@ -19,8 +18,9 @@ Invariants asserted per iteration:
 Deterministic (seeded PRNG), stdlib only, no external fuzzer required.
 
 Usage:
-  python3 tools/fuzz_replay_trace.py [--iterations N] [--seed S]
+  uv run python tools/fuzz_replay_trace.py [--iterations N] [--seed S]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,8 +30,8 @@ import random
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import replay_contract_check as rcc  # noqa: E402
-from fuzz_common import InvariantBroken, Mutator, nested  # noqa: E402
+import replay_contract_check as rcc
+from fuzz_common import InvariantBroken, Mutator, nested
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json"
@@ -41,12 +41,16 @@ DETECTOR_IDS = {"inventory.stack"}
 DOMAIN_STRINGS = ["inventory.stack", "normal", "violation", "observe"]
 
 
-def check(trace, where: str) -> list[str]:
+def check(trace: object, where: str) -> list[str]:
     try:
         errs = rcc.contract_errors(trace, DETECTOR_IDS)
-    except Exception as exc:  # noqa: BLE001
-        raise InvariantBroken(f"{where}: contract_errors raised {type(exc).__name__}: {exc}") from exc
-    if not isinstance(errs, list) or not all(isinstance(e, str) for e in errs):
+    except Exception as exc:
+        raise InvariantBroken(
+            f"{where}: contract_errors raised {type(exc).__name__}: {exc}"
+        ) from exc
+    # The list-ness of the result is statically guaranteed; the element types are
+    # not, because the checker builds messages from mutated content.
+    if not all(isinstance(e, str) for e in errs):
         raise InvariantBroken(f"{where}: non-list-of-str result: {errs!r}")
     again = rcc.contract_errors(trace, DETECTOR_IDS)
     if again != errs:

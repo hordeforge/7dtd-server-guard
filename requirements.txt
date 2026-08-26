@@ -1,3 +1,0 @@
-# Runtime dependencies for tools/*.py (docs gate, detector renderer, replay contract).
-# Install into a project-local venv: make setup
-PyYAML>=6,<7
