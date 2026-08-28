@@ -1,6 +1,6 @@
 # Research and constraints
 
-Research date: 2026-07-21. Local target: 7 Days to Die dedicated V3.1.0 (b14), Unity Mono
+Research date: 2026-07-21. Local target: 7 Days to Die dedicated V3.2.0 (b9), Unity Mono
 (the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research` narratives under Local
 evidence now include **V3.1.0** regenerable dumps (`il/netpackages-v3.1.0/`,
 `il/dedi-complete-v3.1.0/`, `il/deep-v3.1.0/`, `il/loop-complete-v3.1.0/`); older narrative
@@ -103,7 +103,7 @@ inventory against the pinned build, unless noted otherwise.
 | Does the movement envelope hold against server-authoritative state on the pinned build? | Movement stays Strong, never Hard | Phase 1, Phase 5 |
 | Do `EntityAlive.DamageEntity` and `NetPackageRangeCheckDamageEntity` cover the same attack surface? | One path leaves a bypass | Phase 1, Phase 6 |
 | Can vehicle physics-master limits be reconstructed server-side? | Vehicle signals stay Weak | Phase 5 |
-| Which seams changed between V3.0.1 (b4) and V3.1.0 (b14)? | Hooks misresolve; fail-open limits the damage, coverage gaps remain | Phase 1 re-verification |
+| Which seams changed between V3.0.1 (b4) and V3.2.0 (b9)? | Hooks misresolve; fail-open limits the damage, coverage gaps remain | Phase 1 re-verification |
 
 ## Primary references
 
@@ -118,7 +118,7 @@ inventory against the pinned build, unless noted otherwise.
 
 ## Local evidence
 
-- `../../7dtd-engine-research/il/netpackages-v3.1.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
+- `../../7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
 - `../../7dtd-engine-research/docs/managers.md`: `ModEvents` inventory.
 - `../../7dtd-engine-research/docs/inventories/netpackages.md`: network package inventory and complexity.
 - `../../7dtd-engine-research/docs/protocol-frames.md`: decoded movement and damage frame structure.

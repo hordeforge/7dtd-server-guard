@@ -8,7 +8,7 @@
 ![languages](https://img.shields.io/github/languages/count/hordeforge/7dtd-server-guard)
 ![top language](https://img.shields.io/github/languages/top/hordeforge/7dtd-server-guard)
 
-Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die dedicated servers. The target is the locally installed dedicated V3.1.0 (b14) Mono server.
+Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die dedicated servers. The target is the locally installed dedicated V3.2.0 (b9) Mono server.
 
 ## Scope
 
@@ -24,7 +24,7 @@ a replacement for Easy Anti-Cheat.
 
 ## 📚 Modding Best Practices
 
-See the canonical **[HordeForge 7DTD Modding Best Practices Guide](https://github.com/hordeforge/.github/blob/main/MODDING_BEST_PRACTICES.md)** for engine load order rules, EAC-off requirements, `ModInfo.xml` specifications, and V3.1.0 compatibility notes.
+See the canonical **[HordeForge 7DTD Modding Best Practices Guide](https://github.com/hordeforge/.github/blob/main/MODDING_BEST_PRACTICES.md)** for engine load order rules, EAC-off requirements, `ModInfo.xml` specifications, and V3.2.0 compatibility notes.
 
 ## Safety defaults
 
