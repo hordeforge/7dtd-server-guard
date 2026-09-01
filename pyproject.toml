@@ -12,7 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "black==25.9.0",
-  "ruff==0.16.4",
+  "ruff==0.16.5",
   "mypy==2.3.1",
   "types-PyYAML==6.0.12.20250915",
 ]
