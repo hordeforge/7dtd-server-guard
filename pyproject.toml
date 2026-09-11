@@ -1,6 +1,6 @@
 [project]
 name = "7dtd-server-guard-tools"
-version = "0.3.0"
+version = "0.4.0"
 description = "Docs gate, detector renderer, evidence verifier, and fuzzers for 7dtd-server-guard"
 readme = "README.md"
 requires-python = ">=3.12"
