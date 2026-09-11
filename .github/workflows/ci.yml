@@ -18,7 +18,7 @@ jobs:
     steps:
       # actions/checkout v4.2.2. SHA-pinned per dependabot.yml: these actions
       # are the whole dependency surface, so tags must not be mutable refs.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # astral-sh/setup-uv v5: uv installs the interpreter minor declared in
       # .python-version and the locked dependency set, instead of whatever the
       # runner image happens to ship.
