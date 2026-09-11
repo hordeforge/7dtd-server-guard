@@ -10,6 +10,16 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-11
+
+### Changed
+
+- `AGENTS.md` states what this repository owns and does not own: server-side
+  behavioural validation and anti-cheat evidence here, no client scanners and
+  no automatic permanent bans by default, stock RE in `7dtd-engine-research`.
+- The version pin moves to **V3.2.0 (b9)**, and the research citations point at
+  the grouped `docs/<subsystem>/` tree.
+
 ## [0.3.0] - 2026-08-26
 
 Toolchain and gate release. The design contract (`docs/`, `TODO.md`) is
