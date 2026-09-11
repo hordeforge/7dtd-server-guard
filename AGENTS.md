@@ -5,6 +5,15 @@ operator response for modded 7DTD dedicated servers.
 
 Canonical modding guide: [MODDING_BEST_PRACTICES.md](https://github.com/hordeforge/.github/blob/main/MODDING_BEST_PRACTICES.md)
 
+## Owns
+
+| Owns | Does not own |
+|---|---|
+| Server-side behavioral validation, inventory conservation, anti-cheat evidence | Client scanners, drivers, memory inspection, screenshots |
+| Observe-first detectors and operator response tooling | Automatic permanent bans as the default action |
+| Guard-local tests and repeatable scenarios for detectors | Stock playtest suites (`7dtd-playtest`); loadgen demand bots |
+| Docs/decision contract under `docs/` + `TODO.md` phase gates | Stock dedicated RE narratives (`7dtd-engine-research`) |
+
 ## Boundaries
 
 - Do not add client scanners, drivers, memory inspection, screenshots, or EAC bypasses.
