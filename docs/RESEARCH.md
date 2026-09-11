@@ -119,9 +119,9 @@ inventory against the pinned build, unless noted otherwise.
 ## Local evidence
 
 - `../../7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
-- `../../7dtd-engine-research/docs/managers.md`: `ModEvents` inventory.
+- `../../7dtd-engine-research/docs/loop/managers.md`: `ModEvents` inventory.
 - `../../7dtd-engine-research/docs/inventories/netpackages.md`: network package inventory and complexity.
-- `../../7dtd-engine-research/docs/protocol-frames.md`: decoded movement and damage frame structure.
+- `../../7dtd-engine-research/docs/network/protocol-frames.md`: decoded movement and damage frame structure.
 - `../../7dtd-engine-research/docs/inventories/gaps.md`: EAC and authoritative method surface inventory.
 - `../AGENTS.md`: workspace EAC, runtime, build, and evidence constraints.
 
