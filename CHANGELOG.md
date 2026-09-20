@@ -10,6 +10,15 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-20
+
+### Changed
+
+- Tooling and CI upkeep only, all via dependabot: black 25.9.0 to 26.5.1 and
+  ruff 0.16.4 to 0.16.6 in the lock, `actions/checkout` 4.2.2 to 7.0.1, and
+  `astral-sh/setup-uv` 5.4.2 to 10.0.1 in the workflows. No detector, gate, or
+  command behavior changes. Patch bump: `make ci` is green unchanged.
+
 ## [0.4.0] - 2026-09-11
 
 ### Changed
