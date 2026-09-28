@@ -122,9 +122,13 @@ A scheduled copy whose exit code nobody checks is not a backup.
 `make export-evidence DIR=<evidence-dir> OUT=<archive-root>` copies every
 `evidence-*.jsonl` segment and the segment index, after verifying the hash chain and
 re-verifying the copies, and writes `archive-manifest.json` with a per-file SHA-256
-and byte count. It refuses to run on a chain that does not verify, on a zero-byte
-segment, and on a copy that does not match the source, so a failed write can never be
-recorded as a successful backup.
+and byte count, plus a `manifestSha256` over the rest of the manifest. The per-file
+digests prove the archived bytes; the self-digest proves the attestation describing
+them, so a manifest edited in place (a rewritten source path, a corrected record
+count) is reported instead of verifying clean. A manifest without that field is
+manifest version 1 and is not verifiable by this tool. It refuses to run on a chain
+that does not verify, on a zero-byte segment, and on a copy that does not match the
+source, so a failed write can never be recorded as a successful backup.
 
 The identity map and the HMAC key are archived separately, under different
 credentials, in a different failure domain than the evidence they explain. A single

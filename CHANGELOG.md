@@ -44,6 +44,12 @@ above reserves minor bumps for that.
   the render path survives any value in the fields the structural validator leaves
   free. Pair assertions drop and mistype each required field. Run by
   `make test-tools` and `make fuzz FUZZ=detector_spec`.
+- The archive manifest carries `manifestSha256`, a digest over its own remaining
+  fields, and `manifestVersion` is 2. The per-file SHA-256s proved the archived
+  bytes; the self-digest proves the attestation describing them, so a manifest
+  edited in place no longer verifies clean. A version 1 manifest has no
+  self-digest and is reported as an unsupported version by
+  `make verify-archive`.
 - `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec>
   [ITERATIONS=N] [SEED=S]`
   runs one fuzzer at a short iteration count, with a usage error naming the valid

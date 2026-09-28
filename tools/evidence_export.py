@@ -45,7 +45,12 @@ Record = dict[str, Any]
 ManifestFile = dict[str, Any]
 
 MANIFEST_NAME = "archive-manifest.json"
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2
+# The manifest's self-digest field, and the canonicalization the digest covers:
+# every field except the digest itself, so a byte edited anywhere in the manifest
+# (a source path, the creation stamp, a count) is detectable. The per-file
+# SHA-256s prove the archived bytes; this proves the attestation describing them.
+MANIFEST_DIGEST_FIELD = "manifestSha256"
 SEGMENT_GLOB = "evidence-*.jsonl"
 DEFAULT_INDEX_NAME = ec.DEFAULT_INDEX
 # Read/write block size for copying and hashing, so archive size does not set the
@@ -81,6 +86,13 @@ def archive_members(source: pathlib.Path, index_name: str) -> list[pathlib.Path]
     return members
 
 
+def manifest_digest(manifest: dict[str, Any]) -> str:
+    """The SHA-256 over the manifest's canonical form, digest field excluded."""
+    covered = {k: v for k, v in manifest.items() if k != MANIFEST_DIGEST_FIELD}
+    canonical = json.dumps(covered, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def build_manifest(
     source: pathlib.Path, dest: pathlib.Path, created_utc: str, index_name: str
 ) -> dict[str, Any]:
@@ -94,7 +106,7 @@ def build_manifest(
         if path.suffix == ".jsonl":
             entry["records"] = _record_count(path)
         files.append(entry)
-    return {
+    manifest: dict[str, Any] = {
         "manifestVersion": MANIFEST_VERSION,
         "createdUtc": created_utc,
         "sourceDir": str(source),
@@ -105,6 +117,8 @@ def build_manifest(
         "totalBytes": sum(int(f["bytes"]) for f in files),
         "totalRecords": sum(int(f.get("records", 0)) for f in files),
     }
+    manifest[MANIFEST_DIGEST_FIELD] = manifest_digest(manifest)
+    return manifest
 
 
 def preflight(source: pathlib.Path, index_name: str) -> tuple[list[pathlib.Path], list[str]]:
@@ -229,6 +243,26 @@ def _entry_total(entries: list[object], field: str) -> int:
     return sum(int(e[field]) for e in entries if isinstance(e, dict) and _is_int(e.get(field)))
 
 
+def _attestation_errors(manifest: object) -> list[str]:
+    """The manifest's own shape: version, self-digest, file list, index name.
+
+    Checked before any file is read, so a manifest that cannot be trusted is not
+    used to name what to read.
+    """
+    if not isinstance(manifest, dict) or manifest.get("manifestVersion") != MANIFEST_VERSION:
+        return [f"{MANIFEST_NAME}: unsupported manifest version"]
+    if manifest.get(MANIFEST_DIGEST_FIELD) != manifest_digest(manifest):
+        return [
+            f"{MANIFEST_NAME}: {MANIFEST_DIGEST_FIELD} does not match the manifest; "
+            "the attestation itself was edited or is truncated"
+        ]
+    if not isinstance(manifest.get("files"), list) or not manifest["files"]:
+        return [f"{MANIFEST_NAME}: no file list"]
+    if not valid_member_name(manifest.get("indexFile") or DEFAULT_INDEX_NAME):
+        return [f"{MANIFEST_NAME}: indexFile is not a plain file name"]
+    return []
+
+
 def verify(archive: pathlib.Path) -> list[str]:
     """Re-check an archive against its manifest and re-verify its chain."""
     manifest_path = archive / MANIFEST_NAME
@@ -238,14 +272,13 @@ def verify(archive: pathlib.Path) -> list[str]:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         return [f"{MANIFEST_NAME}: unreadable: {exc}"]
-    if not isinstance(manifest, dict) or manifest.get("manifestVersion") != MANIFEST_VERSION:
-        return [f"{MANIFEST_NAME}: unsupported manifest version"]
-    entries = manifest.get("files")
-    if not isinstance(entries, list) or not entries:
-        return [f"{MANIFEST_NAME}: no file list"]
+    if not isinstance(manifest, dict):
+        return [f"{MANIFEST_NAME}: manifest is not a JSON object"]
+    attestation = _attestation_errors(manifest)
+    if attestation:
+        return attestation
+    entries = manifest["files"]
     index_name = manifest.get("indexFile") or DEFAULT_INDEX_NAME
-    if not valid_member_name(index_name):
-        return [f"{MANIFEST_NAME}: indexFile is not a plain file name"]
 
     errs: list[str] = []
     listed: set[str] = set()
@@ -353,6 +386,36 @@ def _self_test_corrupt_archive(archive: pathlib.Path, seg2: pathlib.Path) -> lis
     (archive / "evidence-2026-07-23-000000.jsonl").write_text("{}\n", encoding="utf-8")
     if not verify(archive):
         errs.append("self-test: verify accepted an archive with an unlisted file")
+    errs += _self_test_edited_manifest(archive)
+    return errs
+
+
+def _self_test_edited_manifest(archive: pathlib.Path) -> list[str]:
+    """An edited attestation is rejected, and so is one whose digest field is gone.
+
+    The per-file SHA-256s prove the archived bytes but say nothing about the
+    fields describing them, so a manifest edited in place (a rewritten source
+    path, a corrected record count) would otherwise verify clean.
+    """
+    errs: list[str] = []
+    path = archive / MANIFEST_NAME
+    text = path.read_text(encoding="utf-8")
+    before = verify(archive)
+    try:
+        manifest = json.loads(text)
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"self-test: exported manifest unreadable: {exc}"]
+    manifest["totalRecords"] = 0
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if not any(MANIFEST_DIGEST_FIELD in e for e in verify(archive)):
+        errs.append("self-test: verify accepted an edited manifest")
+    stripped = {k: v for k, v in manifest.items() if k != MANIFEST_DIGEST_FIELD}
+    path.write_text(json.dumps(stripped, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if not any(MANIFEST_DIGEST_FIELD in e for e in verify(archive)):
+        errs.append("self-test: verify accepted a manifest with no self-digest")
+    path.write_text(text, encoding="utf-8")
+    if verify(archive) != before:
+        errs.append("self-test: the restored manifest did not verify as it did before")
     return errs
 
 
@@ -411,6 +474,9 @@ def _self_test_manifest_bytes() -> list[str]:
             (-1, "a negative count"),
         ):
             manifest["files"][0]["bytes"] = bad
+            # Reseal, or the self-digest check reports the edit and the byte count
+            # this case exists to exercise is never read.
+            manifest[MANIFEST_DIGEST_FIELD] = manifest_digest(manifest)
             (scratch / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
             try:
                 found = verify(scratch)

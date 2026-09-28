@@ -168,10 +168,6 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
         # and a NaN/Infinity literal must be reported with the same file:line
         # context as any other bad line rather than escaping uncontextualized.
         raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
-    except ValueError as exc:
-        # parse_constant rejects the bare NaN/Infinity literals, and it raises a
-        # plain ValueError rather than a JSONDecodeError. Same file:line contract.
-        raise ValueError(f"{name}:{line_no}: invalid JSON value: {exc}") from exc
     if not isinstance(rec, dict):
         raise ValueError(f"{name}:{line_no}: record is not an object")
     for field in ("schemaVersion", "type", "eventId", "chainPrev"):

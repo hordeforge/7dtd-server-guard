@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import math
 import pathlib
 import re
 import sys
@@ -34,9 +35,47 @@ SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 # The recorded digest, with its quotes and value, for resealing a fixture in place.
 FINGERPRINT_FIELD = re.compile(r'("fingerprint":\s*")[0-9a-f]{64}(")')
 
+# Reported non-finite paths before the count collapses into a summary line.
+MAX_REPORTED_NON_FINITE = 5
+
 
 def _is_int(v: object) -> TypeGuard[int]:
     return isinstance(v, int) and not isinstance(v, bool)
+
+
+def non_finite_paths(value: object, path: str = "trace") -> list[str]:
+    """JSON paths of every NaN/Infinity in the trace, in document order.
+
+    Bare NaN and Infinity are not JSON, and the fingerprint and per-record
+    hashes are computed by json.dumps with allow_nan=False, so a trace carrying
+    one cannot be canonicalized, sealed, or replayed. The walk is iterative so
+    a deeply nested trace cannot turn this check into a RecursionError.
+    """
+    found: list[str] = []
+    stack: list[tuple[object, str]] = [(value, path)]
+    while stack:
+        node, node_path = stack.pop()
+        if isinstance(node, float) and not math.isfinite(node):
+            found.append(node_path)
+        elif isinstance(node, dict):
+            stack.extend((v, f"{node_path}.{k}") for k, v in node.items())
+        elif isinstance(node, list):
+            stack.extend((v, f"{node_path}[{i}]") for i, v in enumerate(node))
+    return sorted(found)
+
+
+def non_finite_errors(value: object) -> list[str]:
+    """Contract errors for non-finite numbers, capped so one bad trace cannot
+    bury the rest of the report under thousands of paths."""
+    paths = non_finite_paths(value)
+    errors = [
+        f"trace: non-finite number at {p}: JSON has no NaN or Infinity literal"
+        for p in paths[:MAX_REPORTED_NON_FINITE]
+    ]
+    hidden = len(paths) - MAX_REPORTED_NON_FINITE
+    if hidden > 0:
+        errors.append(f"trace: {hidden} further non-finite value(s)")
+    return errors
 
 
 def _expect(case: dict[str, Any]) -> dict[str, Any]:
@@ -235,6 +274,9 @@ def contract_errors(trace: object, detector_ids: set[str]) -> list[str]:
     """
     if not isinstance(trace, dict):
         return ["trace must be a JSON object"]
+    non_finite = non_finite_errors(trace)
+    if non_finite:
+        return non_finite
     detector_id = trace.get("detectorId")
     if not isinstance(detector_id, str):
         return ["trace: missing or non-string detectorId"]
