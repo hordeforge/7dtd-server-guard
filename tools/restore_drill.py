@@ -57,16 +57,6 @@ def _now() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
 
 
-def _parse_stamp(value: object) -> dt.datetime | None:
-    """The archive's own createdUtc, or None when it is absent or malformed."""
-    if not isinstance(value, str):
-        return None
-    try:
-        return dt.datetime.strptime(value, ee.STAMP_FORMAT).replace(tzinfo=dt.UTC)
-    except ValueError:
-        return None
-
-
 def _manifest(archive: pathlib.Path) -> Record | None:
     path = archive / ee.MANIFEST_NAME
     if not path.is_file():

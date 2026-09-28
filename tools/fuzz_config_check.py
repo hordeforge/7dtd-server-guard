@@ -62,6 +62,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config_check as cc
+import doccheck as dc
 from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, nested
 
 # Config JSON, mutated past its declared types on purpose: the shape is what the
@@ -299,7 +300,7 @@ def sensitivity(example: Json) -> str:
     Each case is a way an operator's file departs from the shipped example, and
     each has one verdict the validator owes the operator.
     """
-    registered = len(cc._registry_ids())
+    registered = len(dc.spec_ids())
     if errs := check_list(cc.check, example, {}, True):
         raise InvariantBrokenError(f"shipped example reported errors: {errs}")
     # A config with no schema version is not one this loader understands.
@@ -382,7 +383,7 @@ def run_configs(rng: random.Random, mut: Mutator, example: Json, iterations: int
 def run_consumers(rng: random.Random, mut: Mutator, example: Json, iterations: int) -> int:
     """Target 2: the cross-file consumers on content the schema gate never narrows,
     each called directly, plus the bound on the count they report."""
-    registered = len(cc._registry_ids())
+    registered = len(dc.spec_ids())
     for _ in range(iterations):
         candidate = mut.mutate(mut.mutate(example))
         check_list(cc.registry_errors, candidate)

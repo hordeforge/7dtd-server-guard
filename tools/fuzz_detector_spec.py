@@ -218,12 +218,10 @@ def check_pairs(path: pathlib.Path) -> str:
     """Every required field is caught when dropped or mistyped, on the real spec."""
     pristine = rd.load_spec()
     record = cast("dict[str, Any]", pristine[0])
-    if rd.validate(pristine):
-        raise InvariantBrokenError(
-            f"pristine spec fails structural validation: {rd.validate(pristine)}"
-        )
-    if dc.check_spec():
-        raise InvariantBrokenError(f"pristine spec reported errors: {dc.check_spec()[:3]}")
+    if errors := rd.validate(pristine):
+        raise InvariantBrokenError(f"pristine spec fails structural validation: {errors}")
+    if errors := dc.check_spec():
+        raise InvariantBrokenError(f"pristine spec reported errors: {errors[:3]}")
     if len(rd.identified(pristine)) != len(pristine):
         raise InvariantBrokenError("the pristine spec has records without a usable id")
 

@@ -49,7 +49,7 @@ import subprocess
 import sys
 import tomllib
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from typing import Any
 from urllib.parse import unquote
@@ -137,8 +137,8 @@ ALLOWED_FIXTURES = frozenset(render_detectors.FIXTURE_FAMILIES)
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 DETECTOR_ID_RE = re.compile(r"`([a-z]+\.[a-z_]+)`")
 # An ATX heading (`## Scope`), and the underline of a setext one (`Scope` then
-# `-----`). A `#` inside a fenced block is a comment or a shell prompt, not a
-# heading, so the fence state is tracked while the slugs are collected.
+# `-----`). Both are matched against unfenced_lines, since a `#` inside a fenced
+# block is a comment or a shell prompt, not a heading.
 ATX_RE = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
 SETEXT_RE = re.compile(r"^=+\s*$|^-{2,}\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -149,6 +149,24 @@ ANY_CHECKBOX_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s*\[[ xX]\]")
 # A released changelog section, dated. `## [Unreleased]` carries no version and is
 # not a release, so it cannot be compared against the manifest.
 RELEASED_SECTION_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$", re.MULTILINE)
+
+
+def unfenced_lines(text: str) -> Iterator[tuple[int, str]]:
+    """(0-based index, line) for every line outside a fenced code block.
+
+    A fenced block is prose about the markdown, not the markdown itself, so a
+    `#` or a `- [ ]` inside one is a comment or an example, not a heading or a
+    task marker. The opening and closing marker lines are dropped too.
+    """
+    fence: str | None = None
+    for i, line in enumerate(text.splitlines()):
+        if (fence_match := FENCE_RE.match(line)) is not None:
+            marker = fence_match.group(1)
+            fence = None if fence == marker else marker
+            continue
+        if fence is None:
+            yield i, line
+
 
 # Key patterns declared in the SCHEMAS.md config table. They share the dotted
 # family.subject shape with detector IDs, but rows like actions.correct or
@@ -307,15 +325,8 @@ def heading_slugs(text: str) -> set[str]:
     """
     slugs: set[str] = set()
     repeats: dict[str, int] = {}
-    fence: str | None = None
     lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if (fence_match := FENCE_RE.match(line)) is not None:
-            marker = fence_match.group(1)
-            fence = None if fence == marker else marker
-            continue
-        if fence is not None:
-            continue
+    for i, line in unfenced_lines(text):
         heading: str | None = None
         if atx := ATX_RE.match(line):
             heading = atx.group(1)
@@ -366,24 +377,16 @@ def check_todo_format() -> list[str]:
     CommonMark renders a task box from any list item whose first token is the
     marker, so `-  [ ] x` and `-[ ] x` become checkboxes too. A gate that only
     rejects the `- [` spelling let those through, and a phase gate that renders
-    as an unchecked box on one host and as text on another is not a gate. A
-    fenced block is prose about the format, not the format, so it is skipped.
+    as an unchecked box on one host and as text on another is not a gate.
     """
     todo = ROOT / "TODO.md"
     out = []
-    fence: str | None = None
-    for i, line in enumerate(todo.read_text(encoding="utf-8").splitlines(), 1):
-        if (fence_match := FENCE_RE.match(line)) is not None:
-            marker = fence_match.group(1)
-            fence = None if fence == marker else marker
-            continue
-        if fence is not None:
-            continue
+    for i, line in unfenced_lines(todo.read_text(encoding="utf-8")):
         stripped = line.strip()
         if CANONICAL_CHECKBOX_RE.match(stripped):
             continue
         if ANY_CHECKBOX_RE.match(stripped):
-            out.append(f"TODO.md:{i}: malformed checkbox: {stripped[:80]}")
+            out.append(f"TODO.md:{i + 1}: malformed checkbox: {stripped[:80]}")
     return out
 
 

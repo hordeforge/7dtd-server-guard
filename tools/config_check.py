@@ -107,10 +107,6 @@ def config_hash(effective: Json) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _registry_ids() -> set[str]:
-    return dc.spec_ids()
-
-
 def _manifest_thresholds() -> dict[str, dict[str, Json]]:
     """Per-detector threshold entries from the generated manifest, keyed by threshold
     key. Detectors the manifest does not carry are absent, and every threshold set
@@ -130,7 +126,7 @@ def _manifest_thresholds() -> dict[str, dict[str, Json]]:
 def registry_errors(config: Json) -> list[str]:
     """Every `modes` key is a registered detector, and every `thresholds` block names
     one the manifest declares."""
-    registered = _registry_ids()
+    registered = dc.spec_ids()
     out: list[str] = []
     modes = config.get("modes", {})
     if isinstance(modes, dict):
@@ -203,7 +199,7 @@ def unlisted_detectors(config: Json) -> int:
     `observe` default, which is safe, so this is reported, not an error."""
     modes = config.get("modes", {})
     named = set(modes) if isinstance(modes, dict) else set()
-    return len(_registry_ids() - named)
+    return len(dc.spec_ids() - named)
 
 
 def check(config: Json, env: dict[str, str] | None = None, check_env: bool = True) -> list[str]:
@@ -374,33 +370,6 @@ def _load_self_test(failures: list[str]) -> None:
             failures.append("loading the same file twice gave two different results")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-
-
-def _exit_code_self_test(failures: list[str]) -> None:
-    """The exit codes the command-line contract states, driven through main().
-
-    tools/README.md -> Command-line contract: 2 is a usage error, and a path
-    that does not exist is a check failure (1), not a usage error. A deploy
-    script branching on the code reads 2 as "I invoked the tool wrong" and would
-    not investigate a config path that was never there.
-    """
-    cases: list[tuple[list[str], int, str]] = [
-        (["--config", str(ROOT / ".scratch" / "no-such-config.json")], 1, "a missing config path"),
-        ([], 2, "a bare invocation"),
-    ]
-    for argv, expected, what in cases:
-        saved = sys.argv
-        sys.argv = ["config_check.py", *argv]
-        try:
-            with (
-                contextlib.redirect_stdout(io.StringIO()),
-                contextlib.redirect_stderr(io.StringIO()),
-            ):
-                code = main()
-        finally:
-            sys.argv = saved
-        if code != expected:
-            failures.append(f"self-test: {what} exited {code}, expected {expected}")
 
 
 def self_test() -> list[str]:

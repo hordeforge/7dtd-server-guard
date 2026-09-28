@@ -54,6 +54,19 @@ from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args,
 Json = Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+SCHEMA_PATH = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
+SAMPLE_PATH = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
+
+
+def evidence_schema() -> Json:
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def sample_records() -> dict[str, Json]:
+    """The shipped sample, keyed by record type, one record each."""
+    text = SAMPLE_PATH.read_text(encoding="utf-8")
+    return {rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())}
+
 
 # A finding hands `context`, `observations`, `expected`, and `actual` to the
 # exporter, the operator, and the webhook consumer, so a key that could hold a
@@ -229,13 +242,8 @@ def check_datetime_format() -> None:
     the writer's local one and the segment that holds the record is named for
     the UTC date.
     """
-    schema = json.loads(
-        (ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text(encoding="utf-8")
-    )
-    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text(encoding="utf-8")
-    records = {
-        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
-    }
+    schema = evidence_schema()
+    records = sample_records()
     field_of = {"finding": "utc", "audit": "utc", "reconciliation": "savedAt"}
     good_values = ("2026-07-21T12:34:56.789Z", "2026-07-21T12:34:56Z")
     bad_values = {
@@ -276,17 +284,11 @@ def check_personal_data_denylist() -> int:
     doccheck.py keeps every open object carrying the deny-list; this pins that
     the deny-list it carries actually fires, in each bag a finding writes to.
     """
-    schema_path = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    sample = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
-    findings = [
-        json.loads(ln)
-        for ln in sample.read_text(encoding="utf-8").splitlines()
-        if ln.strip() and json.loads(ln)["type"] == "finding"
-    ]
-    if not findings:
+    schema = evidence_schema()
+    records = sample_records()
+    if "finding" not in records:
         raise InvariantBrokenError("no finding record in the shipped evidence sample")
-    record = findings[0]
+    record = records["finding"]
     checks = 0
     for key in PERSONAL_DATA_KEYS:
         for bag in EVIDENCE_BAGS:
@@ -318,9 +320,7 @@ def check_open_bag_walk() -> int:
     exactly one unguarded bag and requires the walk to report it; the shipped
     schema, which has six, must still report no error.
     """
-    schema = json.loads(
-        (ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text(encoding="utf-8")
-    )
+    schema = evidence_schema()
     if dc.check_evidence_personal_data():
         raise InvariantBrokenError("the shipped evidence schema failed its own deny-list check")
     cases = {
@@ -361,11 +361,8 @@ def check_evidence_bags_beyond_finding() -> None:
     reconciliation record's `deltaItems` and the id lists are the only places
     this is reachable outside the `finding` bags.
     """
-    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
-    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text(encoding="utf-8")
-    records = {
-        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
-    }
+    schema = evidence_schema()
+    records = sample_records()
     cases = [
         ("finding.causeEventIds", {**records["finding"], "causeEventIds": ["a-player-name"]}),
         ("finding.causeEventIds", {**records["finding"], "causeEventIds": [1234]}),
@@ -397,12 +394,8 @@ def check_non_finite_numbers() -> None:
     JSON has no encoding for either, so a strict reader downstream rejects the
     document outright.
     """
-    path = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
-    schema = json.loads(path.read_text(encoding="utf-8"))
-    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text(encoding="utf-8")
-    records = {
-        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
-    }
+    schema = evidence_schema()
+    records = sample_records()
     # confidence is bounded (0..1); delta is a number with no bounds, so only the
     # finiteness check stands between an unbounded field and a NaN.
     for rec_type, field, finite in (
@@ -479,11 +472,8 @@ def check_record_references() -> int:
     record's size be set by whatever wrote it, on the append-only stream the
     rest of the schema bounds for exactly that reason.
     """
-    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
-    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text()
-    records = {
-        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
-    }
+    schema = evidence_schema()
+    records = sample_records()
     good_id = "9f2c1a3d-4e5b-4c6d-8e7f-0a1b2c3d4e5f"
     checks = 0
     for rec_type, field, bound in (
