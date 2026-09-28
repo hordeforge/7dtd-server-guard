@@ -81,7 +81,16 @@ import config_check as cc
 import evidence_check as ec
 import evidence_export as ee
 import restore_drill as rd
-from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, nested
+from fuzz_common import (
+    InvariantBrokenError,
+    Mutator,
+    add_fuzz_args,
+    corrupt_bytes,
+    fuzz_args,
+    json_clone,
+    nested,
+    weighted_choice,
+)
 
 # Config JSON, mutated past its declared types on purpose: the shape is what the
 # drill's consumers read, so the harness cannot narrow it either.
@@ -153,35 +162,10 @@ CONFIG_KIND_WEIGHTS = {
 }
 
 
-def weighted(rng: random.Random, weights: dict[str, int]) -> str:
-    """Pick one key from a name -> relative-weight table."""
-    return rng.choices(list(weights), weights=list(weights.values()))[0]
-
-
-def clone(value: Json) -> Json:
-    """Independent copy of a parsed value, by the same JSON round trip the files use."""
-    return json.loads(json.dumps(value))
-
-
 def config_digest(config: Json) -> str:
     """The config hash a record carries when the server ran this config."""
     schema = json.loads(cc.SCHEMA_PATH.read_text(encoding="utf-8"))
     return cc.config_hash(cc.effective_config(config, schema))
-
-
-def corrupt(rng: random.Random, data: bytes) -> bytes:
-    """Bytes that are damaged for certain: a no-op mutation would make the harness
-    assert rejection of damage that never happened."""
-    if not data:
-        return data
-    if rng.random() < P_TRUNCATE:
-        cut = rng.randrange(len(data))
-        return data[:cut] if cut else data[1:]
-    pos = rng.randrange(len(data))
-    replacement = rng.randrange(256)
-    if replacement == data[pos]:
-        replacement = (replacement + 1) % 256
-    return data[:pos] + bytes([replacement]) + data[pos + 1 :]
 
 
 def build_archive(
@@ -225,15 +209,15 @@ def write_config(scratch: pathlib.Path, rng: random.Random, mut: Mutator) -> pat
     config_dir = scratch / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     path = config_dir / "server-guard.json"
-    kind = weighted(rng, CONFIG_KIND_WEIGHTS)
+    kind = weighted_choice(rng, CONFIG_KIND_WEIGHTS)
     if kind == "keep":
         raw = json.dumps(DEPLOYED).encode("utf-8")
     elif kind == "value":
-        raw = json.dumps(mut.mutate(clone(DEPLOYED))).encode("utf-8")
+        raw = json.dumps(mut.mutate(json_clone(DEPLOYED))).encode("utf-8")
     elif kind == "bytes":
-        raw = corrupt(rng, json.dumps(DEPLOYED).encode("utf-8"))
+        raw = corrupt_bytes(rng, json.dumps(DEPLOYED).encode("utf-8"), truncate=P_TRUNCATE)
     elif kind == "deep":
-        raw = json.dumps({**clone(DEPLOYED), "deep": nested(300)}).encode("utf-8")
+        raw = json.dumps({**json_clone(DEPLOYED), "deep": nested(300)}).encode("utf-8")
     else:
         raw = b"{not json at all"
     path.write_bytes(raw)
@@ -246,7 +230,7 @@ def damage_archive(  # noqa: PLR0911, PLR0912 - one return and one branch per da
     """Apply one class of archive damage. Returns (the drill is required to report
     it, the damage kind), so a failure names the class that slipped through."""
     manifest = archive / ee.MANIFEST_NAME
-    kind = weighted(rng, ARCHIVE_KIND_WEIGHTS)
+    kind = weighted_choice(rng, ARCHIVE_KIND_WEIGHTS)
     if kind == "keep":
         return False, kind
     if kind == "manifest_value":
@@ -270,7 +254,7 @@ def damage_archive(  # noqa: PLR0911, PLR0912 - one return and one branch per da
                 for e in (entries if isinstance(entries, list) else [])
             ],
         }
-        damaged = mut.mutate(clone(view))
+        damaged = mut.mutate(json_clone(view))
         # A mutation that is no longer an object, or that changed nothing, wrote
         # no damage: claiming otherwise would assert detection of damage the
         # archive never took.
@@ -289,11 +273,11 @@ def damage_archive(  # noqa: PLR0911, PLR0912 - one return and one branch per da
     if kind == "manifest_bytes":
         # The manifest carries its own digest, so a flipped byte anywhere in it is
         # damage the verifier catches.
-        manifest.write_bytes(corrupt(rng, manifest.read_bytes()))
+        manifest.write_bytes(corrupt_bytes(rng, manifest.read_bytes(), truncate=P_TRUNCATE))
         return True, kind
     if kind == "segment_bytes":
         for segment in sorted(archive.glob(ee.SEGMENT_GLOB)):
-            segment.write_bytes(corrupt(rng, segment.read_bytes()))
+            segment.write_bytes(corrupt_bytes(rng, segment.read_bytes(), truncate=P_TRUNCATE))
             break
         return True, kind
     if kind == "drop_segment":
@@ -401,9 +385,9 @@ def run_config_consumers(rng: random.Random, mut: Mutator, iterations: int) -> i
     root.mkdir(parents=True, exist_ok=True)
     try:
         for _ in range(iterations):
-            candidate = mut.mutate(clone(DEPLOYED))
+            candidate = mut.mutate(json_clone(DEPLOYED))
             if not isinstance(candidate, dict):
-                candidate = clone(DEPLOYED)
+                candidate = json_clone(DEPLOYED)
             hashes = rng.choice([{digest}, {digest[:16]}, set(), {"g" * 64}])
             try:
                 matched = rd.config_match_errors(candidate, hashes, root / "server-guard.json")

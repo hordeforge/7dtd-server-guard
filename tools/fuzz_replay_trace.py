@@ -32,21 +32,22 @@ import json
 import pathlib
 import random
 import sys
-from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import replay_contract_check as rcc
-from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, nested
+from fuzz_common import (
+    InvariantBrokenError,
+    Mutator,
+    add_fuzz_args,
+    fuzz_args,
+    json_clone,
+    nested,
+)
 
 DETECTOR_IDS = {"inventory.stack"}
 
 # Strings the contract checker branches on, so mutants land on both sides of its rules.
 DOMAIN_STRINGS = ["inventory.stack", "normal", "violation", "observe"]
-
-
-def clone(trace: Any) -> Any:
-    """Independent copy of a parsed trace, by the same JSON round trip the file uses."""
-    return json.loads(json.dumps(trace))
 
 
 def check(trace: object, where: str) -> list[str]:
@@ -90,19 +91,19 @@ def main() -> int:
             if not check(bad, f"sample without {drop}"):
                 raise InvariantBrokenError(f"dropping {drop} was accepted")
 
-        tampered = clone(pristine)
+        tampered = json_clone(pristine)
         tampered["determinism"]["fingerprint"] = "0" * 64
         if not check(tampered, "sample with a tampered fingerprint"):
             raise InvariantBrokenError(
                 "a fingerprint that does not match the projection was accepted"
             )
 
-        skewed = clone(pristine)
+        skewed = json_clone(pristine)
         skewed["determinism"]["startUtc"] = "not-an-instant"
         if not check(skewed, "sample with an unparseable clock origin"):
             raise InvariantBrokenError("an unparseable determinism.startUtc was accepted")
 
-        backwards = clone(pristine)
+        backwards = json_clone(pristine)
         first = backwards["cases"][0]["events"][0]
         backwards["cases"][0]["events"].append(dict(first, sequence=2, tick=first["tick"] - 1))
         # Re-seal so the tick rule is the only thing left to catch.
@@ -121,7 +122,7 @@ def main() -> int:
         # Built from the pristine trace, not a mutant: the probe indexes cases ->
         # events, and a mutant may have dropped or replaced either (that is the
         # path under test above, not this one).
-        deep = clone(pristine)
+        deep = json_clone(pristine)
         deep["cases"][0]["events"][0]["values"] = {"claimedDestinationQuantity": nested(64)}
         check(deep, "deep-nested value")
     except InvariantBrokenError as exc:

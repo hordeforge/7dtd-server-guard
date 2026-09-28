@@ -12,6 +12,7 @@ corpus rather than what the mutators emit.
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import string
 from typing import Any
@@ -109,6 +110,27 @@ def nested(depth: int) -> list[Any]:
 def weighted_choice(rng: random.Random, weights: dict[str, int]) -> str:
     """Pick one key from a name -> relative-weight table."""
     return rng.choices(list(weights), weights=list(weights.values()))[0]
+
+
+def json_clone(value: Any) -> Any:
+    """Independent copy of a parsed value, by the same JSON round trip the files use."""
+    return json.loads(json.dumps(value))
+
+
+def corrupt_bytes(rng: random.Random, data: bytes, *, truncate: float) -> bytes:
+    """Bytes that are damaged for certain: a no-op mutation would make a harness
+    assert rejection of damage that never happened. `truncate` is the probability
+    of cutting the buffer short rather than flipping one byte in it."""
+    if not data:
+        return data
+    if rng.random() < truncate:
+        cut = rng.randrange(len(data))
+        return data[:cut] if cut else data[1:]
+    pos = rng.randrange(len(data))
+    replacement = rng.randrange(256)
+    if replacement == data[pos]:
+        replacement = (replacement + 1) % 256
+    return data[:pos] + bytes([replacement]) + data[pos + 1 :]
 
 
 class Mutator:

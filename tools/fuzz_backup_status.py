@@ -71,7 +71,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import backup_status as bs
 import evidence_check as ec
 import evidence_export as ee
-from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args
+from fuzz_common import (
+    InvariantBrokenError,
+    Mutator,
+    add_fuzz_args,
+    corrupt_bytes,
+    fuzz_args,
+    weighted_choice,
+)
 
 # Manifest JSON, mutated past its declared types on purpose: the shape is what
 # the check reads, so the harness cannot narrow it either.
@@ -155,31 +162,6 @@ ARCHIVE_KIND_WEIGHTS = {
     "segment_bytes": 20,
     "drop_manifest": 15,
 }
-
-
-def weighted(rng: random.Random, weights: dict[str, int]) -> str:
-    """Pick one key from a name -> relative-weight table."""
-    return rng.choices(list(weights), weights=list(weights.values()))[0]
-
-
-def clone(value: Json) -> Json:
-    """Independent copy of a parsed value, by the same JSON round trip the file uses."""
-    return json.loads(json.dumps(value))
-
-
-def corrupt(rng: random.Random, data: bytes) -> bytes:
-    """Bytes that are damaged for certain: a no-op mutation would make the harness
-    assert rejection of damage that never happened."""
-    if not data:
-        return data
-    if rng.random() < P_TRUNCATE:
-        cut = rng.randrange(len(data))
-        return data[:cut] if cut else data[1:]
-    pos = rng.randrange(len(data))
-    replacement = rng.randrange(256)
-    if replacement == data[pos]:
-        replacement = (replacement + 1) % 256
-    return data[:pos] + bytes([replacement]) + data[pos + 1 :]
 
 
 def build_root(scratch: pathlib.Path, offsets_hours: list[float]) -> pathlib.Path:
@@ -269,7 +251,7 @@ def run_created_utc(rng: random.Random, mut: Mutator, iterations: int) -> dict[s
         try:
             archive = build_root(scratch, [1.0])
             archive = next(p for p in sorted(archive.iterdir()) if p.is_dir())
-            kind = weighted(rng, STAMP_KIND_WEIGHTS)
+            kind = weighted_choice(rng, STAMP_KIND_WEIGHTS)
             damage_stamp(archive, kind, rng, mut)
             try:
                 first = bs.created_utc(archive)
@@ -299,7 +281,7 @@ def damage_archives(archives: list[pathlib.Path], rng: random.Random, mut: Mutat
     for archive in archives:
         if rng.random() < P_DAMAGE_ARCHIVE:
             continue
-        kind = weighted(rng, ARCHIVE_KIND_WEIGHTS)
+        kind = weighted_choice(rng, ARCHIVE_KIND_WEIGHTS)
         manifest = archive / ee.MANIFEST_NAME
         if kind == "manifest_value":
             try:
@@ -314,7 +296,7 @@ def damage_archives(archives: list[pathlib.Path], rng: random.Random, mut: Mutat
                 else next(iter(sorted(archive.glob(ee.SEGMENT_GLOB))), None)
             )
             if target is not None and target.is_file():
-                target.write_bytes(corrupt(rng, target.read_bytes()))
+                target.write_bytes(corrupt_bytes(rng, target.read_bytes(), truncate=P_TRUNCATE))
         elif kind == "drop_manifest" and manifest.is_file():
             manifest.unlink()
 

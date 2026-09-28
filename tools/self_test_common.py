@@ -14,9 +14,12 @@ import io
 import sys
 from collections.abc import Callable, Sequence
 
+# One case: what the run is, the argv it is given, and the exit code it must return.
+Case = tuple[str, list[str], int]
+
 
 def main_contract_errors(
-    cases: Sequence[tuple[str, list[str], int]],
+    cases: Sequence[Case],
     *,
     script: str,
     run: Callable[[], int],
