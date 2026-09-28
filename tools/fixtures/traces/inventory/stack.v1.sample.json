@@ -8,7 +8,7 @@
   "determinism": {
     "startUtc": "2026-07-21T12:00:00.000Z",
     "startMonotonicMs": 0,
-    "fingerprint": "119397e32e59338180c22720d93eb739f3cef6875b6288144028aea4df06e344"
+    "fingerprint": "68b6f3d1d137f0646a0db38d35082bb4b75d5e77811af00fb987476f6fcede76"
   },
   "workBudget": {"maxEvents": 4, "maxStateEntries": 8, "maxWorkUnits": 32},
   "cases": [

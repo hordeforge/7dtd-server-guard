@@ -129,23 +129,27 @@ PAIR_CHAIN_LEN = 5
 
 
 def check_verify_dir(tmp: pathlib.Path, files: dict[str, bytes], index: bytes | None) -> list[str]:
-    run = pathlib.Path(tempfile.mkdtemp(dir=tmp))  # fresh state per iteration
-    for name, blob in files.items():
-        (run / name).write_bytes(blob)
-    if index is not None:
-        (run / "segment-index.json").write_bytes(index)
-    try:
-        errs = ec.verify_dir(run, "segment-index.json")
-    except Exception as exc:
-        raise InvariantBroken(f"verify_dir raised {type(exc).__name__}: {exc}") from exc
-    # The list-ness of the result is statically guaranteed; the element types are
-    # not, because the verifier builds messages from mutated content.
-    if not all(isinstance(e, str) for e in errs):
-        raise InvariantBroken(f"verify_dir returned non-list-of-str: {errs!r}")
-    again = ec.verify_dir(run, "segment-index.json")
-    if again != errs:
-        raise InvariantBroken(f"verify_dir nondeterministic: {errs!r} vs {again!r}")
-    return errs
+    # Fresh state per iteration, torn down with it: the run directory and the
+    # segments written into it are removed on every exit, including the raise
+    # paths, so a run of N iterations leaves N directories behind otherwise.
+    with tempfile.TemporaryDirectory(dir=tmp) as run_dir:
+        run = pathlib.Path(run_dir)
+        for name, blob in files.items():
+            (run / name).write_bytes(blob)
+        if index is not None:
+            (run / "segment-index.json").write_bytes(index)
+        try:
+            errs = ec.verify_dir(run, "segment-index.json")
+        except Exception as exc:
+            raise InvariantBroken(f"verify_dir raised {type(exc).__name__}: {exc}") from exc
+        # The list-ness of the result is statically guaranteed; the element types are
+        # not, because the verifier builds messages from mutated content.
+        if not all(isinstance(e, str) for e in errs):
+            raise InvariantBroken(f"verify_dir returned non-list-of-str: {errs!r}")
+        again = ec.verify_dir(run, "segment-index.json")
+        if again != errs:
+            raise InvariantBroken(f"verify_dir nondeterministic: {errs!r} vs {again!r}")
+        return errs
 
 
 def build_valid_segment(n: int) -> list[ec.Record]:
