@@ -20,13 +20,26 @@ import hashlib
 import json
 import pathlib
 import sys
-from typing import Any
+from collections.abc import Iterable, Iterator
+from typing import Any, NamedTuple
 
 # An evidence record as parsed from a segment line. Fields are validated by
-# load_records and the evidence.v1 JSON Schema, not by the type.
+# _parse_line and the evidence.v1 JSON Schema, not by the type.
 Record = dict[str, Any]
 # (line number, record, raw line) for one non-empty segment line.
 ParsedLine = tuple[int, Record, str]
+
+
+class SegmentChain(NamedTuple):
+    """What one segment's chain walk observed: mismatch errors, record count, the
+    first record's chainPrev (the cross-segment link), and the last record's hash
+    (the next segment's expected link)."""
+
+    errors: list[str]
+    record_count: int
+    first_prev: str | None
+    last_hash: str | None
+
 
 # sha256 rendered as lowercase hex.
 SHA256_HEX_LEN = 64
@@ -43,51 +56,73 @@ def record_hash(record: Record) -> str:
     return hashlib.sha256(canonical(record).encode("utf-8")).hexdigest()
 
 
-def load_records(path: pathlib.Path) -> list[ParsedLine]:
-    """Return (line_no, record, raw) for non-empty lines."""
+def _parse_line(name: str, line_no: int, line: str) -> Record:
+    """Parse and shape-check one segment line. Raises ValueError naming file:line."""
     try:
-        text = path.read_text(encoding="utf-8")
+        rec = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
+    if not isinstance(rec, dict):
+        raise ValueError(f"{name}:{line_no}: record is not an object")
+    for field in ("schemaVersion", "type", "eventId", "chainPrev"):
+        if field not in rec:
+            raise ValueError(f"{name}:{line_no}: missing field {field!r}")
+    if not isinstance(rec["chainPrev"], str):
+        raise ValueError(f"{name}:{line_no}: chainPrev must be a string")
+    if rec["schemaVersion"] != 1:
+        raise ValueError(f"{name}:{line_no}: unsupported schemaVersion {rec['schemaVersion']}")
+    return rec
+
+
+def iter_records(path: pathlib.Path) -> Iterator[ParsedLine]:
+    """Yield (line_no, record, raw) for non-empty lines, one line at a time.
+
+    Segments are append-only server output with no size bound, so verification
+    streams them: a segment costs one line of memory here, not the whole file
+    plus every parsed record.
+    """
+    name = path.name
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for i, raw in enumerate(handle, 1):
+                line = raw.strip()
+                if not line:
+                    continue
+                yield (i, _parse_line(name, i, line), line)
     except UnicodeDecodeError as exc:
-        raise ValueError(f"{path.name}: not valid UTF-8: {exc}") from exc
-    out = []
-    for i, raw in enumerate(text.splitlines(), 1):
-        line = raw.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{path.name}:{i}: unparseable JSON: {exc}") from exc
-        if not isinstance(rec, dict):
-            raise ValueError(f"{path.name}:{i}: record is not an object")
-        for field in ("schemaVersion", "type", "eventId", "chainPrev"):
-            if field not in rec:
-                raise ValueError(f"{path.name}:{i}: missing field {field!r}")
-        if not isinstance(rec["chainPrev"], str):
-            raise ValueError(f"{path.name}:{i}: chainPrev must be a string")
-        if rec["schemaVersion"] != 1:
-            raise ValueError(f"{path.name}:{i}: unsupported schemaVersion {rec['schemaVersion']}")
-        out.append((i, rec, line))
-    return out
+        raise ValueError(f"{name}: not valid UTF-8: {exc}") from exc
 
 
-def verify_chain(records: list[ParsedLine], first_of_stream: bool) -> list[str]:
+def load_records(path: pathlib.Path) -> list[ParsedLine]:
+    """Return (line_no, record, raw) for non-empty lines, materializing the segment.
+
+    Use iter_records for anything reading a whole segment: evidence has no upper
+    size bound, and this list holds every parsed record at once.
+    """
+    return list(iter_records(path))
+
+
+def verify_chain(records: Iterable[ParsedLine], first_of_stream: bool) -> SegmentChain:
     """Verify chainPrev continuity within one segment.
 
     first_of_stream: True for the very first segment (genesis applies to its first record).
+    Consumes the iterable once, so a segment can be streamed from disk.
     """
-    errs = []
-    prev_hash = None
-    for idx, (line_no, rec, _raw) in enumerate(records):
-        expected = (
-            prev_hash
-            if prev_hash is not None
-            else (GENESIS if first_of_stream and idx == 0 else None)
-        )
-        actual = rec["chainPrev"]
-        if expected is None:
-            # first record of a non-first segment: caller checks the cross-segment link.
+    errs: list[str] = []
+    prev_hash: str | None = None
+    first_prev: str | None = None
+    count = 0
+    for line_no, rec, _raw in records:
+        count += 1
+        if first_prev is None:
+            first_prev = rec["chainPrev"]
+        if count == 1 and not first_of_stream:
+            # The first record of a non-first segment chains to the previous
+            # segment's last record; the caller checks that link.
+            prev_hash = record_hash(rec)
             continue
+        expected = prev_hash if prev_hash is not None else GENESIS
+        actual = rec["chainPrev"]
         if actual != expected:
             errs.append(
                 f"line {line_no}: chainPrev mismatch; expected {expected[:16]}... ("
@@ -95,7 +130,7 @@ def verify_chain(records: list[ParsedLine], first_of_stream: bool) -> list[str]:
                 + f"), got {actual[:16]}..."
             )
         prev_hash = record_hash(rec)
-    return errs
+    return SegmentChain(errs, count, first_prev, prev_hash)
 
 
 def load_index(index_path: pathlib.Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -124,27 +159,25 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
     prev_segment_last_hash = None
     for si, seg in enumerate(segments):
         try:
-            records = load_records(seg)
+            chain = verify_chain(iter_records(seg), first_of_stream=si == 0)
         except ValueError as exc:
             errs.append(str(exc))
             continue
-        if not records:
+        if chain.record_count == 0:
             errs.append(f"{seg.name}: empty segment")
             continue
-        first_of_stream = si == 0
-        errs += [f"{seg.name}: {e}" for e in verify_chain(records, first_of_stream)]
+        errs += [f"{seg.name}: {e}" for e in chain.errors]
         # cross-segment link
-        first_hash_parent = records[0][1]["chainPrev"]
-        if si == 0 and first_hash_parent != GENESIS:
+        if si == 0 and chain.first_prev != GENESIS:
             errs.append(f"{seg.name}: first record of the stream must chain to genesis")
         if si > 0:
             if prev_segment_last_hash is None:
                 errs.append(f"{seg.name}: previous segment had no records to chain to")
-            elif first_hash_parent != prev_segment_last_hash:
+            elif chain.first_prev != prev_segment_last_hash:
                 errs.append(
                     f"{seg.name}: first record does not chain to previous segment's last record"
                 )
-        prev_segment_last_hash = record_hash(records[-1][1])
+        prev_segment_last_hash = chain.last_hash
 
     # cross-check the index if present
     if index and "segments" in index:
@@ -159,10 +192,10 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
 
 def verify_sample() -> list[str]:
     try:
-        records = load_records(SAMPLE)
+        chain = verify_chain(iter_records(SAMPLE), first_of_stream=True)
     except ValueError as exc:
         return [str(exc)]
-    return [f"sample: {e}" for e in verify_chain(records, first_of_stream=True)]
+    return [f"sample: {e}" for e in chain.errors]
 
 
 def self_test() -> list[str]:
@@ -184,12 +217,23 @@ def self_test() -> list[str]:
     bad = [dict(recs[0]), dict(recs[1])]
     bad[0]["x"] = 999
     from_tuples = [(i + 1, r, json.dumps(r)) for i, r in enumerate(bad)]
-    found = verify_chain(from_tuples, first_of_stream=True)
+    found = verify_chain(from_tuples, first_of_stream=True).errors
     if not found:
         errs.append("self-test: tamper was not detected")
-    # non-first-segment links are checked by the caller (verify_dir); exercise the skip
-    # branch so it keeps running without raising.
-    verify_chain([(1, dict(recs[0]), "")], first_of_stream=False)
+    # A non-first segment's first record chains across the segment boundary (the
+    # caller checks that link), but every record after it must still chain
+    # within the segment: dropping that check would let a tampered middle record
+    # pass unnoticed, so pin it here.
+    tail = [dict(recs[0]), dict(recs[1])]
+    tail[0]["x"] = 999
+    tail_errors = verify_chain(
+        [(i + 1, r, json.dumps(r)) for i, r in enumerate(tail)], first_of_stream=False
+    ).errors
+    if len(tail_errors) != 1:
+        errs.append(
+            "self-test: tampered record inside a non-first segment went unchecked: "
+            f"{tail_errors}"
+        )
     return errs
 
 

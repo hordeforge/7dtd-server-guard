@@ -24,6 +24,14 @@ this file and are described only by their git tags.
   so a diverging replay fails on one digest. `tools/replay_contract_check.py`
   verifies both and rejects a case whose `tick` steps backwards.
 
+### Changed
+
+- `tools/evidence_check.py` streams evidence segments instead of materializing them, so
+  `make verify-evidence` costs constant memory on a production evidence directory
+  (measured 217MB to 42MB peak RSS on a 25MB segment, flat from 25MB to 101MB segments).
+- `tools/render_detectors.py` parses `tools/detector_spec.yaml` once per process; the
+  doccheck gate parsed it three times at ~90ms each.
+
 ### Fixed
 
 - `fuzz_replay_trace.py` built its deep-nesting probe from a mutated trace and then
@@ -46,6 +54,9 @@ this file and are described only by their git tags.
 - The seam map cites the V3.2.0 netpackage census (195 types) instead of the V3.1.0 census
   (193 types), and `world.budget` no longer names `NetPackagePOIAround`, which the V3.2.0
   census does not contain.
+- `tools/evidence_check.py` verifies chain continuity inside every segment, not only in
+  the first one. A record after the first line of a non-genesis segment was skipped along
+  with the cross-segment link, so a tampered record there passed verification.
 
 ## [0.4.1] - 2026-09-20
 

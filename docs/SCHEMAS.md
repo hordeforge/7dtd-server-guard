@@ -133,7 +133,8 @@ zone. Duration fields (`monotonicMs`, `latencyMs`, `uptimeS`) come from the serv
 clock, so they measure elapsed time within one process and are never compared across
 processes or machines. The verifier is `make verify-evidence DIR=<evidence-dir>`
 and the shipped sample (`config/schemas/evidence.v1.sample.jsonl`) is a real, verifiable
-chain run by the doccheck gate.
+chain run by the doccheck gate. The verifier walks each segment line by line, so its
+memory cost does not grow with segment size.
 
 The machine form of this section is the JSON Schema at
 `config/schemas/evidence.v1.schema.json` with a one-record-per-type sample at

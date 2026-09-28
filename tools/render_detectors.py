@@ -10,6 +10,7 @@ Usage (from repo root):
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import pathlib
 import sys
@@ -65,7 +66,12 @@ FIXTURE_FAMILIES = [
 ]
 
 
+@functools.cache
 def load_spec() -> list[Detector]:
+    """Parse the canonical spec. Cached: YAML parsing costs ~90ms and every
+    consumer in one process (the registry render, the doccheck spec, manifest,
+    and coverage checks) wants the same read. Callers must treat the result as
+    read-only."""
     data: dict[str, Any] = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
     detectors: list[Detector] = data["detectors"]
     return detectors
