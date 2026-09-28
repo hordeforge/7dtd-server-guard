@@ -20,7 +20,8 @@ Checks:
       table of docs/SCHEMAS.md, and every key the config schema declares is documented
       there and either defaulted or shown in the example.
    9. The shipped JSON Schemas parse, and the example config, generated manifest,
-      evidence sample JSONL, and replay-trace fixture conform to them.
+      evidence sample JSONL, and replay-trace fixture conform to them. Every json
+      excerpt in docs/SCHEMAS.md validates against the schema its section names.
   10. The shipped evidence sample verifies as a hash chain (tools/evidence_check.py).
   11. The design-time replay contract vector passes its semantic checks.
   12. Documented folder structure holds: required docs exist and every planned directory
@@ -989,6 +990,44 @@ def check_config_schemas() -> list[str]:
     return out
 
 
+# A `##` heading that names the schema its section documents, and the fenced json
+# blocks under it, so an excerpt in the prose is held to the schema it illustrates.
+SCHEMA_SECTION_RE = re.compile(
+    r"^## .*\((config|config-manifest|evidence|replay-trace) v1\)$", re.MULTILINE
+)
+JSON_FENCE_RE = re.compile(r"```json\n(.*?)\n```", re.DOTALL)
+
+
+def check_docs_json_examples() -> list[str]:
+    """Every json excerpt in SCHEMAS.md validates against the schema its section names.
+
+    An excerpt is prose, so nothing held it to the schema, and a trimmed one drifts
+    into a shape the strict loader would reject while the doc claims the excerpt is
+    what the tool generates. Sections whose schema is a record shape with no shipped
+    file (hook manifest, audit, health) name no version tag and are skipped.
+    """
+    text = (ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8")
+    out = []
+    for match in SCHEMA_SECTION_RE.finditer(text):
+        schema_path = ROOT / "config" / "schemas" / f"{match.group(1)}.v1.schema.json"
+        if not schema_path.exists():
+            continue
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        section = text[match.end() :]
+        for fence in JSON_FENCE_RE.finditer(section.split("\n## ", 1)[0]):
+            try:
+                example = json.loads(fence.group(1))
+            except Exception as exc:
+                out.append(f"docs/SCHEMAS.md: json excerpt is not valid JSON: {exc}")
+                continue
+            out.extend(
+                f"docs/SCHEMAS.md: json excerpt does not match "
+                f"{schema_path.relative_to(ROOT)}: {err}"
+                for err in _schema_validate(example, schema)
+            )
+    return out
+
+
 def _open_value_bags(node: Json, path: str = "$") -> list[tuple[str, Json]]:
     """Every subschema of `node` that accepts values beyond a declared set.
 
@@ -1203,6 +1242,7 @@ def main() -> int:
         ("config example vs schema", check_config_example_keys),
         ("config schema vs docs", check_config_contract),
         ("config JSON schemas", check_config_schemas),
+        ("docs JSON examples", check_docs_json_examples),
         ("evidence personal data", check_evidence_personal_data),
         ("evidence sample chain", check_evidence_sample_chain),
         ("replay contract", check_replay_contract),

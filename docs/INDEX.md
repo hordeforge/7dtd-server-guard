@@ -64,7 +64,8 @@ bug to fix in the same change.
 │   ├── server-guard.example.json     example config v1
 │   ├── detector-config-manifest.json generated per-detector thresholds (make detectors,
     │                            never hand-edited)
-│   └── schemas/                      JSON Schema: config.v1, config-manifest.v1
+│   └── schemas/                      JSON Schema: config.v1, config-manifest.v1,
+│                                    evidence.v1, replay-trace.v1
 ├── docs/                      indexed contracts plus the non-binding proposal incubator
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects
@@ -73,23 +74,27 @@ bug to fix in the same change.
     ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
     ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain)
     ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
-    ├── evidence_export.py       verified evidence archive export and restore drill
-    │                            (make export-evidence, make verify-archive)
+    ├── evidence_export.py       evidence archiver and archive verifier, with the
+    │                            restore drill (make export-evidence, make
+    │                            verify-archive)
     ├── replay_contract_check.py replay-trace semantic contract gate (make exercise)
     ├── fuzz_evidence_check.py   seeded fuzzer over the evidence parser (make test-tools)
-    ├── fuzz_evidence_export.py  seeded fuzzer over the archive verifier (make test-tools)
+    ├── fuzz_evidence_export.py  seeded fuzzer over the archive verifier and exporter
+    │                            (make test-tools)
     ├── fuzz_schema_validate.py  seeded fuzzer over the JSON Schema validator (make test-tools)
     ├── fuzz_replay_trace.py     seeded fuzzer over the replay-trace contract checker
     │                            (make test-tools)
     ├── fuzz_detector_spec.py    seeded fuzzer over the detector spec consumers
     │                            (make test-tools)
-    ├── fuzz_common.py           mutation engine shared by the five fuzzers
+    ├── fuzz_common.py           mutation engine and shared --iterations/--seed flags for
+    │                            the five fuzzers
     ├── guard_python.py          enforces the .python-version pin before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
     │                            inventory design vector now; the rest fill in at Phase 4)
     └── surface_inventory/       Phase 1 Mono.Cecil metadata probe (planned)
 ```
 
-`docs/` and `TODO.md` are the design contract per AGENTS.md. Everything in `src/`, `tests/`,
-`config/`, and `tools/surface_inventory/` is planned scaffolding until its phase starts;
-empty directories carry a README stating what goes there.
+`docs/` and `TODO.md` are the design contract per AGENTS.md. `config/` and `tools/` ship the
+gated data contract and tooling today. Everything in `src/`, `tests/`, and
+`tools/surface_inventory/` is planned scaffolding until its phase starts; empty directories
+carry a README stating what goes there.

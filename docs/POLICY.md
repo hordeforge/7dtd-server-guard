@@ -135,7 +135,7 @@ never to the mod maintainer.
 Appeals: a player named in a `kick`, `quarantine`, or local ban may contest it. Every such
 action delivers the violated rule and evidence ID to the player (kick message, quarantine
 notice in game, ban reason at rejected join). The appeal owner reviews the evidence timeline
-and contextual values, records a disposition (confirmed, benign, uncertain, or detector bug),
+and contextual values, records a disposition (confirmed, benign, uncertain, or detector-bug),
 and any false positive is exported to the regression corpus. On a single-operator deployment
 the reviewer also wrote the policy; the mitigations are the dry-run diff before enabling any
 enforcement family and the disposition record, which makes every decision auditable after
@@ -151,7 +151,7 @@ the fact.
 | Authority class | Whether a validator input is server-derived or client-declared, plus its role (observed or decision); a client-declared *decision* input caps the signal below `Hard` unless a hard condition documents complete server-side determination | Severity |
 | Ledger | Per-player bounded double-entry state for movement, combat, inventory, or world actions | ARCHITECTURE.md → Components |
 | Cause token | Typed, authorized server-origin cause for an inventory delta; calling-mod identity is recorded on every invocation | SIGNALS.md -> Causal capabilities; TODO.md -> Phase 7 |
-| Evidence ID | Identifier on a finding, named in kick/quarantine/ban messages and webhook alerts | ARCHITECTURE.md → Evidence model |
+| Evidence ID | The finding's `eventId`, named in kick/quarantine/ban messages and webhook alerts | SCHEMAS.md → Evidence stream |
 | Session epoch | Per-connection identity epoch separating live from stale state | ARCHITECTURE.md → Components |
 | Pseudonym epoch | HMAC key rotation boundary for evidence pseudonyms | PRIVACY.md → Retention schedule |
 | `suppressedReason` | Why soft scoring was suppressed for a finding; preserved for tuning | Confidence and combination |

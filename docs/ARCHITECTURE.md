@@ -19,7 +19,8 @@ ModEvents and narrowly pinned Harmony hooks
   -> hard invariant validators and soft behavioral detectors
   -> independent evidence aggregation
   -> append-only evidence writer and counters
-  -> observe, correct, quarantine, kick, or operator review
+  -> action ladder: record, correct, quarantine, throttle, kick, temp-ban (local), or
+     operator review
 ```
 
 ## Components
@@ -209,7 +210,7 @@ window:
 |---|---|
 | `legal_distance` | `max_speed × Δt_server + max_acceleration × ½(Δt_server)²` |
 | `uncertainty` | `max_speed × latency_window + jitter_allowance` |
-| `bound` | `legal_distance + uncertainty` |
+| `bound` | `legal_distance + uncertainty + bounded_credit - debt` |
 
 When the reported displacement fits within `bound`, the position is accepted and the budget
 is consumed. When it exceeds, the position is clamped to the envelope edge and the excess is

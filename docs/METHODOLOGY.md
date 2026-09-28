@@ -80,7 +80,7 @@ metrics are published with the release.
 
 ## 4. Labeling methodology (Layer 7, Phase 9)
 
-- **Dispositions**: `confirmed`, `benign`, `uncertain`, `detector bug` (POLICY.md). Every
+- **Dispositions**: `confirmed`, `benign`, `uncertain`, `detector-bug` (POLICY.md). Every
   finding in the soak window receives exactly one disposition; `uncertain` is a state, not
   a dump.
 - **Labelers**: the operator; a second labeler when available. On disagreement, adjudicate
@@ -89,7 +89,7 @@ metrics are published with the release.
 - **Sampling**: stratify by detector, severity, and context; over-sample suppressed
   findings and boundary (near-threshold) findings so the calibration set reflects the
   decision surface, not just the tail.
-- **Feedback**: `benign` and `detector bug` export to the regression corpus
+- **Feedback**: `benign` and `detector-bug` export to the regression corpus
   (`tools/fixtures/regression/`) and are replayed by Layer 4; `confirmed` enters the
   calibration set; `uncertain` findings stay labeled until resolved or expire.
 

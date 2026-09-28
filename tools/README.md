@@ -61,8 +61,10 @@
 Every tool here is an entry point, so all of them follow the same rules:
 
 - Exit 0 when the check passed, 1 when it failed, 2 for a usage error (an unknown
-  flag, a missing argument, a path that does not exist). `make` targets that only
-  forward arguments exit 2 with the same meaning.
+  flag, a missing argument, or an argument combination the tool rejects before it
+  starts work, such as `--dir` with no `--out`). A path that does not exist is a
+  check failure (1), not a usage error. `make` targets that only forward
+  arguments exit 2 with the same meaning.
 - A clean run prints its one-line summary to stdout. A run that found something
   prints the report to stderr and leaves stdout empty, so `tool > report.txt`
   records the verdict and the diagnostics stay on the terminal.

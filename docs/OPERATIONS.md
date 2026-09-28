@@ -65,9 +65,9 @@ instructions for a shipped product.
 1. Player receives rule and evidence ID (kick message, quarantine notice, or ban reason).
 2. Operator resolves the pseudonym via the identity map, reviews the evidence timeline and
    contextual values.
-3. Operator records a disposition: `confirmed`, `benign`, `uncertain`, or `detector bug`
+3. Operator records a disposition: `confirmed`, `benign`, `uncertain`, or `detector-bug`
    (POLICY.md -> Roles and appeals; labeling method in [METHODOLOGY.md](METHODOLOGY.md) -> Labeling).
-4. `benign` and `detector bug` export to the regression corpus; `confirmed` may keep the
+4. `benign` and `detector-bug` export to the regression corpus; `confirmed` may keep the
    action; `uncertain` lowers the detector or narrows its context until resolved.
 5. Every disposition is an `audit` record. A player erasure request follows
    [PRIVACY.md](../PRIVACY.md) (tombstones preserve the chain; the audit log records the
@@ -85,23 +85,29 @@ never prints secrets or raw identities (pseudonyms only).
 | `sg detector list` | Registry IDs with current mode, ceiling, and context list | no |
 | `sg detector set <id> <mode> [reason]` | Per-detector override; lowering is instant, raising requires the gates | yes |
 | `sg findings <entityId> [--since <h>]` | Review findings for one entity (pseudonym resolution only during review) | no |
-| `sg evidence export <path>` | Pseudonymous export of chained segments | yes |
-| `sg review <evidenceId> <disposition> [reason]` | Record appeal disposition; `benign`/`detector bug` export to the regression corpus | yes |
+| `sg evidence export <path>` | Pseudonymous export of chained segments | no |
+| `sg review <eventId> <disposition> [reason]` | Record appeal disposition; `benign`/`detector-bug` export to the regression corpus | yes |
 | `sg dry-run <id>` | Show what *would* have happened in the target mode without changing mode | no |
-| `sg purge <evidenceId>` | Tombstone a record; requires a review disposition | yes |
+| `sg purge <eventId>` | Tombstone a record; requires a review disposition | yes |
 | `sg config show` | The effective config as loaded, under the `configHash` every evidence record carries. Secret env var names, never their values | no |
 | `sg config check [path]` | Validate the deployed file without reloading; reports exactly what startup would refuse | no |
 | `sg config reload` | Strict reload with the same validation as startup | yes |
-| `sg emergency-disable` / `sg emergency-enable` | Revert all detectors to observe / restore configured modes | yes |
+| `sg emergency-disable` | Revert all detectors to observe | yes |
+| `sg emergency-enable` | Restore configured modes | no |
+
+The `yes` rows are the commands that map to an `audit.action` value (SCHEMAS.md -> Audit
+log). An export copies records and changes no mode, and re-enabling is the absence of the
+disable the audit log already records, so neither has an action to write.
 
 ## Webhook alert payload
 
-The optional alert sink receives finding notifications off the game thread. Payloads carry
-evidence IDs only, never player identity:
+The optional alert sink receives finding notifications off the game thread. Payloads name the
+record by its `eventId` and carry no player identity:
 
 ```json
-{ "type": "finding", "evidenceId": "9f2c...", "detectorId": "movement.displacement",
-  "severity": "strong", "mode": "observe", "utc": "2026-07-21T12:34:56.789Z" }
+{ "type": "finding", "eventId": "a2e00258-5c85-4bdf-97d1-a68ff9910d41",
+  "detectorId": "movement.displacement", "severity": "strong", "mode": "observe",
+  "utc": "2026-07-21T12:34:56.789Z" }
 ```
 
 The webhook URL comes from `SERVERGUARD_WEBHOOK_URL` (SCHEMAS.md config), never a config

@@ -11,8 +11,10 @@ Rules that apply to every schema in this document:
 - Every schema carries a `schemaVersion` integer. A consumer that sees an unknown version
   refuses to start (config) or skips and reports (evidence replay), never guesses.
 - Unknown keys are rejected, not ignored. Invalid ranges and enums are rejected.
-- Every identifier (detector ID, evidence ID, cause token, session epoch) is validated
-  against a bounded charset: `[a-z0-9._-]`, max 64 chars.
+- Identifiers are validated per field, not by one shared charset. A detector ID is
+  `^[a-z]+\.[a-z_]+$`, an evidence `eventId` is a UUID, a `pseudonym` is `^p-[0-9a-f]{8,64}$`,
+  and a session epoch is an integer, so a hyphenated or numeric name is rejected where the
+  field's own pattern says it must be.
 - No schema ever contains a raw platform identity, IP address, auth ticket, password, or
   full packet body. Identities are HMAC pseudonyms (see [PRIVACY.md](../PRIVACY.md)).
   Every open value bag in the evidence schema (`context`, `observations`, `expected`,
@@ -194,24 +196,26 @@ Record types and their extra fields:
 
 A `finding` example (`action` is one of `record`, `correct`, `quarantine`, `throttle`,
 `kick`, `temp-ban-local`; `temp-ban-local` is a ban this mod applies from its own
-evidence, not one delegated to an external service):
+evidence, not one delegated to an external service). The identifiers are the elided-digest
+values the shipped sample uses, because the schema pins their length and pattern: a reader
+copying this example into a record needs values that validate.
 
 ```json
 {
   "schemaVersion": 1,
   "type": "finding",
-  "eventId": "9f2c...",
-  "chainPrev": "ab12...",
+  "eventId": "a2e00258-5c85-4bdf-97d1-a68ff9910d41",
+  "chainPrev": "0000000000000000000000000000000000000000000000000000000000000000",
   "utc": "2026-07-21T12:34:56.789Z",
   "monotonicMs": 1827364,
   "tick": 36547,
   "tickHealthMs": 41,
   "latencyMs": 88,
   "buildId": "3.2.0-b9",
-  "configHash": "cafe...",
-  "hookManifestHash": "beef...",
+  "configHash": "cafe000000000000000000000000000000000000000000000000000000000000",
+  "hookManifestHash": "beef000000000000000000000000000000000000000000000000000000000000",
   "sessionEpoch": 7,
-  "pseudonym": "p-9f2c1a...",
+  "pseudonym": "p-3e8d6f083e8d6f083e8d6f083e8d6f083e8d6f083e8d6f083e8d6f083e8d6f08",
   "entityId": 81234,
   "detectorId": "movement.displacement",
   "detectorVersion": "0.1.0",
@@ -264,8 +268,12 @@ load, and `NaN` or an infinity would compare false against every bound and never
 doccheck gate rejects both. The manifest is **generated** from the canonical detector spec
 (`tools/detector_spec.yaml`) into `config/detector-config-manifest.json` by
 `tools/render_detectors.py --manifest` (`make detectors`); edit the YAML, never the JSON.
-The excerpt below is illustrative of the generated shape and is kept in sync by the doccheck
-gate.
+Every detector entry carries `detectorId`, `phase`, `ceiling`, `defaultMode`, and `seam`;
+a detector that declares no thresholds has no `thresholds` key, and one that has a Hard
+ceiling also carries `hardCondition`. The excerpt below is two detectors trimmed to
+`config/detector-config-manifest.json`, and the doccheck gate validates every JSON excerpt
+in this document against the schema it documents, so it cannot drift into a shape the
+loader would reject.
 
 ```json
 {
@@ -273,17 +281,25 @@ gate.
   "detectors": [
     {
       "detectorId": "movement.displacement",
+      "phase": 5,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
+      "seam": "NetPackageEntityPosAndRot, NetPackageEntityRelPosAndRot, NetPackageEntityPhysics, NetPackagePlayerStats",
       "thresholds": [
-        { "key": "max_speed_mps", "type": "float", "range": [0.5, 100.0], "default": 10.0 },
-        { "key": "max_accel_mps2", "type": "float", "range": [0.0, 100.0], "default": 20.0 },
-        { "key": "latency_window_ms", "type": "int", "range": [0, 5000], "default": 200 },
-        { "key": "jitter_allowance_m", "type": "float", "range": [0.0, 50.0], "default": 1.0 },
-        { "key": "credit_cap_m", "type": "float", "range": [0.0, 200.0], "default": 20.0 },
-        { "key": "debt_grace_m", "type": "float", "range": [0.0, 200.0], "default": 10.0 }
+        { "key": "max_speed_mps", "type": "float", "range": [0.5, 100.0], "default": 10.0, "unit": "m/s", "note": "placeholder; sprint band" },
+        { "key": "max_accel_mps2", "type": "float", "range": [0.0, 100.0], "default": 20.0, "unit": "m/s2", "note": "placeholder" },
+        { "key": "latency_window_ms", "type": "int", "range": [0, 5000], "default": 200, "unit": "ms" },
+        { "key": "jitter_allowance_m", "type": "float", "range": [0.0, 50.0], "default": 1.0, "unit": "m" },
+        { "key": "credit_cap_m", "type": "float", "range": [0.0, 200.0], "default": 20.0, "unit": "m", "note": "unused budget cap" },
+        { "key": "debt_grace_m", "type": "float", "range": [0.0, 200.0], "default": 10.0, "unit": "m", "note": "over-budget grace" }
       ]
     },
     {
       "detectorId": "availability.cost",
+      "phase": 4,
+      "ceiling": "Strong",
+      "defaultMode": "observe",
+      "seam": "package decode counters across all census types",
       "thresholds": [
         { "key": "tiny", "type": "int", "range": [1, 1000], "default": 1 },
         { "key": "play", "type": "int", "range": [1, 1000], "default": 2 },
@@ -295,10 +311,9 @@ gate.
 }
 ```
 
-Rules: a detector with no declared thresholds has no `thresholds` keys; the config loader
-rejects any `thresholds.<id>.<key>` not declared here. Threshold defaults are placeholders
-until Phase 10 calibration; changing a default in the manifest is a config-schema change,
-not a code edit, and bumps the effective-config hash.
+Rules: the config loader rejects any `thresholds.<id>.<key>` not declared here. Threshold
+defaults are placeholders until Phase 10 calibration; changing a default in the manifest is a
+config-schema change, not a code edit, and bumps the effective-config hash.
 
 ## Hook manifest (manifest v1)
 

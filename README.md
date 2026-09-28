@@ -109,8 +109,8 @@ Loop:
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
 - `make exercise`: validate the design-time replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
-  (evidence parser and archive exporter, schema validator, replay-trace contract checker,
-  detector spec consumers).
+  (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
+  checker, detector spec consumers).
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
   iteration count, for editing a single tool. Seeds are deterministic, so a reported
   `seed=` reproduces the failure.

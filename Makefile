@@ -8,7 +8,7 @@
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
 # short-run loop cannot reproduce a seed the full run reported.
-FUZZERS := evidence_check schema_validate replay_trace detector_spec evidence_export
+FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_spec
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -66,9 +66,10 @@ detectors: guard-python
 exercise: guard-python
 	$(UV) python tools/replay_contract_check.py
 
-# Tests for the shipped Python tooling: evidence hash-chain negative self-tests
-# plus seeded structure-aware fuzzers over the evidence parser, the JSON Schema
-# validator, the replay-trace contract checker, and the detector spec consumers.
+# Tests for the shipped Python tooling: evidence hash-chain and archive
+# self-tests plus seeded structure-aware fuzzers over the evidence parser, the
+# archive verifier and exporter, the JSON Schema validator, the replay-trace
+# contract checker, and the detector spec consumers.
 test-tools: guard-python
 	$(UV) python tools/evidence_check.py --self-test
 	$(UV) python tools/evidence_export.py --self-test
@@ -130,8 +131,9 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
-	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, detector_spec, evidence_export)"
+	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
+	@echo "  make guard-python    interpreter pin gate every other target depends on"
 	@echo "  make verify-config FILE=<file> [SKIP_ENV=1]   validate a config file before deploying it"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"

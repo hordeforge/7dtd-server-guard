@@ -7,18 +7,25 @@ retention expiry deletes segments. A backup that is never verified is a
 hypothesis, so this tool refuses to copy anything it cannot verify first:
 
   export  verify the hash chain, copy every segment and the index, re-hash the
-          copies, and write manifest.json describing exactly what was archived.
-          A chain error, an empty copy, or a byte mismatch aborts before any
-          archive is declared complete.
+          copies, and write archive-manifest.json describing exactly what was
+          archived: a per-file SHA-256 and byte count, a record count for the
+          segments, and a manifestSha256 over the manifest's own remaining
+          fields. A chain error, an empty copy, or a byte mismatch aborts before
+          any archive is declared complete.
   verify  re-check an existing archive against its manifest and re-verify the
           chain inside it. This is the restore drill: an archive that passes
-          can be copied back into place and read.
+          can be copied back into place and read. A manifestVersion 1 archive
+          carries no self-digest and is reported as an unsupported version.
 
 Secrets are never archived here. The identity map and the HMAC key live outside
 the evidence directory (SCHEMAS.md config keys identityMap.path and
 hmacKey.path) and are backed up separately, by the procedure in
 docs/OPERATIONS.md -> Backup and restore. Archiving a pseudonym key beside the
 records it unmasks would hand one stolen copy both halves.
+
+Exit codes: 0 verified, 1 the archive or export failed, 2 usage error. A verdict
+goes to stdout and the detail to stderr, so a redirected run records the verdict
+alone.
 
 Usage:
   uv run python tools/evidence_export.py --dir <evidence-dir> --out <archive-root>
@@ -567,6 +574,14 @@ def self_test() -> list[str]:
     return errs
 
 
+def _report(summary: str, errs: list[str]) -> int:
+    """Print the verdict on stdout and the detail on stderr, per tools/README.md."""
+    print(summary)
+    for e in errs:
+        print("  " + e, file=sys.stderr)
+    return 1 if errs else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--self-test", action="store_true", help="run the archive self-tests and exit")
@@ -579,27 +594,17 @@ def main() -> int:
 
     if args.self_test:
         errs = self_test()
-        print(f"evidence-export self-test: {len(errs)} failure(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
+        return _report(f"evidence-export self-test: {len(errs)} failure(s)", errs)
 
     if args.archive:
         errs = verify(args.archive)
-        print(f"archive {args.archive}: {len(errs)} issue(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
+        return _report(f"archive {args.archive}: {len(errs)} issue(s)", errs)
 
     if args.dir:
         if args.out is None:
-            print("usage: --dir requires --out <archive-root>")
-            return 2
+            ap.error("--dir requires --out <archive-root>")
         errs = export(args.dir, args.out, args.index)
-        print(f"export {args.dir}: {len(errs)} issue(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
+        return _report(f"export {args.dir}: {len(errs)} issue(s)", errs)
 
     ap.print_help()
     return 2

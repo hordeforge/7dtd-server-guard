@@ -9,9 +9,10 @@ each layer verifies.
 ## Test layers
 
 Each layer names what it verifies, the components it targets, and the phase exits it gates. A
-phase closes only when every layer gating it passes. Layers 1-4 run in CI on every change;
-layers 5-7 run on the operator's licensed server per release candidate and during Phase 10
-calibration.
+phase closes only when every layer gating it passes. Layers 1-4 run in CI on every change once
+the test projects exist; until then CI runs the Python tooling gates (`make ci`), which is the
+whole of the automated coverage. Layers 5-7 run on the operator's licensed server per release
+candidate and during Phase 10 calibration.
 
 | # | Layer | Verifies | Target components | Gates phase exits |
 |---|---|---|---|---|
@@ -131,7 +132,7 @@ Exit: the full overhead budget holds, with confidence intervals on the reported 
 ### 7. Human soak and review
 
 Long-run soak on the operator's live server; findings are labeled confirmed, benign, uncertain,
-or detector bug (the policy's appeal dispositions). The movement detector family is not
+or detector-bug (the policy's appeal dispositions). The movement detector family is not
 considered for correction before at least 100 labeled player-hours. Labeled false positives and
 detector bugs are exported to the regression corpus and replayed by the layer 4 harness, so a
 fix ships with a failing-then-passing trace.
@@ -177,8 +178,8 @@ Organized by domain; each scenario maps to at least one detector fixture:
   clock; replay results are bit-reproducible.
 - Performance A/B uses identical world, seed, bots, duration, collectors, and config on the
   same host class; reports record the hardware and server config.
-- CI runs layers 1-4 on every change. Layers 5-7 run on the operator's server per release
-  candidate and during Phase 10 calibration.
+- CI runs layers 1-4 on every change once the test projects exist. Layers 5-7 run on the
+  operator's server per release candidate and during Phase 10 calibration.
 
 ## Release gates
 
