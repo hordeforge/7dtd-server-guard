@@ -180,9 +180,9 @@ backup: guard-python
 
 # Is the archive root still meeting its RPO? Read-only: it verifies the
 # archives newest first and exits non-zero when the newest one that verifies is
-# older than the window, when a newer archive does not verify, or when the root
-# holds none. This is the check that catches a scheduler that stopped running,
-# which no amount of verifying an old archive can.
+# older than the window, when a newer archive does not verify, when the root
+# holds none, and when two adjacent archives are further apart than the window,
+# which is a run that never landed and is invisible to the age of the newest one.
 # Usage: make backup-status ROOT=/path/to/archive-root [MAX_AGE_HOURS=24]
 backup-status: guard-python
 	@test -n "$(ROOT)" || { echo "usage: make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]" >&2; exit 2; }
@@ -190,8 +190,9 @@ backup-status: guard-python
 
 # The monthly restore drill, off the live store: verify the archive, copy it back
 # under its own file names, re-verify the chain over the copy, read the oldest
-# and newest records, and with CONFIG confirm the identity map and HMAC key the
-# archive cannot restore are present and inside the backup cycle. WORK must be
+# and newest records, and with CONFIG confirm the config hashes to what those
+# records were written under and that the identity map and HMAC key the archive
+# cannot restore are present and inside the backup cycle. WORK must be
 # empty or absent; a non-empty work directory is refused, never merged into.
 # Usage: make drill-restore ARCHIVE=/path/to/archive WORK=/path/to/scratch [CONFIG=/path/to/server-guard.json]
 drill-restore: guard-python
@@ -217,7 +218,7 @@ help:
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"
 	@echo "  make verify-archive ARCHIVE=<dir>   re-verify an archive against its manifest"
 	@echo "  make backup DIR=<evidence-dir> OUT=<root>   the scheduled archive run, one exit code"
-	@echo "  make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]   is the newest backup inside the RPO"
+	@echo "  make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]   is the archive series inside the RPO, with no missing run"
 	@echo "  make drill-restore ARCHIVE=<dir> WORK=<empty-dir> [CONFIG=<file>]   the monthly restore drill"
 	@echo "Python version: .python-version, enforced exactly (uv installs it; local builds refuse any other)."
 	@echo "uv version: required-version in pyproject.toml, enforced by uv itself and pinned to the same release in CI."

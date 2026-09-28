@@ -136,10 +136,13 @@ A scheduled copy whose exit code nobody checks is not a backup. `make backup-sta
 ROOT=<archive-root>` is the read-only check for the case neither the copy nor the
 verifier can see: it verifies the archives newest first and exits non-zero when the
 newest one that verifies is past the 24 h window, when a newer archive does not
-verify, or when the root holds none. Age comes from the archive manifest's
-`createdUtc`, not the directory timestamp, which copying off the server resets. Run
-it on the same schedule as the export, against the archive root the operator actually
-keeps off the server.
+verify, when the root holds none, and when two adjacent archives are more than the
+window apart. That last one is a run that never landed: a root holding a
+three-hour-old archive and a ten-day-old one is fresh, and the nine days between
+them are unarchived with no failing exit code to show for it. Age comes from the
+archive manifest's `createdUtc`, not the directory timestamp, which copying off the
+server resets. Run it on the same schedule as the export, against the archive root
+the operator actually keeps off the server.
 
 ### What gets archived, and what does not
 
@@ -197,12 +200,19 @@ stolen archive containing both would turn every pseudonym in it into a named pla
 4. Restore `hmac.key` before the identity map. Pseudonym resolution fails closed
    without the key, and a map restored under a different key epoch resolves to the
    wrong players.
-5. `make verify-evidence DIR=<evidence-dir>`. A broken link names the first record that
+5. Restore the config the evidence was written under, not the one currently on disk.
+   Every record carries the `configHash` of the effective config in force when it was
+   written, so a restored chain is attributable to a config; a config that hashes to
+   something no restored record carries is not the one those findings were produced
+   under, and its thresholds and `evidence.dir` are not the ones the evidence means.
+   The copy kept on every upgrade is the one to reach for; if it is gone, the archive
+   still names the hash to search the release history for.
+6. `make verify-evidence DIR=<evidence-dir>`. A broken link names the first record that
    does not chain; stop and use the next archive rather than editing records. A repeated
    `eventId` names a record the writer appended twice; the archive still holds the event,
    so restore it and let the writer's duplicate suppression be the fix.
-6. Start the server and confirm the health report and the oldest finding resolve.
-7. Keep the moved-aside directory until the restored chain verifies and the operator
+7. Start the server and confirm the health report and the oldest finding resolve.
+8. Keep the moved-aside directory until the restored chain verifies and the operator
    has confirmed the appeals record reads correctly.
 
 ### Restore drill
@@ -213,9 +223,15 @@ Monthly, into a scratch directory on a machine that is not the production server
 The target verifies the archive against its manifest, copies its segments and index
 into `WORK` under their own file names, re-verifies the hash chain over the copy, and
 reads the oldest and newest records back out, printing their types and event IDs. With
-`CONFIG` it also resolves `identityMap.path` and `hmacKey.path` and fails when either
+`CONFIG` it also checks that the config is the one the restored evidence was written
+under: every record carries the `configHash` of the effective config in force when it
+was written, so a config that hashes to a value no restored record carries is
+reported instead of paired with findings that were never produced under it. It then
+resolves `identityMap.path` and `hmacKey.path` and fails when either
 is missing, zero bytes, or older than the 7-day copy cycle, so a drill cannot pass on
-an archive that restores records nobody can attribute. `WORK` must be empty or absent;
+an archive that restores records nobody can attribute. Without `CONFIG` the verdict
+says so, so the drill record does not imply a cross-check that never ran. `WORK` must
+be empty or absent;
 a directory that still holds files is refused rather than merged into, because a
 restore that silently keeps a stale segment is the failure this exists to catch. The
 live evidence directory is never touched. A non-zero exit is a failed drill: record

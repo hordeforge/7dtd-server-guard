@@ -31,9 +31,14 @@
   (`make drill-restore ARCHIVE=... WORK=... [CONFIG=...]`). It verifies the archive
   against its manifest, copies its segments and index into an empty work directory
   under their own file names, re-verifies the chain over the copy, and reads the
-  oldest and newest records back out. With `--config` it also resolves
-  `identityMap.path` and `hmacKey.path` and fails on a missing, zero-byte, or
-  past-cycle key, so a drill cannot pass on a chain nobody can attribute. The live
+  oldest and newest records back out. With `--config` it also checks that the config
+  hashes to a value the restored records carry (every record stamps the `configHash`
+  it was written under, so a config the archive was not written under is reported
+  rather than paired with the evidence it did not produce), resolves
+  `identityMap.path` and `hmacKey.path`, and fails on a missing, zero-byte, or
+  past-cycle key, so a drill cannot pass on a chain nobody can attribute. Without
+  `--config` the verdict says the config went unchecked, so the drill record does
+  not imply a cross-check that never ran. The live
   evidence directory is never written, and a non-empty work directory is refused
   rather than merged into. Self-tests run under `make test-tools`.
 - `backup_status.py`: the read-only RPO check (`make backup-status ROOT=...`). It
@@ -42,7 +47,10 @@
   timestamp a copy off the server resets. A root with no archive, an archive that
   does not verify, and an archive older than the window are each reported by name, so
   a scheduler that stopped running is a non-zero exit rather than a discovery made
-  during an incident. It writes nothing. Self-tests run under `make test-tools`.
+  during an incident. It also reports the gaps between adjacent archives: a run that
+  never landed is invisible to the age of the newest one, and a root holding a
+  three-hour-old archive and a ten-day-old one is fresh with nine days of evidence
+  unarchived. It writes nothing. Self-tests run under `make test-tools`.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
 - `config_check.py`: validates an operator's own config file the way the strict Phase 2

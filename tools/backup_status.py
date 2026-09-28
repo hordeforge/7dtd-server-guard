@@ -3,13 +3,16 @@
 A scheduled export that fails, and a scheduler that never runs, look the same
 from the inside: the last good archive is simply older than it should be.
 Nothing in the repository answered that question, so an operator learned about
-a missed backup from needing one. This tool is the read-only check to put on
-the same schedule as the export:
+a missed backup from needing one. A scheduler that ran for a while and then
+stopped for a week is a different failure with the same symptom, and only the
+spacing of the series tells the two apart. This tool is the read-only check to
+put on the same schedule as the export:
 
   status  verify the archives in an archive root, newest first, and report the
           age of the newest one that verifies against the RPO. A root with no
-          archive, an archive that does not verify, and an archive older than
-          the window are each reported by name.
+          archive, an archive that does not verify, an archive older than the
+          window, and a gap wider than the window between two adjacent archives
+          are each reported by name.
 
 It writes nothing and copies nothing: the archives are the only copy of the
 evidence, and a status check that could damage them is a second thing to
@@ -35,6 +38,7 @@ import argparse
 import contextlib
 import datetime as dt
 import io
+import itertools
 import json
 import pathlib
 import shutil
@@ -93,6 +97,14 @@ def archive_dirs(root: pathlib.Path) -> list[pathlib.Path]:
 
 
 @dataclass(frozen=True)
+class ArchiveAge:
+    """One dated archive and how old it is, in hours."""
+
+    name: str
+    age_hours: float
+
+
+@dataclass(frozen=True)
 class BackupStatus:
     """What the newest verifying archive proves, and what is wrong with the rest.
 
@@ -100,6 +112,10 @@ class BackupStatus:
     runs whose output an operator would otherwise assume is covered, and a
     failure there means the effective RPO is the age of the older archive, not
     the newest one on disk.
+
+    `series` is every dated archive newest first, verified or not. The age of the
+    newest one says the schedule is running now; the spacing of the series says
+    whether it ran yesterday, which a fresh archive alone cannot answer.
     """
 
     fresh: pathlib.Path | None
@@ -107,6 +123,7 @@ class BackupStatus:
     failed: list[tuple[str, str]]
     undated: list[str]
     total: int
+    series: list[ArchiveAge]
 
 
 def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
@@ -115,7 +132,7 @@ def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
     moment = now or _now()
     found = archive_dirs(root)
     if not found:
-        return BackupStatus(None, None, [], [], 0)
+        return BackupStatus(None, None, [], [], 0, [])
     dated: list[tuple[float, pathlib.Path]] = []
     undated: list[str] = []
     for archive in found:
@@ -125,6 +142,10 @@ def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
             continue
         dated.append(((moment - stamp).total_seconds() / 3600, archive))
     dated.sort(key=lambda pair: pair[0])
+    # Every dated archive, verified or not: the gap below is read off the spacing
+    # of the whole series, which a run that stops at the first archive that
+    # verifies would leave out.
+    series = [ArchiveAge(a.name, hours) for hours, a in dated]
     fresh: pathlib.Path | None = None
     age: float | None = None
     failed: list[tuple[str, str]] = []
@@ -138,7 +159,30 @@ def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
         # older than it. Its state cannot open the RPO, and verifying it would
         # cost a full chain walk per archive for a finding nobody acts on.
         break
-    return BackupStatus(fresh, age, failed, undated, len(found))
+    return BackupStatus(fresh, age, failed, undated, len(found), series)
+
+
+def gap_errors(series: list[ArchiveAge], max_age_hours: float) -> list[str]:
+    """Runs that never landed, read off the spacing between the archives around them.
+
+    The age of the newest archive answers one question: is the schedule running
+    now. It cannot answer whether it ran yesterday, because a root holding a
+    three-hour-old archive and a ten-day-old one is fresh and has lost nine days
+    of evidence. Only the spacing says that, so the monthly "confirm the
+    archives for the last 30 days are present" is computed here instead of read
+    off a directory listing.
+    """
+    errs: list[str] = []
+    # The series is newest first, so a run that never landed is the space between
+    # the older archive's age and the newer one's, not the other way round.
+    for newer, older in itertools.pairwise(series):
+        gap = older.age_hours - newer.age_hours
+        if gap > max_age_hours:
+            errs.append(
+                f"{older.name} to {newer.name}: no archive for {gap:.1f} h, past the "
+                f"{max_age_hours:.0f} h window; evidence written in that gap has no archive"
+            )
+    return errs
 
 
 def report(
@@ -155,6 +199,7 @@ def report(
         )
     for name, first in status.failed:
         errs.append(f"{name}: does not verify ({first})")
+    errs += gap_errors(status.series, max_age_hours)
     if status.fresh is None or status.age_hours is None:
         errs.append(
             f"{root}: none of the {status.total} archive(s) verifies; "
@@ -339,6 +384,38 @@ def _self_test_undated() -> list[str]:
     return errs
 
 
+def _self_test_gap() -> list[str]:
+    """A run that never landed is a hole in the series, and a fresh archive on
+    top of it does not fill it. The daily run beside the hole is not one."""
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "backup-status-self-test-gap"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        for stamp in ("20260720T000000Z", "20260721T000000Z", "20260725T000000Z"):
+            if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp=stamp):
+                return [f"self-test: could not build an archive: {export_errs}"]
+        now = dt.datetime(2026, 7, 25, 1, 0, tzinfo=dt.UTC)
+        status = check(archives, now=now)
+        if not report(status, archives):
+            errs.append(
+                f"self-test: a four-day hole between archives reported clean: {status.series}"
+            )
+        found = gap_errors(status.series, DEFAULT_MAX_AGE_HOURS)
+        if len(found) != 1:
+            errs.append(f"self-test: one hole reported {len(found)} findings: {found}")
+        # A daily series is not a hole, and an archive that is merely old is the
+        # staleness check's finding, not a gap: neither may be reported here.
+        daily = [ArchiveAge(f"evidence-2026072{d}T000000Z", 24.0 * d) for d in (4, 3, 2, 1)]
+        if reported := gap_errors(daily, DEFAULT_MAX_AGE_HOURS):
+            errs.append(f"self-test: a daily series was reported as a gap: {reported}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def _self_test_main_contract() -> list[str]:
     """Pin the exit codes and stream split documented in tools/README.md.
 
@@ -402,6 +479,7 @@ def main() -> int:
             *_self_test(),
             *_self_test_older_corrupt(),
             *_self_test_undated(),
+            *_self_test_gap(),
             *_self_test_main_contract(),
         ]
         return _report(f"backup-status self-test: {len(errs)} issue(s)", errs)

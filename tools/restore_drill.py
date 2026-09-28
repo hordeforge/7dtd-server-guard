@@ -11,10 +11,11 @@ is short.
   drill  verify the archive against its manifest, copy its segments and index
          into an empty work directory keeping the file names, re-verify the
          chain over the copy, and read the oldest and newest records back out.
-         With --config it also checks the two artifacts the archive cannot
-         restore: the pseudonym identity map and the HMAC key. A drill that
-         restores evidence but cannot resolve a pseudonym has proved half of
-         the recovery.
+         With --config it also checks the three artifacts the archive cannot
+         restore: that the config is the one the restored records were written
+         under, and the pseudonym identity map and HMAC key it names. A drill
+         that restores evidence but cannot resolve a pseudonym, or that pairs
+         it with a config nobody was running, has proved half of the recovery.
 
 Nothing here touches the live evidence directory: the work directory is the only
 thing written, and a work directory that already holds files is refused rather
@@ -120,14 +121,19 @@ def restore(archive: pathlib.Path, work: pathlib.Path, index_name: str) -> list[
     return [f"chain: {e}" for e in ec.verify_dir(work, index_name)]
 
 
-def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str]:
+def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str, set[str]]:
     """The restored chain walked end to end, and a one-line description of what
     came out. A chain that verifies but yields no readable record is not a
-    restore, so the first and last records are parsed and reported by eventId."""
+    restore, so the first and last records are parsed and reported by eventId.
+
+    The `configHash` values carried by the records come back with it: they say
+    which config the restored stream was written under, which is the only
+    evidence of that the archive holds."""
     errs: list[str] = []
     first: Record | None = None
     last: Record | None = None
     count = 0
+    hashes: set[str] = set()
     segments = sorted(work.glob(ee.SEGMENT_GLOB), key=ec.segment_sort_key)
     for segment in segments:
         for _line_no, record, _raw in ec.iter_records(segment):
@@ -135,8 +141,11 @@ def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str]:
                 first = record
             last = record
             count += 1
+            carried = record.get("configHash")
+            if isinstance(carried, str) and carried:
+                hashes.add(carried)
     if count == 0 or first is None or last is None:
-        return [f"{work}: restored chain holds no readable records"], ""
+        return [f"{work}: restored chain holds no readable records"], "", hashes
     summary = (
         f"{count} record(s) across {len(segments)} segment(s); "
         f"oldest {first.get('type')}/{first.get('eventId')}, "
@@ -144,7 +153,39 @@ def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str]:
     )
     if expected_index and not (work / expected_index).is_file():
         errs.append(f"{expected_index}: restored without the segment index the archive held")
-    return errs, summary
+    return errs, summary, hashes
+
+
+def config_match_errors(config: Record, hashes: set[str], config_path: pathlib.Path) -> list[str]:
+    """Is the config being restored the one the restored records were written under.
+
+    The archive restores the records; it does not restore the config that
+    decided what those records mean. Every record carries the `configHash` the
+    effective config had when it was written (SCHEMAS.md -> Config schema), and
+    the deployed file hashes to the same value, so a config that matches is
+    proven and one that does not is a pairing nobody ran: restored findings
+    would be read against thresholds, modes, and an `evidence.dir` that were
+    never in force.
+
+    Several distinct hashes are not a failure. An operator who retunes a
+    threshold writes records under two configs in one archive, and each record
+    carries the config that wrote it, so the drill passes on the one that wrote
+    them. A config matching none of them is the failure.
+    """
+    if not hashes:
+        return [
+            f"{config_path}: no restored record carries a configHash, so the config "
+            "the archive was written under cannot be confirmed"
+        ]
+    schema = json.loads(cc.SCHEMA_PATH.read_text(encoding="utf-8"))
+    digest = cc.config_hash(cc.effective_config(config, schema))
+    if digest in hashes:
+        return []
+    return [
+        f"{config_path}: hashes to {digest[:12]}, which no restored record was written "
+        f"under (the archive holds {', '.join(sorted(h[:12] for h in hashes))}); "
+        "these are not the config that produced this evidence"
+    ]
 
 
 def _resolve(value: object, runtime_root: pathlib.Path) -> pathlib.Path:
@@ -221,15 +262,22 @@ def drill(request: DrillRequest) -> tuple[list[str], str]:
     errs += restore(archive, work, index_name)
     if errs:
         return errs, ""
-    chain_errs, summary = readback(work, archived_index if isinstance(archived_index, str) else "")
+    chain_errs, summary, hashes = readback(
+        work, archived_index if isinstance(archived_index, str) else ""
+    )
     errs += chain_errs
     if config_path is not None:
         loaded, load_error = cc.load(config_path)
         if loaded is None:
             errs.append(f"{config_path}: {load_error or 'unreadable'}")
         else:
+            errs += config_match_errors(loaded, hashes, config_path)
             root = request.runtime_root or config_path.resolve().parent
             errs += secrets_errors(loaded, root, request.max_age_hours, request.now or _now())
+    elif summary:
+        # The summary is what a drill record is written from, so an unrun
+        # cross-check says so there rather than leaving the record to imply one.
+        summary += "; config not supplied, so the config, identity map, and HMAC key went unchecked"
     return errs, summary
 
 
@@ -370,7 +418,15 @@ def _self_test_config() -> list[str]:
     try:
         source = scratch / "source"
         archives = scratch / "archives"
-        ee.write_sample_stream(source)
+        deployed: Record = {
+            "schemaVersion": 1,
+            "identityMap": {"path": "identity-map.json"},
+            "hmacKey": {"path": "keys/hmac.key"},
+        }
+        # The stream is written under this config's hash, so the drill's config
+        # cross-check passes and the findings below are about the keys, which is
+        # what this case is about.
+        _write_stream_under(source, _config_digest(deployed))
         if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
             return [f"self-test: could not build an archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
@@ -378,16 +434,7 @@ def _self_test_config() -> list[str]:
         config_dir = scratch / "config"
         config_dir.mkdir(parents=True)
         config_path = config_dir / "server-guard.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "schemaVersion": 1,
-                    "identityMap": {"path": "identity-map.json"},
-                    "hmacKey": {"path": "keys/hmac.key"},
-                }
-            ),
-            encoding="utf-8",
-        )
+        config_path.write_text(json.dumps(deployed), encoding="utf-8")
         runtime = scratch / "runtime"
         (runtime / "keys").mkdir(parents=True)
 
@@ -515,12 +562,113 @@ def _main_contract_self_test() -> list[str]:
     return errs
 
 
+def _write_stream_under(source: pathlib.Path, config_hash: str | None) -> None:
+    """Two chained segments whose records carry `config_hash`, the way the writer
+    stamps every record (SCHEMAS.md -> Evidence stream). `None` writes the records
+    without the field, which no shipped record type does."""
+    source.mkdir(parents=True, exist_ok=True)
+    prev = ec.GENESIS
+    for i, kind in enumerate(["health", "finding"]):
+        record: Record = {
+            "schemaVersion": 1,
+            "type": kind,
+            "eventId": f"0000000{i}-0000-4000-8000-00000000000{i}",
+            "chainPrev": prev,
+        }
+        if config_hash is not None:
+            record["configHash"] = config_hash
+        prev = ec.record_hash(record)
+        (source / f"evidence-2026-07-2{i + 1}-000000.jsonl").write_text(
+            ec.canonical(record) + "\n", encoding="utf-8"
+        )
+
+
+def _config_digest(config: Record) -> str:
+    schema = json.loads(cc.SCHEMA_PATH.read_text(encoding="utf-8"))
+    return cc.config_hash(cc.effective_config(config, schema))
+
+
+def _self_test_config_match() -> list[str]:
+    """The config a drill is handed is the one the restored records were written
+    under, and two ways of it not being are both reported: a config that hashes
+    to something the archive never saw, and records carrying no hash to check."""
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "restore-drill-self-test-config"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        scratch.mkdir(parents=True, exist_ok=True)
+        deployed: Record = {
+            "schemaVersion": 1,
+            "evidence": {"retentionDays": 45},
+            "identityMap": {"path": "identity-map.json"},
+            "hmacKey": {"path": "hmac.key"},
+        }
+        config_path = scratch / "server-guard.json"
+        config_path.write_text(json.dumps(deployed) + "\n", encoding="utf-8")
+        (scratch / "identity-map.json").write_text("{}\n", encoding="utf-8")
+        (scratch / "hmac.key").write_text("k\n", encoding="utf-8")
+
+        # A stream written by the deployed config: the drill passes the cross-check.
+        _write_stream_under(source, _config_digest(deployed))
+        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+        found, _summary = drill(
+            DrillRequest(archive=archive, work=scratch / "work", config_path=config_path)
+        )
+        if errs_found := [e for e in found if "configHash" in e or "hashes to" in e]:
+            errs.append(
+                f"self-test: the config that wrote the evidence was not accepted: {errs_found}"
+            )
+
+        # A retuned config: the archive was written under another one, so pairing
+        # them restores findings nobody can read against the thresholds in force.
+        retuned: Record = {**deployed, "evidence": {"retentionDays": 60}}
+        config_path.write_text(json.dumps(retuned) + "\n", encoding="utf-8")
+        found, _summary = drill(
+            DrillRequest(archive=archive, work=scratch / "work-retuned", config_path=config_path)
+        )
+        if not any("no restored record was written" in e for e in found):
+            errs.append(f"self-test: a config the evidence was not written under passed: {found}")
+
+        # Records that carry no configHash leave the cross-check impossible, which
+        # is not a pass either: the drill was asked to confirm the config.
+        config_path.write_text(json.dumps(deployed) + "\n", encoding="utf-8")
+        bare = scratch / "bare-source"
+        _write_stream_under(bare, None)
+        bare_archives = scratch / "bare-archives"
+        if export_errs := ee.export(
+            bare, bare_archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"
+        ):
+            return [f"self-test: could not build a hashless archive: {export_errs}"]
+        bare_archive = next(p for p in sorted(bare_archives.iterdir()) if p.is_dir())
+        found, _summary = drill(
+            DrillRequest(archive=bare_archive, work=scratch / "work-bare", config_path=config_path)
+        )
+        if not any("no restored record carries a configHash" in e for e in found):
+            errs.append(f"self-test: a stream with no configHash was not reported: {found}")
+
+        # Without a config the drill still restores, and says the config went unchecked
+        # so the drill record does not imply a cross-check that never ran.
+        found, summary = drill(DrillRequest(archive=archive, work=scratch / "work-no-config"))
+        if found:
+            errs.append(f"self-test: a drill without a config reported {found}")
+        if "config not supplied" not in summary:
+            errs.append(f"self-test: an unrun config cross-check was not stated: {summary!r}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     errs = _self_test_restore()
     errs += _self_test_without_index()
     errs += _self_test_refusals()
     errs += _self_test_secrets()
     errs += _self_test_config()
+    errs += _self_test_config_match()
     errs += _main_contract_self_test()
     return errs
 

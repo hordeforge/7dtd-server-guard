@@ -167,6 +167,20 @@ above reserves minor bumps for that.
   it silences instead of the whole line. Every existing suppression already named its rule,
   so the tree passes both groups unchanged apart from five message literals that now carry
   their concatenation parentheses.
+- The restore drill (`make drill-restore ... CONFIG=<file>`) confirms the config is
+  the one the restored evidence was written under: every record carries the
+  `configHash` of the effective config in force when it was written, so a config
+  that hashes to a value no restored record carries is reported instead of being
+  paired with findings that were never produced under it. Without `CONFIG` the
+  verdict now says the config, identity map, and HMAC key went unchecked, so the
+  drill record does not imply a cross-check that never ran. The drill previously
+  resolved the key and map paths from whatever config it was handed, so a wrong
+  file passed it.
+- `make backup-status ROOT=<root>` reports a gap wider than the RPO window between
+  two adjacent archives. A scheduler that ran for a week and then stopped left a
+  fresh newest archive and no failing exit code; the age of the newest archive is
+  the one thing that could not see it, and the monthly "confirm the archives for
+  the last 30 days are present" was a directory listing an operator read by hand.
 - The evidence schema's `personalDataDenyList` denies the identity spellings it
   missed: `xuid` (the same account as `steam` under the engine's own name), and
   `name`, `nick`, `handle`, `alias`, `ident`, `login` for the display-name family.
