@@ -185,7 +185,7 @@ Record types and their extra fields:
 
 | `type` | Purpose | Extra fields |
 |---|---|---|
-| `finding` | A detector produced a finding | `detectorId`, `detectorVersion`, `severity`, `confidence`, `mode`, `suppressedReason?`, `pseudonym`, `entityId`, `sessionEpoch`, `utc`, `monotonicMs`, `tick`, `tickHealthMs`, `latencyMs`, `context`, `observations` (bounded array), `expected`, `actual`, `causeEventIds`, `action`, `disposition?`, `configHash`, `buildId`, `hookManifestHash` |
+| `finding` | A detector produced a finding | `detectorId`, `detectorVersion`, `severity`, `confidence`, `mode`, `suppressedReason?`, `pseudonym`, `entityId`, `sessionEpoch`, `utc`, `monotonicMs`, `tick`, `tickHealthMs`, `latencyMs`, `context`, `observations` (bounded array), `expected`, `actual`, `causeEventIds` (bounded), `action`, `disposition?`, `configHash`, `buildId`, `hookManifestHash` |
 | `cause` | A registered mod cause-API invocation | `causeToken`, `modIdentity`, `itemId?`, `delta?`, `sessionEpoch`, `pseudonym`, `causeEventIds` |
 | `reconciliation` | Ledger reconciled from durable save after crash/disconnect | `scope` (player/container), `savedAt`, `replayedFrom` (segment range), `deltaItems` (bounded), `marker` |
 | `health` | Detector-health snapshot (periodic and on change) | `detectors` (array of status objects), `queueDepth`, `drops`, `faults`, `uptimeS` |
@@ -230,8 +230,15 @@ evidence, not one delegated to an external service):
 ```
 
 Boundedness: `observations` is capped at 32 entries and each entry at 4 scalar fields;
-`context`, `expected`, and `actual` at 8 keys each. Anything larger is truncated with a
-`truncated: true` marker so a hostile request cannot inflate evidence size.
+`context`, `expected`, and `actual` at 8 keys each; `causeEventIds` at 32 records and
+`evidenceIds` at 64. Anything larger is truncated with a `truncated: true` marker so a
+hostile request cannot inflate evidence size.
+
+A reference to another record is an `eventId`, so it is validated as one: `eventId`,
+`replaces`, `causeEventIds`, and `evidenceIds` all take the single `evidenceEventId`
+pattern declared in the schema's `definitions`, the same reason the deny-list is declared
+once. An unparseable reference resolves to nothing, and an operator following it would read
+a finding with no cause rather than a broken link.
 
 Value-bag keys are lowercase `snake_case` and carry the `propertyNames` deny-list, so a
 detector names a value after the quantity it measured (`dx`, `bound`, `vehicle`) and the
@@ -338,7 +345,7 @@ mod itself. A fingerprint mismatch at startup fails open per hook.
 Operator actions only, no gameplay data. Fields: `schemaVersion`, `type: "audit"`, `eventId`,
 `utc`, `actor` (operator label, never a platform identity), `action` (`override`,
 `unban`, `purge`, `config-reload`, `emergency-disable`, `appeal-disposition`),
-`reason` (free text, required), `evidenceIds` (array), `chainPrev`. Retention: 1 year
+`reason` (free text, required), `evidenceIds` (bounded), `chainPrev`. Retention: 1 year
 ([PRIVACY.md](../PRIVACY.md)).
 
 ## Health report (health v1)

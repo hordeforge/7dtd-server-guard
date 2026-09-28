@@ -6,8 +6,8 @@
   "type": "object",
   "additionalProperties": false,
   "definitions": {
-    "eventId": {
-      "description": "The one shape an evidence event id has. Every array that names other records (`causeEventIds`, `evidenceIds`) $refs it, so a free-form string cannot ride along in a list whose declared type is an id: an element is an id or it is a rejected record, not a player name pasted into an id field.",
+    "evidenceEventId": {
+      "description": "An evidence record ID, as written in eventId, replaces, causeEventIds, and evidenceIds. Declared once here for the same reason the deny-list is: a reference to a record must be spelled the same way everywhere it is written, and a bare string where a record ID is expected is a reference that resolves to nothing. Every array that names other records (`causeEventIds`, `evidenceIds`) $refs it, so a free-form string cannot ride along in a list whose declared type is an id: an element is an id or it is a rejected record, not a player name pasted into an id field.",
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
@@ -50,8 +50,7 @@
           "const": 1
         },
         "eventId": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "chainPrev": {
           "type": "string",
@@ -169,8 +168,9 @@
         },
         "causeEventIds": {
           "type": "array",
+          "maxItems": 32,
           "items": {
-            "$ref": "#/definitions/eventId"
+            "$ref": "#/definitions/evidenceEventId"
           }
         },
         "action": {
@@ -220,8 +220,7 @@
           "const": 1
         },
         "eventId": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "chainPrev": {
           "type": "string",
@@ -260,8 +259,9 @@
         },
         "causeEventIds": {
           "type": "array",
+          "maxItems": 32,
           "items": {
-            "$ref": "#/definitions/eventId"
+            "$ref": "#/definitions/evidenceEventId"
           }
         }
       }
@@ -283,8 +283,7 @@
           "const": 1
         },
         "eventId": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "chainPrev": {
           "type": "string",
@@ -346,8 +345,7 @@
           "const": 1
         },
         "eventId": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "chainPrev": {
           "type": "string",
@@ -453,8 +451,7 @@
           "const": 1
         },
         "eventId": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "chainPrev": {
           "type": "string",
@@ -488,8 +485,9 @@
         },
         "evidenceIds": {
           "type": "array",
+          "maxItems": 64,
           "items": {
-            "$ref": "#/definitions/eventId"
+            "$ref": "#/definitions/evidenceEventId"
           }
         }
       }
@@ -511,8 +509,7 @@
           "const": 1
         },
         "eventId": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "chainPrev": {
           "type": "string",
@@ -522,8 +519,7 @@
           "const": "tombstone"
         },
         "replaces": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "$ref": "#/definitions/evidenceEventId"
         },
         "reasonClass": {
           "enum": [

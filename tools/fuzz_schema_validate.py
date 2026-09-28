@@ -12,7 +12,8 @@ mutations at it:
   target 2  deep-nesting probe: instances nested far past any legitimate document
 
 Fixed probes: RFC 3339 offsets on timestamp fields, non-finite numbers
-(NaN, +/-Infinity) on bounded and unbounded numeric fields, and the detector
+(NaN, +/-Infinity) on bounded and unbounded numeric fields, the cross-record
+reference fields (a record ID, and a bounded count of them), and the detector
 spec's threshold range/default gate.
 
 Invariants asserted per iteration:
@@ -373,6 +374,53 @@ def check_string_length_units() -> None:
             raise InvariantBroken(f"length limits accepted {value!r}: {why}")
 
 
+def check_record_references() -> int:
+    """A field naming another record holds a record ID, and it is bounded.
+
+    `causeEventIds`, `evidenceIds`, and `replaces` are the only cross-record
+    references in the evidence stream, and an operator follows them to read the
+    cause behind a finding or the record behind a purge. A bare string there
+    resolves to nothing and reads as a broken link; an unbounded array lets one
+    record's size be set by whatever wrote it, on the append-only stream the
+    rest of the schema bounds for exactly that reason.
+    """
+    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
+    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text()
+    records = {
+        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
+    }
+    good_id = "9f2c1a3d-4e5b-4c6d-8e7f-0a1b2c3d4e5f"
+    checks = 0
+    for rec_type, field, bound in (
+        ("finding", "causeEventIds", 32),
+        ("cause", "causeEventIds", 32),
+        ("audit", "evidenceIds", 64),
+    ):
+        record = records[rec_type]
+        for bad, why in (
+            ("not-a-record-id", "a bare string, not a record ID"),
+            (good_id.upper(), "an upper-case record ID"),
+            (good_id[:-1], "a truncated record ID"),
+        ):
+            probe = {**record, field: [bad]}
+            if not dc._schema_validate(probe, schema):
+                raise InvariantBroken(f"{rec_type}.{field} accepted {why}: {bad!r}")
+            checks += 1
+        if dc._schema_validate({**record, field: []}, schema):
+            raise InvariantBroken(f"{rec_type}.{field}: empty reference list rejected")
+        if dc._schema_validate({**record, field: [good_id] * bound}, schema):
+            raise InvariantBroken(f"{rec_type}.{field}: {bound} references rejected")
+        if not dc._schema_validate({**record, field: [good_id] * (bound + 1)}, schema):
+            raise InvariantBroken(f"{rec_type}.{field}: {bound + 1} references accepted")
+        checks += 3
+    tombstone = records["tombstone"]
+    for bad in ("not-a-record-id", good_id.upper(), good_id[:-1]):
+        if not dc._schema_validate({**tombstone, "replaces": bad}, schema):
+            raise InvariantBroken(f"tombstone.replaces accepted {bad!r}")
+        checks += 1
+    return checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_fuzz_args(ap, default_iterations=1500)
@@ -406,6 +454,7 @@ def main() -> int:
         check_threshold_gate()
         check_string_length_units()
         check_evidence_bags_beyond_finding()
+        reference_checks = check_record_references()
     except InvariantBroken as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
@@ -414,9 +463,9 @@ def main() -> int:
         f"fuzz-schema-validate: ok seed={args.seed} iterations={args.iterations} "
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
-        f"deep_probe=ok datetime_probe=ok "
-        f"non_finite_probe=ok threshold_gate_probe=ok length_units_probe=ok "
-        f"id_array_probe=ok"
+        f"id_array_probe=ok reference_checks={reference_checks} deep_probe=ok "
+        f"datetime_probe=ok non_finite_probe=ok threshold_gate_probe=ok "
+        f"length_units_probe=ok"
     )
     return 0
 
