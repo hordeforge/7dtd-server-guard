@@ -12,11 +12,12 @@ documents as specifications. None of those checks whether the contract is still 
 tree. Where `make check` (tools/doccheck.py) already proves a property, treat it as
 verified and do not re-report it; the proven set is the `checks` list in that tool's
 main() (em dashes, links, TODO checkboxes, release version, detector spec, registry
-sync, detector id coverage, config example/schema cross-references, evidence chain
-and personal data, replay contract, folder structure, backup runbook, required docs).
-That list is the authority, not this gloss: it gains entries as the tool grows, so
-read it before claiming a property is unchecked; this review covers what the gate
-cannot see.
+sync, config example/schema cross-references, evidence chain and personal data,
+replay contract, folder structure, backup runbook, required docs, and further
+toolchain, dependency, and CI-pin checks this gloss does not enumerate). That list
+is the authority, not this gloss: it gains entries as the tool grows, so read it
+before claiming a property is unchecked; this review covers what the gate cannot
+see.
 
 First decide if this review applies. If AGENTS.md, docs/INDEX.md, or TODO.md is missing,
 there is no contract here; print the skip result and stop. Otherwise run `make check`
@@ -71,13 +72,16 @@ Instructions:
 - Fix every finding you have proved, and prove it before editing: open both sides of
   the disagreement and confirm the text actually says what you are about to change.
 - Re-verify each fix with the same command or file read that found it, and re-run
-  `make check`; a fix nobody re-checked is a fix nobody knows closed.
+  `make check`; a fix nobody re-checked is a fix nobody knows closed. A fix that
+  touches `tools/` or any Python also needs `make ci`, which runs the format, lint,
+  type, and fuzzer gates that `make check` does not.
 - If available, use: `rg` for cross-document sweeps of repeated facts and "Document ->
-  Section" pointers; `uv run --frozen python` with stdlib only (json, re, pathlib) for
-  comparisons such as INDEX rows versus directory listings (`--frozen` matches what `make
-  check` runs and fails loudly instead of re-resolving a stale uv.lock). Never install
-  packages or add dependencies: if the frozen environment cannot be resolved, report the
-  failure as a blocked finding rather than installing around it.
+  Section" pointers; `uv run --locked python` with stdlib only (json, re, pathlib)
+  for comparisons such as INDEX rows versus directory listings (`--locked` is the
+  invocation the Makefile uses for every recipe, and it fails loudly instead of
+  re-resolving a stale uv.lock). Never install packages or add dependencies: if the
+  locked environment cannot be resolved, report the failure as a blocked finding
+  rather than installing around it.
 
 For each finding include:
 - File and location (path:line) for both sides of the disagreement
