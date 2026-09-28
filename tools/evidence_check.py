@@ -1,11 +1,14 @@
 """Verify the evidence hash chain (docs/SCHEMAS.md -> Evidence stream).
 
 Canonical serialization (pinned): JSON with sorted keys, no whitespace:
-    json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+               allow_nan=False)
 chainPrev of a record is sha256 hex of the canonical form of the previous record.
 Genesis: the first record of the very first segment has chainPrev == "0"*64.
 Segment linking: the first record of a segment chains to the last record of the
 previous segment (in file order).
+Non-finite numbers (NaN, Infinity) are not JSON: a segment line carrying the bare
+literal is rejected at parse time rather than hashed into the chain.
 
 Usage:
   uv run python tools/evidence_check.py --dir <evidence-dir> [--index segment-index.json]
@@ -25,6 +28,7 @@ import json
 import pathlib
 import re
 import sys
+import tempfile
 from collections.abc import Iterable, Iterator
 from typing import Any, NamedTuple
 
@@ -56,6 +60,15 @@ SEGMENT_DIGITS = re.compile(r"(\d+)")
 # Segment index file name inside --dir when --index is not given.
 DEFAULT_INDEX = "segment-index.json"
 
+# Self-test scratch files go to the repo's gitignored scratch dir, not the system
+# temp dir: /tmp is tmpfs on this host, so the file would be charged to RAM.
+SCRATCH = ROOT / ".scratch"
+
+
+def _reject_non_finite(token: str) -> float:
+    """parse_constant hook: the bare NaN/Infinity literals are not JSON."""
+    raise ValueError(f"non-finite number {token!r}")
+
 
 def segment_sort_key(path: pathlib.Path) -> tuple[tuple[int, int, str], ...]:
     """Order segments naturally, so an unpadded `<seq>` beyond 9 does not sort first.
@@ -71,7 +84,9 @@ def segment_sort_key(path: pathlib.Path) -> tuple[tuple[int, int, str], ...]:
 
 
 def canonical(record: Record) -> str:
-    return json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return json.dumps(
+        record, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    )
 
 
 def record_hash(record: Record) -> str:
@@ -81,7 +96,7 @@ def record_hash(record: Record) -> str:
 def _parse_line(name: str, line_no: int, line: str) -> Record:
     """Parse and shape-check one segment line. Raises ValueError naming file:line."""
     try:
-        rec = json.loads(line)
+        rec = json.loads(line, parse_constant=_reject_non_finite)
     except json.JSONDecodeError as exc:
         raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
     if not isinstance(rec, dict):
@@ -221,7 +236,7 @@ def verify_sample() -> list[str]:
 
 
 def self_test() -> list[str]:
-    """Negative tests: tamper and bad-genesis must be detected."""
+    """Negative tests: tamper, bad genesis, and non-finite numbers must be detected."""
     errs = []
     base = [
         {"schemaVersion": 1, "type": "health", "eventId": "a", "chainPrev": GENESIS, "x": 1},
@@ -271,6 +286,30 @@ def self_test() -> list[str]:
         "evidence-2026-09-28-11.jsonl",
     ]:
         errs.append(f"self-test: segments ordered wrongly: {ordered}")
+    # A bare NaN/Infinity literal is not JSON, and a NaN would hash into the chain
+    # as a token no reader reproduces, breaking the next verifier's digest.
+    SCRATCH.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="evidence-self-test-", dir=SCRATCH) as td:
+        for literal in ("NaN", "Infinity", "-Infinity"):
+            path = pathlib.Path(td) / "seg.jsonl"
+            path.write_text(
+                '{"schemaVersion":1,"type":"health","eventId":"a","chainPrev":"'
+                + GENESIS
+                + f'","confidence":{literal}}}\n',
+                encoding="utf-8",
+            )
+            try:
+                load_records(path)
+            except ValueError:
+                continue
+            errs.append(f"self-test: record with {literal} was accepted")
+    # canonical() refuses a non-finite value built in memory, before it can be hashed.
+    try:
+        canonical({**recs[0], "confidence": float("nan")})
+    except ValueError:
+        pass
+    else:
+        errs.append("self-test: canonical serialized a NaN")
     return errs
 
 

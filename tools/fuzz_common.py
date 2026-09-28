@@ -71,7 +71,7 @@ WEIRD_STRINGS = [
     "0" * 300,
     "-1",
 ]
-NUMBERS = [0, 1, -1, 2**31, -(2**31), 2**63, 10**400, 3.14, float("inf"), -0.0]
+NUMBERS = [0, 1, -1, 2**31, -(2**31), 2**63, 10**400, 3.14, float("inf"), -0.0, float("nan")]
 
 # Relative frequency of each scalar-replacement kind. Tuning knob: raise a weight
 # to spend more of a run's budget on that shape of malformed value.

@@ -56,7 +56,7 @@ against it, and the strict loader in Phase 2 is generated from the same schema.
 | `thresholds.<detectorId>.<key>` | number/string | per detector | per detector | Placeholder until Phase 10 calibration; every key must be declared in the detector's config manifest |
 | `evidence.dir` | string | `ServerGuard/evidence` | writable, non-empty | Append-only JSONL segments |
 | `evidence.retentionDays` | int | 30 | 1..365 | Segment expiry |
-| `evidence.rotationSizeMB` | int | 64 | 1..1024 | Rotate at this size or at day boundary |
+| `evidence.rotationSizeMB` | int | 64 | 1..1024 | Rotate at this size or at day boundary; 1 MB = 1,000,000 bytes (decimal, not MiB) |
 | `evidence.positionHistoryDays` | int | 7 | 0..90 | 0 disables replay history |
 | `evidence.positionHistorySamplesPerPlayer` | int | 3600 | 0..20000 | Bounded replay timeline |
 | `identityMap.path` | string | `ServerGuard/identity-map.json` | restricted perms, non-empty | Pseudonym -> platform identity, operator-only |
@@ -127,7 +127,10 @@ canonical serialization of the previous record in the chain; the first record of
 chains to the last record of the previous segment.
 
 Canonical serialization (pinned by `tools/evidence_check.py`):
-`json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)`. Genesis:
+`json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+allow_nan=False)`. No record may carry `NaN` or an infinity: JSON has no encoding for
+either, and a NaN compares false against every bound, so it would pass a range check and
+then reach a reader as a comparison that never fires. Genesis:
 the first record of the very first segment has `chainPrev` equal to 64 zeros. A chain
 detects tampering of any record except the last one; tampering the last record is only
 detected when the next record is appended, because an append-only chain has no later
@@ -213,7 +216,10 @@ the same operation, and the operation is written as an `audit` record.
 The `thresholds.<detectorId>.<key>` keys are not free-form: each detector declares the
 threshold keys it accepts, with type, range, and a placeholder default, so the strict config
 loader can reject unknown or out-of-range threshold keys with the same rule as top-level
-keys. The manifest is **generated** from the canonical detector spec
+keys. A threshold declared `type: int` carries integer range bounds and an integer default,
+and every numeric range bound and default is finite: a fractional value would truncate on
+load, and `NaN` or an infinity would compare false against every bound and never fire. The
+doccheck gate rejects both. The manifest is **generated** from the canonical detector spec
 (`tools/detector_spec.yaml`) into `config/detector-config-manifest.json` by
 `tools/render_detectors.py --manifest` (`make detectors`); edit the YAML, never the JSON.
 The excerpt below is illustrative of the generated shape and is kept in sync by the doccheck

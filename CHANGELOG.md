@@ -84,6 +84,25 @@ this file and are described only by their git tags.
 - `tools/evidence_check.py` verifies chain continuity inside every segment, not only in
   the first one. A record after the first line of a non-genesis segment was skipped along
   with the cross-segment link, so a tampered record there passed verification.
+- The JSON Schema validator and the evidence parser reject non-finite numbers
+  (`NaN`, `Infinity`, `-Infinity`). NaN compares false against every bound, so a
+  `minimum`/`maximum` check alone reported nothing and a NaN confidence or
+  threshold reached a consumer as a comparison that never fires. The evidence
+  segment parser now refuses the bare literals at the file:line boundary, and
+  `canonical()` serializes with `allow_nan=False` so a non-finite value can
+  never be hashed into the chain as a token no reader reproduces.
+- `render_detectors.py` writes the config manifest with `allow_nan=False`, so a
+  non-finite threshold in the spec fails loudly instead of producing a bare
+  `Infinity` literal in a shipped JSON file.
+- A `oneOf` mismatch with no matching branch now reports the first branch's
+  errors instead of only the branch count, and a `oneOf` that is not a non-empty
+  array is reported rather than iterated.
+- The detector spec gate rejects a non-finite or inverted range, a default that is
+  not a finite number, and a fractional range bound or default on an `int` threshold,
+  which truncates on load. A threshold entry missing `key` or `type` is now reported
+  instead of raising `KeyError`.
+- `evidence.rotationSizeMB` is documented as decimal megabytes in
+  `docs/SCHEMAS.md` and the config schema, so rotation sizing has one unit.
 
 ## [0.4.1] - 2026-09-20
 

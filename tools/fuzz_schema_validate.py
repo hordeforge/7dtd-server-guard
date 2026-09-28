@@ -11,6 +11,10 @@ mutations at it:
             four shipped schema + data pairs
   target 2  deep-nesting probe: instances nested far past any legitimate document
 
+Fixed probes: RFC 3339 offsets on timestamp fields, non-finite numbers
+(NaN, +/-Infinity) on bounded and unbounded numeric fields, and the detector
+spec's threshold range/default gate.
+
 Invariants asserted per iteration:
   - Totality: no exception (RecursionError included) escapes the validator.
   - The result is a list of str.
@@ -233,6 +237,57 @@ def check_personal_data_denylist() -> int:
     return checks
 
 
+def check_non_finite_numbers() -> None:
+    """Bounded and unbounded numeric fields must reject NaN and the infinities.
+
+    NaN compares false against every bound, so a range check alone reports
+    nothing and the value reaches the loader as a comparison that never fires.
+    JSON has no encoding for either, so a strict reader downstream rejects the
+    document outright.
+    """
+    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
+    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text()
+    records = {
+        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
+    }
+    # confidence is bounded (0..1); delta is a number with no bounds, so only the
+    # finiteness check stands between an unbounded field and a NaN.
+    for rec_type, field, finite in (
+        ("finding", "confidence", 0.5),
+        ("cause", "delta", -1.25),
+    ):
+        for bad in (float("nan"), float("inf"), -float("inf")):
+            if not dc._schema_validate({**records[rec_type], field: bad}, schema):
+                raise InvariantBroken(f"{rec_type}.{field}={bad!r} accepted")
+        if dc._schema_validate({**records[rec_type], field: finite}, schema):
+            raise InvariantBroken(f"{rec_type}.{field}={finite!r} rejected")
+
+
+def check_threshold_gate() -> None:
+    """The detector spec's threshold gate must reject the numeric traps.
+
+    A NaN default or bound compares false against every other bound, so it slips
+    through an ordering check; a fractional value on an `int` threshold is
+    truncated on load, so the spec no longer describes the value that runs.
+    """
+    ok = {"key": "burst", "type": "int", "range": [1, 100], "default": 50}
+    bad = [
+        ({**ok, "default": float("nan")}, "NaN default"),
+        ({**ok, "range": [float("inf"), 100]}, "infinite range bound"),
+        ({**ok, "range": [100, 1]}, "inverted range"),
+        ({**ok, "range": [1.5, 100]}, "fractional bound on an int threshold"),
+        ({**ok, "default": 1.5}, "fractional default on an int threshold"),
+        ({**ok, "default": 200}, "default outside the range"),
+        ({"type": "int", "range": [1, 100], "default": 5}, "missing key"),
+        ({"key": "burst", "range": [1, 100], "default": 5}, "missing type"),
+    ]
+    if dc._threshold_errors("d.test", [ok]):
+        raise InvariantBroken("well-formed threshold reported errors")
+    for threshold, why in bad:
+        if not dc._threshold_errors("d.test", [threshold]):
+            raise InvariantBroken(f"{why} accepted")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_fuzz_args(ap, default_iterations=1500)
@@ -262,6 +317,8 @@ def main() -> int:
 
         check_deep_nesting()
         check_datetime_format()
+        check_non_finite_numbers()
+        check_threshold_gate()
     except InvariantBroken as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
@@ -270,7 +327,8 @@ def main() -> int:
         f"fuzz-schema-validate: ok seed={args.seed} iterations={args.iterations} "
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
-        f"deep_probe=ok datetime_probe=ok"
+        f"deep_probe=ok datetime_probe=ok "
+        f"non_finite_probe=ok threshold_gate_probe=ok"
     )
     return 0
 

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pathlib
 import re
 import subprocess
@@ -141,6 +142,25 @@ RANGE_BOUNDS = 2
 # Per-check cap on printed failures; the rest are summarized as a count.
 MAX_REPORTED = 40
 
+
+def _is_finite_number(v: Json) -> bool:
+    """True for a real number, excluding bool, NaN, and the infinities.
+
+    YAML parses `.nan` and `.inf` into Python floats, and a range bound or
+    default carrying one compares false against everything downstream, so the
+    spec gate has to name it instead of letting it through.
+    """
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, int):
+        return True
+    return isinstance(v, float) and math.isfinite(v)
+
+
+def _is_int_value(v: Json) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
 # Every shipped (JSON Schema, data) pair: gated by check_config_schemas and fuzzed
 # by tools/fuzz_schema_validate.py, which imports this list to stay in sync.
 SCHEMA_DATA_PAIRS = [
@@ -227,10 +247,14 @@ def spec_ids() -> set[str]:
 def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
     """Threshold keys are unique, typed, and carry a sane range and default."""
     out = []
-    keys = [t.get("key") for t in thresholds]
-    if None in keys:
-        out.append(f"{did}: threshold missing key")
-    elif len(keys) != len(set(keys)):
+    keys = []
+    for t in thresholds:
+        key = t.get("key")
+        if not isinstance(key, str) or not key:
+            out.append(f"{did}: threshold missing key {key!r}")
+            continue
+        keys.append(key)
+    if len(keys) != len(set(keys)):
         out.append(f"{did}: duplicate threshold keys")
     for t in thresholds:
         ttype = t.get("type")
@@ -238,15 +262,23 @@ def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
             out.append(f"{did}: threshold {t.get('key')} bad type {ttype}")
             continue
         rng = t.get("range")
+        default = t.get("default")
         if ttype not in {"int", "float"} or not isinstance(rng, list):
             continue
-        if len(rng) != RANGE_BOUNDS or rng[0] > rng[1]:
+        if len(rng) != RANGE_BOUNDS or not all(_is_finite_number(b) for b in rng):
             out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
-        elif isinstance(t.get("default"), (int, float)) and not rng[0] <= t["default"] <= rng[1]:
-            out.append(
-                f"{did}: threshold {t.get('key')} default {t.get('default')} "
-                f"outside range {rng}"
-            )
+        elif not rng[0] <= rng[1]:
+            out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
+        elif t.get("type") == "int" and not all(_is_int_value(b) for b in rng):
+            # A fractional bound on an int threshold is truncated on load, so the
+            # bound in the spec is not the bound that runs.
+            out.append(f"{did}: threshold {t.get('key')} int type with fractional range")
+        elif not _is_finite_number(default):
+            out.append(f"{did}: threshold {t.get('key')} default {default!r} is not a number")
+        elif t.get("type") == "int" and not _is_int_value(default):
+            out.append(f"{did}: threshold {t.get('key')} int type with fractional default")
+        elif not rng[0] <= default <= rng[1]:
+            out.append(f"{did}: threshold {t.get('key')} default {default} outside range {rng}")
     return out
 
 
@@ -510,7 +542,10 @@ def _schema_type_ok(instance: Json, t: Json) -> bool:
         "string": isinstance(instance, str),
         "boolean": isinstance(instance, bool),
         "integer": isinstance(instance, int) and not isinstance(instance, bool),
-        "number": isinstance(instance, (int, float)) and not isinstance(instance, bool),
+        # JSON has no NaN or infinity: Python's json module parses the bare
+        # literals anyway, and a non-finite value is unrepresentable downstream.
+        "number": (isinstance(instance, int) and not isinstance(instance, bool))
+        or (isinstance(instance, float) and math.isfinite(instance)),
         "object": isinstance(instance, dict),
         "array": isinstance(instance, list),
         "null": instance is None,
@@ -546,6 +581,12 @@ def _scalar_errors(instance: Json, schema: Json, path: str) -> list[str]:
     """Range, pattern, and length keywords, which apply to numbers and strings."""
     errs = []
     numeric = isinstance(instance, (int, float)) and not isinstance(instance, bool)
+    if numeric and isinstance(instance, float) and not math.isfinite(instance):
+        # NaN compares false against every bound, so a range check alone reports
+        # nothing and a NaN threshold reaches the loader as a comparison that
+        # never fires. Infinity and NaN also have no JSON encoding.
+        errs.append(f"{path}: {instance!r} is not a finite number")
+        return errs
     if "minimum" in schema and numeric and instance < schema["minimum"]:
         errs.append(f"{path}: {instance} < minimum {schema['minimum']}")
     if "maximum" in schema and numeric and instance > schema["maximum"]:
@@ -629,13 +670,22 @@ def _schema_validate(instance: Json, schema: Json, path: str = "$", _depth: int 
         return errs
     errs += _scalar_errors(instance, schema, path)
     if "oneOf" in schema:
-        matched = [
-            i
-            for i, sub in enumerate(schema["oneOf"])
-            if not _schema_validate(instance, sub, path, _depth + 1)
-        ]
-        if len(matched) != 1:
-            errs.append(f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)")
+        if not isinstance(schema["oneOf"], list) or not schema["oneOf"]:
+            errs.append(f"{path}: oneOf must be a non-empty array, got {schema['oneOf']!r}")
+        else:
+            branches = [
+                _schema_validate(instance, sub, path, _depth + 1) for sub in schema["oneOf"]
+            ]
+            matched = [i for i, b in enumerate(branches) if not b]
+            if len(matched) != 1:
+                errs.append(
+                    f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)"
+                )
+                if not matched:
+                    # With no branch matching, the count alone says nothing about
+                    # why. The branches are mutually exclusive by contract, so
+                    # the first one reports the reason.
+                    errs += branches[0]
         return errs
     if isinstance(instance, dict):
         errs += _object_errors(instance, schema, path, _depth)

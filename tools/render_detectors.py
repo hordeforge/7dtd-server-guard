@@ -206,7 +206,11 @@ def main() -> int:
     detectors = load_spec()
     if args.manifest:
         manifest = render_manifest(detectors)
-        MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        # allow_nan=False: a non-finite threshold in the spec would otherwise be
+        # written as a bare Infinity/NaN literal, which no JSON reader accepts.
+        MANIFEST.write_text(
+            json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+        )
         print(f"wrote {MANIFEST.relative_to(ROOT)} ({len(manifest['detectors'])} detectors)")
         return 0
 
