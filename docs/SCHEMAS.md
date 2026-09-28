@@ -246,6 +246,13 @@ Boundedness: `observations` is capped at 32 entries and each entry at 4 scalar f
 `evidenceIds` at 64. Anything larger is truncated with a `truncated: true` marker so a
 hostile request cannot inflate evidence size.
 
+Free text is bounded too, on every string field a writer fills by hand:
+`suppressedReason` at 64, `modIdentity`, `itemId`, and `marker` at 128, `actor` at 128,
+`reason` at 512. These are the fields a writer completes by interpolating whatever the game
+handed it, and an unbounded string there is the one place a name, a display string, or a
+quoted line would sit in a record for its whole retention window. A value that does not fit
+is a writer bug, caught at validation rather than stored.
+
 A reference to another record is an `eventId`, so it is validated as one: `eventId`,
 `replaces`, `causeEventIds`, and `evidenceIds` all take the single `evidenceEventId`
 pattern declared in the schema's `definitions`, the same reason the deny-list is declared
@@ -257,7 +264,10 @@ detector names a value after the quantity it measured (`dx`, `bound`, `vehicle`)
 record's own `pseudonym` names the player. A detector whose input is a platform ID
 (`protocol.duplicate_session`, spec input `platform_id`) compares HMAC pseudonyms, not raw
 IDs, and names the value for what it counted. Keys that could hold a raw identity, a player
-name, a contact or network address, or a credential are rejected at validation. The
+name, a contact or network address, or a credential are rejected at validation. The stems
+cover a platform id by every spelling it is written (`steam`, `xuid`, `platform`, `guid`)
+and a display name by its family (`name`, `nick`, `handle`, `alias`, `ident`, `login`),
+because a deny-list that names one spelling of an account is half a control. The
 `causeEventIds` and `evidenceIds` lists hold event ids and nothing else: every element
 is a UUID, so a name cannot ride in a list whose declared type is an id.
 

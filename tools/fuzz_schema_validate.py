@@ -91,9 +91,41 @@ PERSONAL_DATA_KEYS = (
     "hardware_id",
     "hwaddr",
     "email",
+    # The same account under the spelling the engine's own API uses, and the
+    # display-name family. A deny-list that names only one spelling of a
+    # platform id is half a control: the other spelling carries the same digits
+    # to the same exporter.
+    "xuid",
+    "xuid_value",
+    "playerName",
+    "nickname",
+    "nick",
+    "handle",
+    "displayName",
+    "alias",
+    "realName",
+    "accountLogin",
+    "loginName",
 )
 # The open bags of a `finding` record, and how to inject a key into each.
 EVIDENCE_BAGS = ("context", "expected", "actual", "observations")
+# Value-bag keys that name a measured quantity and must survive the deny-list.
+# Every one is a key the shipped sample writes, or a spelling the detector spec
+# and SCHEMAS.md use for the same kind of measurement.
+ALLOWED_BAG_KEYS = (
+    "dx",
+    "bound",
+    "budget",
+    "tick",
+    "admin",
+    "stance",
+    "teleport",
+    "vehicle",
+    "note",
+    "delta",
+    "sequence",
+    "quantity",
+)
 
 
 def load_pairs() -> list[tuple[str, Json, list[Json]]]:
@@ -264,6 +296,15 @@ def check_personal_data_denylist() -> int:
     # The deny-list must not reject the keys the sample itself writes.
     if dc._schema_validate(record, schema):
         raise InvariantBrokenError("shipped finding record rejected by its own schema")
+    # Nor the keys a detector names a value for. A deny-list broad enough to
+    # reject `dx` is not a control, it is an outage: the next stem added for
+    # sound reasons takes the whole bag with it, so the accepted names are
+    # pinned here next to the denied ones.
+    for key in ALLOWED_BAG_KEYS:
+        for bag in EVIDENCE_BAGS:
+            if dc._schema_validate(_with_key(record, bag, key), schema):
+                raise InvariantBrokenError(f"{bag}.{key} rejected by the evidence schema")
+            checks += 1
     return checks
 
 

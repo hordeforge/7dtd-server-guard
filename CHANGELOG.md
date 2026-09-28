@@ -153,6 +153,19 @@ above reserves minor bumps for that.
 
 ### Changed
 
+- The evidence schema's `personalDataDenyList` denies the identity spellings it
+  missed: `xuid` (the same account as `steam` under the engine's own name), and
+  `name`, `nick`, `handle`, `alias`, `ident`, `login` for the display-name family.
+  A key charset of `[a-z_]+` already excluded the camelCase spellings, so the
+  snake_case ones were the reachable gap, and they carried the same account to
+  the same exporter. `tools/fuzz_schema_validate.py` probes each new spelling in
+  every open bag and pins twelve value-bag keys that must still validate, so a
+  later stem cannot take the whole bag with it.
+- Free-text fields in the evidence schema are bounded: `suppressedReason` at 64,
+  `itemId` and `marker` at 128, alongside the `modIdentity`, `actor`, and `reason`
+  bounds that already existed. These are the fields a writer fills by
+  interpolating whatever the game handed it; an unbounded string there is where a
+  name or a quoted line would sit in a record for its whole retention window.
 - `docs/SCHEMAS.md` states the two config rules the file alone cannot enforce: a
   detector id or threshold key outside the registry and the manifest is rejected
   rather than loaded as an `observe` default, and a sink enabled with its environment

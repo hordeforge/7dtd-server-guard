@@ -18,9 +18,9 @@
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
     },
     "personalDataDenyList": {
-      "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through. The list holds stems matched anywhere in the key, not whole spellings: an enumerated-spelling list is bypassed by the first variant nobody wrote down (`ipaddress`, `hwaddr`, `clientip` all read as ordinary-looking snake_case and carry exactly what `ip_address` was denied for). Case is covered by the `[a-z_]` charset the key must already match, so the stems are lowercase.",
+      "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through. The list holds stems matched anywhere in the key, not whole spellings: an enumerated-spelling list is bypassed by the first variant nobody wrote down (`ipaddress`, `hwaddr`, `clientip` all read as ordinary-looking snake_case and carry exactly what `ip_address` was denied for). Case is covered by the `[a-z_]` charset the key must already match, so the stems are lowercase. A platform id denied for the platform it names is denied for every platform: `steam` covered the SteamID, and `xuid` is the same account under the name the engine's own API uses, so one of the two spellings would otherwise have got through. `name`, `nick`, `handle`, `alias`, `ident`, and `login` deny the display-name family, which is the spelling a detector author reaches for first and which no field-name derivation denies.",
       "type": "string",
-      "pattern": "^(?!.*(?:steam|platform|player|user|account|client|eac|guid|ticket|auth|passwd|password|pass|secret|cred|email|mail|phone|addr|ip|mac|hw|hardware))[a-z_]+$"
+      "pattern": "^(?!.*(?:steam|xuid|platform|player|user|account|client|eac|guid|ticket|auth|passwd|password|pass|secret|cred|email|mail|phone|addr|ip|mac|hw|hardware|name|nick|handle|alias|ident|login))[a-z_]+$"
     }
   },
   "oneOf": [
@@ -135,10 +135,12 @@
           ]
         },
         "suppressedReason": {
+          "description": "Why a soft finding was not acted on, as a class, not a sentence. Bounded like the other free-text fields in this schema: a suppression reason is the one field a detector author fills by interpolating whatever the game handed it, so an unbounded string here is a channel a name or a quoted line rides into a 30-day record.",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "maxLength": 64
         },
         "context": {
           "type": "object",
@@ -244,10 +246,12 @@
           "maxLength": 128
         },
         "itemId": {
+          "description": "Mod item name, bounded: a mod author names an item with a display string as readily as an id, and an unbounded field would keep it for the full retention window.",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "maxLength": 128
         },
         "delta": {
           "type": [
@@ -328,7 +332,9 @@
           }
         },
         "marker": {
-          "type": "string"
+          "description": "Reconciliation marker (a segment label the writer builds), bounded like every other free-text field: the marker names the segment it reconciles, not the player it reconciles for.",
+          "type": "string",
+          "maxLength": 128
         }
       }
     },
