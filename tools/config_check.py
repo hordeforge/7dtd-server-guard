@@ -376,6 +376,33 @@ def _load_self_test(failures: list[str]) -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def _exit_code_self_test(failures: list[str]) -> None:
+    """The exit codes the command-line contract states, driven through main().
+
+    tools/README.md -> Command-line contract: 2 is a usage error, and a path
+    that does not exist is a check failure (1), not a usage error. A deploy
+    script branching on the code reads 2 as "I invoked the tool wrong" and would
+    not investigate a config path that was never there.
+    """
+    cases: list[tuple[list[str], int, str]] = [
+        (["--config", str(ROOT / ".scratch" / "no-such-config.json")], 1, "a missing config path"),
+        ([], 2, "a bare invocation"),
+    ]
+    for argv, expected, what in cases:
+        saved = sys.argv
+        sys.argv = ["config_check.py", *argv]
+        try:
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                code = main()
+        finally:
+            sys.argv = saved
+        if code != expected:
+            failures.append(f"self-test: {what} exited {code}, expected {expected}")
+
+
 def self_test() -> list[str]:
     """Negative and positive cases over the shipped example and mutations of it.
 
@@ -472,6 +499,10 @@ def main() -> int:
 
     config, error = load(args.config)
     if error is not None:
+        # An unreadable file is a verdict on the config, not a mistake in how the
+        # tool was invoked (tools/README.md -> Command-line contract): the path
+        # either does not exist, is not UTF-8, or is not JSON, and all three mean
+        # the file must not be deployed. Only a missing --config is a usage error.
         return _report(f"config-check: {args.config}", [error])
 
     errs = check(config, check_env=not args.skip_env)

@@ -50,6 +50,7 @@ from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+from urllib.parse import unquote
 
 # Spec loading (and its PyYAML dependency guard) lives in render_detectors.
 import render_detectors
@@ -133,7 +134,16 @@ ALLOWED_FIXTURES = frozenset(render_detectors.FIXTURE_FAMILIES)
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 DETECTOR_ID_RE = re.compile(r"`([a-z]+\.[a-z_]+)`")
-TODO_CHECKBOX_RE = re.compile(r"^[-*] \[[ xX]\]")
+# An ATX heading (`## Scope`), and the underline of a setext one (`Scope` then
+# `-----`). A `#` inside a fenced block is a comment or a shell prompt, not a
+# heading, so the fence state is tracked while the slugs are collected.
+ATX_RE = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
+SETEXT_RE = re.compile(r"^=+\s*$|^-{2,}\s*$")
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
+# A TODO.md task marker, in the canonical spelling and in every spelling
+# CommonMark still renders as a checkbox.
+CANONICAL_CHECKBOX_RE = re.compile(r"^[-*] \[[ xX]\]")
+ANY_CHECKBOX_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s*\[[ xX]\]")
 
 # Key patterns declared in the SCHEMAS.md config table. They share the dotted
 # family.subject shape with detector IDs, but rows like actions.correct or
@@ -280,6 +290,43 @@ def link_failure(
     return None if current.exists() else "broken link"
 
 
+def heading_slugs(text: str) -> set[str]:
+    """Every anchor a markdown file offers, as GitHub renders them.
+
+    A link's `#fragment` is its heading lowercased, stripped of punctuation, and
+    with spaces turned into hyphens, so `## Scope, in brief` answers to
+    `#scope-in-brief`. A heading repeated in one file gets `-1`, `-2`, ... on
+    every repeat after the first, which is why the counts are tracked rather
+    than the set alone: two `## Notes` sections make one `#notes` and one
+    `#notes-1`, and a link to either must resolve.
+    """
+    slugs: set[str] = set()
+    repeats: dict[str, int] = {}
+    fence: str | None = None
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if (fence_match := FENCE_RE.match(line)) is not None:
+            marker = fence_match.group(1)
+            fence = None if fence == marker else marker
+            continue
+        if fence is not None:
+            continue
+        heading: str | None = None
+        if atx := ATX_RE.match(line):
+            heading = atx.group(1)
+        elif i + 1 < len(lines) and line.strip() and SETEXT_RE.match(lines[i + 1]):
+            heading = line.strip()
+        if heading is None:
+            continue
+        base = re.sub(r"[^\w\- ]", "", heading.lower()).strip().replace(" ", "-")
+        if not base:
+            continue
+        seen = repeats.get(base, 0)
+        slugs.add(base if seen == 0 else f"{base}-{seen}")
+        repeats[base] = seen + 1
+    return slugs
+
+
 def check_links() -> list[str]:
     out = []
     dir_names: dict[pathlib.Path, frozenset[str]] = {}
@@ -287,27 +334,50 @@ def check_links() -> list[str]:
         text = p.read_text(encoding="utf-8")
         for m in LINK_RE.finditer(text):
             target = m.group(1)
-            if target.startswith(("http://", "https://", "#", "mailto:", "../")):
+            if target.startswith(("http://", "https://", "mailto:", "../")):
                 # "../" links point at sibling repos (7dtd-engine-research etc.), which
                 # do not exist in a single-repo checkout; they are audited by
                 # the cross-repo link pass, not by this per-repo gate.
                 continue
-            path_part = target.partition("#")[0]
-            if not path_part:
-                continue
-            if reason := link_failure(p.parent, path_part, dir_names):
+            path_part, _, anchor = target.partition("#")
+            if path_part and (reason := link_failure(p.parent, path_part, dir_names)):
                 out.append(f"{p.relative_to(ROOT)}: {reason} -> {target}")
+                continue
+            if not anchor:
+                continue
+            # A bare `#fragment` names a heading in the linking file itself, so the
+            # base is the file when the path half is empty.
+            base = p.parent / path_part if path_part else p
+            if base.suffix != ".md" or not base.is_file():
+                continue
+            if unquote(anchor) not in heading_slugs(base.read_text(encoding="utf-8")):
+                out.append(f"{p.relative_to(ROOT)}: no heading matches the anchor -> {target}")
     return out
 
 
 def check_todo_format() -> list[str]:
+    """TODO.md task markers are the canonical `- [ ]` / `- [x]` list-item form.
+
+    CommonMark renders a task box from any list item whose first token is the
+    marker, so `-  [ ] x` and `-[ ] x` become checkboxes too. A gate that only
+    rejects the `- [` spelling let those through, and a phase gate that renders
+    as an unchecked box on one host and as text on another is not a gate. A
+    fenced block is prose about the format, not the format, so it is skipped.
+    """
     todo = ROOT / "TODO.md"
     out = []
+    fence: str | None = None
     for i, line in enumerate(todo.read_text(encoding="utf-8").splitlines(), 1):
-        stripped = line.strip()
-        if TODO_CHECKBOX_RE.match(stripped):
+        if (fence_match := FENCE_RE.match(line)) is not None:
+            marker = fence_match.group(1)
+            fence = None if fence == marker else marker
             continue
-        if stripped.startswith(("- [", "* [")):
+        if fence is not None:
+            continue
+        stripped = line.strip()
+        if CANONICAL_CHECKBOX_RE.match(stripped):
+            continue
+        if ANY_CHECKBOX_RE.match(stripped):
             out.append(f"TODO.md:{i}: malformed checkbox: {stripped[:80]}")
     return out
 
@@ -452,14 +522,21 @@ def _detector_errors(d: Json) -> list[str]:
     out.extend(_input_errors(did, inputs))
     out.extend(_fixture_errors(did, d.get("fixtures", [])))
     # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
-    decision_client = [
-        name
-        for i in inputs
-        if isinstance(i, dict)
-        and i.get("role") == "decision"
-        and i.get("authority") == "client-declared"
-        and isinstance(name := i.get("name"), str)
-    ]
+    # An `inputs` that is not a list is already reported by _input_errors; the scan
+    # skips it rather than raising, so one malformed record costs its own finding
+    # instead of aborting the pass and losing every other detector's errors with it.
+    decision_client = (
+        [
+            name
+            for i in inputs
+            if isinstance(i, dict)
+            and i.get("role") == "decision"
+            and i.get("authority") == "client-declared"
+            and isinstance(name := i.get("name"), str)
+        ]
+        if isinstance(inputs, list)
+        else []
+    )
     if d.get("ceiling") == "Hard" and decision_client and not d.get("hard_condition"):
         out.append(
             f"{did}: ceiling Hard with client-declared decision inputs "
@@ -1082,7 +1159,29 @@ def check_docs_json_examples() -> list[str]:
     return out
 
 
-def _open_value_bags(node: Json, path: str = "$") -> list[tuple[str, Json]]:
+def _resolve_local_ref(node: Json, root: Json) -> Json:
+    """The node a local `#/...` $ref names, or `node` itself when it names none.
+
+    Only a local ref resolves: a remote one names a schema this file does not
+    carry, and the gate reads the shipped file alone.
+    """
+    ref = node.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return node
+    target: Json = root
+    for part in ref[2:].split("/"):
+        if not isinstance(target, dict) or part not in target:
+            return node
+        target = target[part]
+    return target if isinstance(target, dict) else node
+
+
+def _open_value_bags(
+    node: Json,
+    path: str = "$",
+    root: Json | None = None,
+    seen: frozenset[str] = frozenset(),
+) -> list[tuple[str, Json]]:
     """Every subschema of `node` that accepts values beyond a declared set.
 
     Two shapes qualify. An object that does not close itself with
@@ -1093,10 +1192,27 @@ def _open_value_bags(node: Json, path: str = "$") -> list[tuple[str, Json]]:
     detector puts in each element reaches the exporter unchecked. An array
     whose `items` is an object is covered by the object rule through the
     recursion below; an `items` of any other type is already closed.
+
+    A local $ref is followed, and `definitions` and an `additionalProperties`
+    subschema are walked, because the evidence schema declares its shapes once
+    and references them: a bag moved into `definitions` and referenced from a
+    property reads to a ref-only walk as a node with no `type`, so the bag would
+    pass the gate holding anything. `seen` carries the refs already resolved on
+    this path so a pair of definitions that reference each other terminates.
     """
-    out: list[tuple[str, Json]] = []
     if not isinstance(node, dict):
-        return out
+        return []
+    if root is None:
+        root = node
+    if isinstance(node.get("$ref"), str):
+        ref = node["$ref"]
+        if ref in seen:
+            return []
+        resolved = _resolve_local_ref(node, root)
+        if resolved is node:
+            return []
+        return _open_value_bags(resolved, path, root, seen | {ref})
+    out: list[tuple[str, Json]] = []
     node_type = node.get("type")
     types = node_type if isinstance(node_type, list) else [node_type]
     if "object" in types and node.get("additionalProperties") is not False:
@@ -1105,10 +1221,15 @@ def _open_value_bags(node: Json, path: str = "$") -> list[tuple[str, Json]]:
         out.append((path, node))
     for key in ("properties", "patternProperties"):
         for name, sub in (node.get(key) or {}).items():
-            out += _open_value_bags(sub, f"{path}.{key}.{name}")
+            out += _open_value_bags(sub, f"{path}.{key}.{name}", root, seen)
+    for name, sub in (node.get("definitions") or {}).items():
+        out += _open_value_bags(sub, f"{path}.definitions.{name}", root, seen)
     for i, sub in enumerate(node.get("oneOf") or []):
-        out += _open_value_bags(sub, f"{path}.oneOf[{i}]")
-    return out + _open_value_bags(node.get("items"), f"{path}.items")
+        out += _open_value_bags(sub, f"{path}.oneOf[{i}]", root, seen)
+    extra = node.get("additionalProperties")
+    if isinstance(extra, dict):
+        out += _open_value_bags(extra, f"{path}.additionalProperties", root, seen)
+    return out + _open_value_bags(node.get("items"), f"{path}.items", root, seen)
 
 
 def check_evidence_personal_data() -> list[str]:

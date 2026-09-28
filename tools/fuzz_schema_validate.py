@@ -267,6 +267,50 @@ def check_personal_data_denylist() -> int:
     return checks
 
 
+def check_open_bag_walk() -> int:
+    """The open-bag walk must see a bag however the schema reaches it.
+
+    The evidence schema declares its shapes once in `definitions` and $refs them,
+    so a walk that stopped at a ref saw a node with no `type` and missed the bag:
+    a value bag moved into a definition, or named by an `additionalProperties`
+    subschema, passed the gate holding any key a detector wrote. Each case adds
+    exactly one unguarded bag and requires the walk to report it; the shipped
+    schema, which has six, must still report no error.
+    """
+    schema = json.loads(
+        (ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text(encoding="utf-8")
+    )
+    if dc.check_evidence_personal_data():
+        raise InvariantBrokenError("the shipped evidence schema failed its own deny-list check")
+    cases = {
+        "a bag declared in definitions and $ref'd": (
+            {"type": "object"},
+            "properties",
+        ),
+        "an array bag declared in definitions and $ref'd": (
+            {"type": "array"},
+            "properties",
+        ),
+        "a bag named by an additionalProperties subschema": (
+            {"type": "object", "propertyNames": {"$ref": "#/definitions/personalDataDenyList"}},
+            "additionalProperties",
+        ),
+    }
+    checks = 0
+    for what, (definition, holder) in cases.items():
+        mutant = json.loads(json.dumps(schema))
+        mutant["definitions"]["openBagProbe"] = definition
+        if holder == "properties":
+            mutant["oneOf"][0][holder]["openBagProbe"] = {"$ref": "#/definitions/openBagProbe"}
+        else:
+            mutant["oneOf"][0][holder] = {"$ref": "#/definitions/openBagProbe"}
+        reported = [p for p, _ in dc._open_value_bags(mutant) if "openBagProbe" in p]
+        if not reported:
+            raise InvariantBrokenError(f"{what} was not seen as an open value bag")
+        checks += 1
+    return checks
+
+
 def check_evidence_bags_beyond_finding() -> None:
     """The bags outside a `finding` hold the same rule: ids are ids, keys are denied.
 
@@ -498,6 +542,7 @@ def main() -> int:
         check_bool_is_not_a_number()
         check_evidence_bags_beyond_finding()
         reference_checks = check_record_references()
+        open_bag_checks = check_open_bag_walk()
     except InvariantBrokenError as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
@@ -507,6 +552,7 @@ def main() -> int:
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
         f"id_array_probe=ok reference_checks={reference_checks} deep_probe=ok "
+        f"open_bag_checks={open_bag_checks} "
         f"datetime_probe=ok non_finite_probe=ok threshold_gate_probe=ok "
         f"length_units_probe=ok bool_vs_number_probe=ok"
     )

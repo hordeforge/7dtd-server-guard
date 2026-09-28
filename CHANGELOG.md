@@ -245,6 +245,32 @@ above reserves minor bumps for that.
 
 ### Fixed
 
+- `config_check.py` exited 2 on a config file that could not be read, where
+  `tools/README.md` -> Command-line contract and its own docstring make a path that
+  does not exist a check failure (1). A deploy script branching on the code read a
+  missing path as its own invocation mistake and skipped investigating it. The
+  unreadable-file report now goes through the same stderr report as every other
+  failing check.
+- `doccheck.py`'s spec pass raised `TypeError` on a detector whose `inputs` is not a
+  list, which aborted `check_spec` and discarded every other finding from the pass
+  with it; the report line saying `inputs must be a list` was unreachable. Seeds 14
+  and 17 of `fuzz_detector_spec.py` failed on it.
+- The evidence personal-data check walked `properties`, `patternProperties`, `oneOf`,
+  and `items` only, so an open value bag reached through a local `$ref`, declared in
+  `definitions`, or named by an `additionalProperties` subschema was never seen and
+  passed the gate holding any key a detector wrote. The evidence schema is `$ref`-heavy,
+  so that was where the next bag would land. Refs are now followed and `definitions`
+  and an `additionalProperties` subschema are walked, with the resolved refs on the
+  path tracked so mutually referencing definitions terminate.
+- `doccheck.py`'s link check resolved the file half of a markdown target and skipped
+  the anchor, so `docs/SCHEMAS.md#does-not-exist` passed, though the gate documents
+  that internal links resolve to a file or an anchor. GitHub-style heading slugs
+  (ATX and setext, outside fenced blocks, with `-1`/`-2` for repeated headings) are
+  now resolved, for a bare `#fragment` as well as `file.md#fragment`.
+- `doccheck.py`'s TODO.md check rejected only the literal `- [` and `* [` spellings,
+  so `-  [ ]` and `-[ ]`, which CommonMark still renders as a checkbox, passed a
+  phase-gate check that documents one canonical form. Fenced blocks are now skipped,
+  so an example of the format in a code block is not reported as the format.
 - The evidence export self-test asserted that a second export refuses to overwrite a live
   archive, but it relied on both exports landing in the same wall-clock second. When the
   first export crossed a second boundary the two names differed, the export correctly
