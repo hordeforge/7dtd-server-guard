@@ -18,8 +18,10 @@ Rules that apply to every schema in this document:
   Every open value bag in the evidence schema (`context`, `observations`, `expected`,
   `actual`, `replayedFrom`) additionally carries a `propertyNames` deny-list, so a
   detector that writes a raw name, address, or credential into its own values is
-  rejected at validation rather than at export. `make check` fails when an open object
-  drops that deny-list.
+  rejected at validation rather than at export. The list is declared once, in the
+  schema's `definitions`, and every bag `$ref`s it, so a newly denied key is added in
+  one place. `make check` fails when an open object drops the ref or inlines its own
+  copy.
 - The file paths below are relative to the mod's data root, which the operator sets in the
   config. Defaults live under the server's `UserDataFolder`-adjacent `ServerGuard/` tree;
   the exact default location is confirmed in Phase 2.
@@ -167,7 +169,9 @@ Record types and their extra fields:
 | `audit` | Operator override, unban, purge, reload, emergency disable | `actor`, `action`, `reason`, `evidenceIds`, `utc` |
 | `tombstone` | Purge/redaction placeholder | `replaces` (event ID), `reasonClass` (`operator-purge` / `erasure-request` / `retention-expiry`), `payloadHash` (SHA-256 of the original record's canonical form) |
 
-A `finding` example:
+A `finding` example (`action` is one of `record`, `correct`, `quarantine`, `throttle`,
+`kick`, `temp-ban-local`; `temp-ban-local` is a ban this mod applies from its own
+evidence, not one delegated to an external service):
 
 ```json
 {
@@ -203,8 +207,8 @@ A `finding` example:
 ```
 
 Boundedness: `observations` is capped at 32 entries and each entry at 4 scalar fields;
-`context` at 8 string keys. Anything larger is truncated with a `truncated: true` marker so
-a hostile request cannot inflate evidence size.
+`context`, `expected`, and `actual` at 8 keys each. Anything larger is truncated with a
+`truncated: true` marker so a hostile request cannot inflate evidence size.
 
 Value-bag keys are lowercase `snake_case` and carry the `propertyNames` deny-list, so a
 detector names a value after the quantity it measured (`dx`, `bound`, `vehicle`) and the
@@ -316,7 +320,7 @@ Operator actions only, no gameplay data. Fields: `schemaVersion`, `type: "audit"
 
 Periodic `health` record plus a live console summary. Per detector: `detectorId`,
 `version`, `mode`, `hookResolved` (bool), `state` (`active` / `self-disabled` /
-`fail-open` / `off`), `faults`, `findingsThisEpoch`, `configHash`. Global: `queueDepth`,
+`fail-open` / `off`), `faults`, `findingsThisEpoch`. Record-level: `configHash`. Global: `queueDepth`,
 `drops`, `uptimeS`, `epochs`. The health record is the input to the "detector-health report"
 on shutdown (ARCHITECTURE.md -> Runtime lifecycle).
 

@@ -5,6 +5,13 @@
   "description": "Append-only JSONL records (docs/SCHEMAS.md -> Evidence stream). One object per line; chainPrev links the hash chain. Machine severity/mode values are lowercase; POLICY.md terms (Hard/Strong/Weak, Observe/Correct/Enforce) are the display vocabulary.",
   "type": "object",
   "additionalProperties": false,
+  "definitions": {
+    "personalDataDenyList": {
+      "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through.",
+      "type": "string",
+      "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+    }
+  },
   "oneOf": [
     {
       "type": "object",
@@ -43,7 +50,7 @@
         },
         "chainPrev": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "type": {
           "const": "finding"
@@ -73,11 +80,11 @@
         },
         "configHash": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "hookManifestHash": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "sessionEpoch": {
           "type": "integer",
@@ -127,7 +134,7 @@
           "type": "object",
           "maxProperties": 8,
           "propertyNames": {
-            "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+            "$ref": "#/definitions/personalDataDenyList"
           }
         },
         "observations": {
@@ -137,20 +144,22 @@
             "type": "object",
             "maxProperties": 4,
             "propertyNames": {
-              "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+              "$ref": "#/definitions/personalDataDenyList"
             }
           }
         },
         "expected": {
           "type": "object",
+          "maxProperties": 8,
           "propertyNames": {
-            "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+            "$ref": "#/definitions/personalDataDenyList"
           }
         },
         "actual": {
           "type": "object",
+          "maxProperties": 8,
           "propertyNames": {
-            "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+            "$ref": "#/definitions/personalDataDenyList"
           }
         },
         "causeEventIds": {
@@ -166,7 +175,7 @@
             "quarantine",
             "throttle",
             "kick",
-            "temp-ban (local)"
+            "temp-ban-local"
           ]
         },
         "disposition": {
@@ -211,7 +220,7 @@
         },
         "chainPrev": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "type": {
           "const": "cause"
@@ -274,7 +283,7 @@
         },
         "chainPrev": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "type": {
           "const": "reconciliation"
@@ -295,7 +304,7 @@
             "null"
           ],
           "propertyNames": {
-            "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+            "$ref": "#/definitions/personalDataDenyList"
           }
         },
         "deltaItems": {
@@ -315,6 +324,7 @@
         "type",
         "eventId",
         "chainPrev",
+        "configHash",
         "detectors",
         "queueDepth",
         "uptimeS"
@@ -329,10 +339,15 @@
         },
         "chainPrev": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "type": {
           "const": "health"
+        },
+        "configHash": {
+          "description": "Hash of the effective config this snapshot was produced under, so a detector's mode here and the mode on its findings are read against the same config.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         },
         "detectors": {
           "type": "array",
@@ -431,7 +446,7 @@
         },
         "chainPrev": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "type": {
           "const": "audit"
@@ -489,7 +504,7 @@
         },
         "chainPrev": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         },
         "type": {
           "const": "tombstone"
@@ -507,7 +522,7 @@
         },
         "payloadHash": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8,64}$"
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     }

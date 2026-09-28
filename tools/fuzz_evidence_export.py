@@ -100,6 +100,35 @@ def _verifier_view(manifest: object) -> object:
     )
 
 
+def _mutate_manifest_sha_bytes(rng: random.Random, archive: pathlib.Path) -> bool:
+    """Flip one byte inside a manifest sha256 digest, the damage verify() must catch.
+
+    A flip anywhere else in the manifest text is not damage the verifier claims to
+    detect: a timestamp or a source path is provenance, not integrity, so hitting
+    one would assert a property the tool does not have.
+
+    Returns False when the manifest holds no digest to damage.
+    """
+    manifest = _read_manifest(archive)
+    entries = manifest.get("files") if isinstance(manifest, dict) else None
+    if not isinstance(entries, list):
+        return False
+    digests = [
+        e["sha256"] for e in entries if isinstance(e, dict) and isinstance(e.get("sha256"), str)
+    ]
+    if not digests:
+        return False
+    digest = digests[rng.randrange(len(digests))]
+    path = archive / ee.MANIFEST_NAME
+    data = path.read_bytes()
+    at = data.find(digest.encode("ascii"))
+    if at < 0:
+        return False
+    pos = at + rng.randrange(len(digest))
+    path.write_bytes(data[:pos] + bytes([(data[pos] + 1) % 256]) + data[pos + 1 :])
+    return True
+
+
 def _mutate_segment_bytes(rng: random.Random, data: bytes) -> bytes:
     """Damage bytes for certain: a no-op mutation would make the harness assert
     detection of damage that never happened."""
@@ -137,6 +166,8 @@ def _damage_archive(
         must_fail = _verifier_view(_read_manifest(archive)) != _verifier_view(before)
         if must_fail:
             damage.append("manifest-bytes")
+    elif _mutate_manifest_sha_bytes(rng, archive):
+        must_fail = True
 
     seg = archive / "evidence-2026-07-21-000000.jsonl"
     if rng.random() < P_MUTATE_SEGMENT_BYTES:

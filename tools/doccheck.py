@@ -201,6 +201,9 @@ SCHEMA_DATA_PAIRS = [
 ]
 
 EVIDENCE_SCHEMA = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
+# The one property-name deny-list every open evidence value bag $refs.
+PERSONAL_DATA_DENY_LIST = "personalDataDenyList"
+DENY_LIST_REF = f"#/definitions/{PERSONAL_DATA_DENY_LIST}"
 
 
 def detector_ids_in(text: str) -> set[str]:
@@ -754,7 +757,9 @@ def _scalar_errors(instance: Json, schema: Json, path: str) -> list[str]:
     return errs
 
 
-def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: int) -> list[str]:
+def _object_errors(
+    instance: dict[str, Json], schema: Json, path: str, depth: int, root: Json
+) -> list[str]:
     """Property count, declared properties, pattern properties, and required keys."""
     errs = []
     if "maxProperties" in schema and len(instance) > schema["maxProperties"]:
@@ -766,24 +771,24 @@ def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: in
         errs.extend(
             f"{path}: key {k!r} rejected by propertyNames"
             for k in instance
-            if _schema_validate(k, names, f"{path}.{k}", depth + 1)
+            if _schema_validate(k, names, f"{path}.{k}", depth + 1, root)
         )
     props = schema.get("properties", {})
     pats = schema.get("patternProperties", {})
     for k, v in instance.items():
         if k in props:
-            errs += _schema_validate(v, props[k], f"{path}.{k}", depth + 1)
+            errs += _schema_validate(v, props[k], f"{path}.{k}", depth + 1, root)
             continue
         pattern_schema = next((sub for pat, sub in pats.items() if re.match(pat, k)), None)
         if pattern_schema is not None:
-            errs += _schema_validate(v, pattern_schema, f"{path}.{k}", depth + 1)
+            errs += _schema_validate(v, pattern_schema, f"{path}.{k}", depth + 1, root)
             continue
         # additionalProperties false rejects the key; a subschema validates its value.
         additional = schema.get("additionalProperties", True)
         if additional is False:
             errs.append(f"{path}: unexpected key {k!r}")
         elif additional is not True:
-            errs += _schema_validate(v, additional, f"{path}.{k}", depth + 1)
+            errs += _schema_validate(v, additional, f"{path}.{k}", depth + 1, root)
     errs.extend(
         f"{path}: missing required key {req!r}"
         for req in schema.get("required", [])
@@ -792,7 +797,9 @@ def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: in
     return errs
 
 
-def _array_errors(instance: list[Json], schema: Json, path: str, depth: int) -> list[str]:
+def _array_errors(
+    instance: list[Json], schema: Json, path: str, depth: int, root: Json
+) -> list[str]:
     """Item count and the per-item schema."""
     errs = []
     if "minItems" in schema and len(instance) < schema["minItems"]:
@@ -801,18 +808,81 @@ def _array_errors(instance: list[Json], schema: Json, path: str, depth: int) -> 
         errs.append(f"{path}: {len(instance)} items > maxItems {schema['maxItems']}")
     if "items" in schema:
         for i, v in enumerate(instance):
-            errs += _schema_validate(v, schema["items"], f"{path}[{i}]", depth + 1)
+            errs += _schema_validate(v, schema["items"], f"{path}[{i}]", depth + 1, root)
     return errs
 
 
-def _schema_validate(instance: Json, schema: Json, path: str = "$", depth: int = 0) -> list[str]:
-    """Minimal JSON Schema (draft-07 subset) validator for the schemas we ship."""
+def _resolve_ref(root: Json, ref: str) -> Json:
+    """The subschema a local JSON pointer names, or a KeyError/TypeError."""
+    if not ref.startswith("#/"):
+        raise ValueError(f"only local refs are supported, got {ref!r}")
+    node = root
+    for token in ref[2:].split("/"):
+        node = node[token.replace("~1", "/").replace("~0", "~")]
+    return node
+
+
+def _ref_target(schema: Json, path: str, root: Json) -> tuple[Json | None, list[str]]:
+    """The subschema a local `$ref` names, or (None, errors) when it names none."""
+    ref = schema["$ref"]
+    if not isinstance(ref, str):
+        return None, [f"{path}: $ref must be a string, got {ref!r}"]
+    try:
+        target = _resolve_ref(root, ref)
+    except (KeyError, TypeError, ValueError) as exc:
+        return None, [f"{path}: unresolvable $ref {ref!r}: {exc}"]
+    if not isinstance(target, dict):
+        return None, [f"{path}: $ref {ref!r} does not name a schema object"]
+    return target, []
+
+
+def _one_of_errors(instance: Json, branches: Json, path: str, depth: int, root: Json) -> list[str]:
+    """Exactly one `oneOf` branch must accept the instance."""
+    if not isinstance(branches, list) or not branches:
+        return [f"{path}: oneOf must be a non-empty array, got {branches!r}"]
+    results = [_schema_validate(instance, sub, path, depth + 1, root) for sub in branches]
+    matched = [i for i, r in enumerate(results) if not r]
+    if len(matched) == 1:
+        return []
+    errs = [f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)"]
+    if not matched:
+        # With no branch matching, the count alone says nothing about why. The
+        # branches are mutually exclusive by contract, so the first reports why.
+        errs += results[0]
+    return errs
+
+
+def _fast_path(
+    instance: Json, schema: Json, path: str, depth: int, root: Json
+) -> tuple[list[str] | None, Json]:
+    """The terminal verdict for depth overflow, `$ref`, and `const`, or None to
+    continue with the ordinary keywords. Returns (errors, root).
+
+    A `$ref` is resolved against the document root, one depth level per ref, so a
+    self-referential schema is bounded here like any other recursion.
+    """
     if depth > MAX_SCHEMA_DEPTH:
-        return [f"{path}: nesting deeper than {MAX_SCHEMA_DEPTH} levels"]
+        return [f"{path}: nesting deeper than {MAX_SCHEMA_DEPTH} levels"], root
+    if root is None:
+        # The outermost call's schema is the document every $ref resolves against.
+        root = schema
+    if "$ref" in schema:
+        target, ref_errors = _ref_target(schema, path, root)
+        return ref_errors or _schema_validate(instance, target, path, depth + 1, root), root
     if "const" in schema:
         if instance != schema["const"]:
-            return [f"{path}: expected const {schema['const']!r}, got {instance!r}"]
-        return []
+            return [f"{path}: expected const {schema['const']!r}, got {instance!r}"], root
+        return [], root
+    return None, root
+
+
+def _schema_validate(
+    instance: Json, schema: Json, path: str = "$", depth: int = 0, root: Json = None
+) -> list[str]:
+    """Minimal JSON Schema (draft-07 subset) validator for the schemas we ship."""
+    fast, root = _fast_path(instance, schema, path, depth, root)
+    if fast is not None:
+        return fast
     errs = []
     if "enum" in schema and instance not in schema["enum"]:
         errs.append(f"{path}: {instance!r} not in {schema['enum']}")
@@ -821,25 +891,11 @@ def _schema_validate(instance: Json, schema: Json, path: str = "$", depth: int =
         return errs
     errs += _scalar_errors(instance, schema, path)
     if "oneOf" in schema:
-        if not isinstance(schema["oneOf"], list) or not schema["oneOf"]:
-            errs.append(f"{path}: oneOf must be a non-empty array, got {schema['oneOf']!r}")
-        else:
-            branches = [_schema_validate(instance, sub, path, depth + 1) for sub in schema["oneOf"]]
-            matched = [i for i, b in enumerate(branches) if not b]
-            if len(matched) != 1:
-                errs.append(
-                    f"{path}: matches {len(matched)} of oneOf branches (expected exactly 1)"
-                )
-                if not matched:
-                    # With no branch matching, the count alone says nothing about
-                    # why. The branches are mutually exclusive by contract, so
-                    # the first one reports the reason.
-                    errs += branches[0]
-        return errs
+        return errs + _one_of_errors(instance, schema["oneOf"], path, depth, root)
     if isinstance(instance, dict):
-        errs += _object_errors(instance, schema, path, depth)
+        errs += _object_errors(instance, schema, path, depth, root)
     if isinstance(instance, list):
-        errs += _array_errors(instance, schema, path, depth)
+        errs += _array_errors(instance, schema, path, depth, root)
     return errs
 
 
@@ -920,21 +976,34 @@ def _open_object_schemas(node: Json, path: str = "$") -> list[tuple[str, Json]]:
 
 
 def check_evidence_personal_data() -> list[str]:
-    """Every open value bag in the evidence schema carries the deny-list.
+    """Every open value bag in the evidence schema carries the one deny-list.
 
     Detectors write their observed and expected values into `context`,
     `observations`, `expected`, and `actual`; those bags are the one place a
     detector could hand a raw platform ID, a player name, an address, or a
     credential to the exporter, the operator, and the webhook consumer. The
     deny-list is the machine form of the SCHEMAS.md rule that no schema ever
-    carries one.
+    carries one. The list is declared once, in `definitions`, and every bag must
+    $ref it: a second hand-written copy is where a newly denied key would be
+    added to one bag and forgotten in another, and a bag that dropped the ref
+    would still pass a presence-only check.
     """
     schema = json.loads(EVIDENCE_SCHEMA.read_text(encoding="utf-8"))
-    return [
-        f"evidence schema {path}: open object has no propertyNames deny-list"
-        for path, sub in _open_object_schemas(schema)
-        if "propertyNames" not in sub
-    ]
+    deny = (schema.get("definitions") or {}).get(PERSONAL_DATA_DENY_LIST)
+    if not isinstance(deny, dict) or "pattern" not in deny:
+        return [
+            f"evidence schema: definitions/{PERSONAL_DATA_DENY_LIST} is missing or has no pattern"
+        ]
+    out = []
+    for path, sub in _open_object_schemas(schema):
+        if "propertyNames" not in sub:
+            out.append(f"evidence schema {path}: open object has no propertyNames deny-list")
+        elif sub["propertyNames"] != {"$ref": DENY_LIST_REF}:
+            out.append(
+                f"evidence schema {path}: propertyNames is not the shared "
+                f"deny-list ref {DENY_LIST_REF}"
+            )
+    return out
 
 
 def check_folder_structure() -> list[str]:
