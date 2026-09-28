@@ -19,7 +19,7 @@ Nothing is installed globally: `make setup` materializes `.venv/` inside the clo
 ## Bootstrap and loop
 
 ```
-make setup      # uv sync --frozen, once per clone
+make setup      # uv sync --locked, once per clone
 make check      # docs quality gate: run before opening a change
 make lint       # black, ruff, mypy over the whole repository
 make exercise   # replay contract self-tests plus the design-time trace
@@ -107,7 +107,9 @@ gate (a formatter, a linter, a type checker) belongs in `[dependency-groups] dev
 [pyproject.toml](pyproject.toml); anything the shipped tools import at runtime belongs
 in `[project] dependencies`. The runtime list is one package today (`PyYAML`, for the
 detector spec), which is the point: uv.lock is the whole third-party surface, and it
-is regenerated with `uv lock` and reviewed like any other change. `make sbom` renders
+is regenerated with `uv lock` and reviewed like any other change, and every gate runs
+uv in `--locked` mode, so a dependency declared without a lock entry stops the run
+instead of leaving the old set installed. `make sbom` renders
 what the lock holds as CycloneDX 1.6, with each package marked `runtime` or `dev`, so
 the blast radius of a release is readable without running uv.
 

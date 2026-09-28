@@ -36,11 +36,13 @@ SEED ?= 24301
 
 # uv is the only Python toolchain here: it resolves the locked dependency set and
 # the interpreter pinned in .python-version, so a bare `make check` on a fresh
-# clone runs the same versions CI does. --frozen fails instead of silently
-# re-resolving when uv.lock is stale. The uv release itself is pinned by
+# clone runs the same versions CI does. --locked refuses to run when uv.lock no
+# longer matches pyproject.toml, so a declared dependency that was never locked
+# fails the gate instead of quietly leaving the old set installed; --frozen would
+# install a stale lock without a word. The uv release itself is pinned by
 # required-version in pyproject.toml, so the resolver that reads uv.lock is the
 # same one CI runs.
-UV := uv run --frozen
+UV := uv run --locked
 
 # Every recipe runs with a fixed zone and hash seed, so a local gate and the CI
 # gate of the same commit agree: a timestamp or an unordered set iteration
@@ -61,7 +63,7 @@ guard-python:
 # the dev group (black, ruff, mypy). Nothing is installed globally.
 setup:
 	@command -v uv >/dev/null 2>&1 || { echo "setup: uv not found on PATH." >&2; echo "setup: install uv (https://docs.astral.sh/uv/); the exact required release is" >&2; echo "setup: required-version in pyproject.toml, and uv refuses to run against any other." >&2; exit 2; }
-	uv sync --frozen
+	uv sync --locked
 
 check: guard-python
 	$(UV) python tools/doccheck.py
@@ -206,7 +208,7 @@ drill-restore: guard-python
 help:
 	@echo "Targets:"
 	@echo "  make help            this list (a bare 'make' exits 2 with this line on stderr)"
-	@echo "  make setup           materialize .venv from uv.lock (uv sync --frozen)"
+	@echo "  make setup           materialize .venv from uv.lock (uv sync --locked)"
 	@echo "  make check           run the docs quality gate (tools/doccheck.py)"
 	@echo "  make lint            black, ruff, and mypy over the whole repository"
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"

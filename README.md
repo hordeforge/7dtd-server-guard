@@ -98,8 +98,9 @@ Bootstrap (once per clone; needs [uv](https://docs.astral.sh/uv/) at the release
 installs. uv enforces that pin itself and installs the exact interpreter version pinned in
 [.python-version](.python-version) on its own):
 
-- `make setup`: `uv sync --frozen`, materializing `.venv` from `uv.lock`. Nothing is
-  installed globally.
+- `make setup`: `uv sync --locked`, materializing `.venv` from `uv.lock`. Nothing is
+  installed globally, and a lock that no longer matches `pyproject.toml` is refused
+  rather than installed.
 
 Loop:
 

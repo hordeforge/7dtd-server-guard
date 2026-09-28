@@ -44,6 +44,10 @@ Checks:
   19. Every declared dependency is used: each distribution in pyproject.toml is
       imported by shipped Python or run by a make target, and every third-party
       import resolves to a declared distribution.
+  20. The build toolchain is pinned once and honored: the uv release in ci.yml is the one
+      pyproject requires, actions and the runner image are not moving refs, `make setup` and
+      every recipe run uv in `--locked` mode, and the Makefile and ci.yml agree on TZ and
+      PYTHONHASHSEED.
 
 Exit codes: 0 clean, 1 the gate found issues, 2 usage error. The one-line summary goes to
 stdout and the
@@ -1778,6 +1782,74 @@ def check_backup_runbook() -> list[str]:
     return out
 
 
+def _toolchain_pin_issues(pyproject: str, workflow: str, makefile: str) -> list[str]:
+    """Whether the build toolchain is pinned once, in one place, and honored.
+
+    The uv release and the two environment values that decide what a gate prints
+    are each named twice: `required-version` in pyproject against the release
+    setup-uv installs, and the Makefile exports against the workflow env. Two
+    copies drift apart silently, and the drift shows up as a local gate and a CI
+    gate of one commit disagreeing, which is exactly what a pinned toolchain is
+    supposed to prevent. The lockfile is the third: `--locked` is what makes the
+    lock binding, since `--frozen` installs a lock that no longer matches
+    pyproject.toml without a word and a bare `uv run` re-resolves it.
+    """
+    out: list[str] = []
+    required = str(
+        tomllib.loads(pyproject).get("tool", {}).get("uv", {}).get("required-version", "")
+    )
+    match = re.fullmatch(r"==(\d+\.\d+\.\d+)", required)
+    if not match:
+        return [
+            (
+                "pyproject.toml: [tool.uv] required-version is "
+                f"{required or 'unset'}, not an exact ==MAJOR.MINOR.PATCH release pin"
+            )
+        ]
+    pinned = match.group(1)
+    installed = re.search(r"^\s*version:\s*\"?(\d+\.\d+\.\d+)\"?\s*$", workflow, re.MULTILINE)
+    if installed is None:
+        out.append("ci.yml: astral-sh/setup-uv names no uv release to install")
+    elif installed.group(1) != pinned:
+        out.append(
+            f"ci.yml: setup-uv installs uv {installed.group(1)}, "
+            f"pyproject.toml requires {pinned}"
+        )
+    for action in re.findall(r"^\s*-?\s*uses:\s*(\S+)", workflow, re.MULTILINE):
+        ref = action.partition("@")[2]
+        if not re.fullmatch(r"[0-9a-f]{40}", ref):
+            out.append(f"ci.yml: {action} is a mutable ref, not a pinned commit SHA")
+    out += [
+        f"ci.yml: runs-on {runner} is a moving tag, so the ambient toolchain can drift"
+        for runner in re.findall(r"^\s*runs-on:\s*(\S+)", workflow, re.MULTILINE)
+        if runner.endswith("-latest")
+    ]
+    if not re.search(r"^UV\s*:?=\s*uv run --locked\s*$", makefile, re.MULTILINE):
+        out.append(
+            "Makefile: UV is not `uv run --locked`, so a gate runs against a uv.lock that "
+            "no longer matches pyproject.toml"
+        )
+    if not re.search(r"^\s*uv sync --locked\s*$", makefile, re.MULTILINE):
+        out.append("Makefile: `make setup` does not `uv sync --locked`, so a stale lock installs")
+    for var in ("TZ", "PYTHONHASHSEED"):
+        local = re.search(rf"^export {var}\s*:=\s*(\S+)\s*$", makefile, re.MULTILINE)
+        ci = re.search(rf"^\s*{var}:\s*\"?(\S+?)\"?\s*$", workflow, re.MULTILINE)
+        if local is None:
+            out.append(f"Makefile: no `export {var} := ...`, so a local gate is unpinned")
+        elif ci is not None and ci.group(1) != local.group(1):
+            out.append(f"Makefile exports {var}={local.group(1)}, ci.yml sets {ci.group(1)}")
+    return out
+
+
+def check_toolchain_pins() -> list[str]:
+    """The toolchain that resolves the lockfile is named in exactly one place."""
+    return _toolchain_pin_issues(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"),
+        (ROOT / "Makefile").read_text(encoding="utf-8"),
+    )
+
+
 def _run_check(name: str, check: Callable[[], list[str]]) -> tuple[str, list[str]]:
     """Run one check, reporting an unexpected raise as that check's failure.
 
@@ -1966,6 +2038,95 @@ def _dependency_self_test() -> list[str]:
     return errs
 
 
+_PINNED_PYPROJECT = '[tool.uv]\nrequired-version = "==0.12.13"\n'
+_PINNED_WORKFLOW = (
+    "jobs:\n"
+    "  gate:\n"
+    "    runs-on: ubuntu-24.04\n"
+    "    env:\n"
+    "      TZ: UTC\n"
+    '      PYTHONHASHSEED: "0"\n'
+    "    steps:\n"
+    "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n"
+    "      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1\n"
+    "        with:\n"
+    '          version: "0.12.13"\n'
+)
+_PINNED_MAKEFILE = (
+    "UV := uv run --locked\n\nsetup:\n\tuv sync --locked\n\n"
+    "export TZ := UTC\nexport PYTHONHASHSEED := 0\n"
+)
+
+
+def _toolchain_pin_self_test() -> list[str]:
+    """The pin check must fire on each drift it exists to catch.
+
+    A gate that has only ever seen the pinned tree proves nothing, so each case
+    breaks one pin and names the issue the check has to raise for it.
+    """
+    errs: list[str] = []
+    if issues := _toolchain_pin_issues(_PINNED_PYPROJECT, _PINNED_WORKFLOW, _PINNED_MAKEFILE):
+        errs.append(f"self-test: a consistent toolchain pin was reported broken: {issues}")
+    cases: tuple[tuple[str, str, str, str, str], ...] = (
+        (
+            "CI installs a uv release pyproject does not require",
+            _PINNED_PYPROJECT,
+            _PINNED_WORKFLOW.replace('"0.12.13"', '"0.12.99"'),
+            _PINNED_MAKEFILE,
+            "ci.yml: setup-uv installs uv 0.12.99",
+        ),
+        (
+            "a required-version that is not an exact release pin",
+            '[tool.uv]\nrequired-version = ">=0.12"\n',
+            _PINNED_WORKFLOW,
+            _PINNED_MAKEFILE,
+            "not an exact ==MAJOR.MINOR.PATCH",
+        ),
+        (
+            "an action on a mutable tag",
+            _PINNED_PYPROJECT,
+            _PINNED_WORKFLOW.replace("actions/checkout@3d3c42e", "actions/checkout@v7"),
+            _PINNED_MAKEFILE,
+            "mutable ref",
+        ),
+        (
+            "a moving runner image",
+            _PINNED_PYPROJECT,
+            _PINNED_WORKFLOW.replace("ubuntu-24.04", "ubuntu-latest"),
+            _PINNED_MAKEFILE,
+            "moving tag",
+        ),
+        (
+            "a gate that runs against a lock that can drift from pyproject",
+            _PINNED_PYPROJECT,
+            _PINNED_WORKFLOW,
+            _PINNED_MAKEFILE.replace("uv run --locked", "uv run --frozen"),
+            "no longer matches pyproject.toml",
+        ),
+        (
+            "a setup that installs a stale lock",
+            _PINNED_PYPROJECT,
+            _PINNED_WORKFLOW,
+            _PINNED_MAKEFILE.replace("uv sync --locked", "uv sync --frozen"),
+            "a stale lock installs",
+        ),
+        (
+            "a zone the local gate and CI disagree on",
+            _PINNED_PYPROJECT,
+            _PINNED_WORKFLOW.replace("TZ: UTC", "TZ: Europe/Berlin"),
+            _PINNED_MAKEFILE,
+            "Makefile exports TZ=UTC, ci.yml sets Europe/Berlin",
+        ),
+    )
+    for label, pyproject, workflow, makefile, expected in cases:
+        issues = _toolchain_pin_issues(pyproject, workflow, makefile)
+        if not any(expected in issue for issue in issues):
+            errs.append(f"self-test: {label} went unreported, got {issues}")
+    if live := check_toolchain_pins():
+        errs.append(f"self-test: this repository's own toolchain pins are inconsistent: {live}")
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -1976,7 +2137,12 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        errs = [*self_test(), *_harness_registry_self_test(), *_dependency_self_test()]
+        errs = [
+            *self_test(),
+            *_harness_registry_self_test(),
+            *_dependency_self_test(),
+            *_toolchain_pin_self_test(),
+        ]
         print(f"doccheck self-test: {len(errs)} issue(s)")
         for err in errs:
             print("  " + err, file=sys.stderr)
@@ -2003,6 +2169,7 @@ def main() -> int:
         ("test harness registry", check_test_harness_registry),
         ("CI action pins", check_action_pins),
         ("dependency declarations", check_dependency_declarations),
+        ("toolchain pins", check_toolchain_pins),
         ("required docs", check_required_docs),
     ]
     failures = dict(_run_check(name, check) for name, check in checks)

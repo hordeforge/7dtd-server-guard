@@ -55,6 +55,14 @@ above reserves minor bumps for that.
   module named in a docstring is not a dependency's user, and a distribution whose
   import name differs from its own records the mapping in `IMPORT_NAME_ALIASES`.
   `tools/doccheck.py --self-test` covers the rule.
+- A doccheck rule that the build toolchain stays pinned in one place: the uv release
+  `astral-sh/setup-uv` installs is the release `required-version` under `[tool.uv]`
+  requires, every `uses:` in `ci.yml` is a commit SHA rather than a tag, `runs-on` is
+  not a moving tag, `UV` and `make setup` run uv in `--locked` mode, and the
+  `TZ` and `PYTHONHASHSEED` the Makefile exports are the values `ci.yml` sets. Each of
+  those was named twice with nothing holding the copies together, so a uv bump or a
+  runner retag could leave a local gate and the CI gate of one commit reading different
+  toolchains. `tools/doccheck.py --self-test` covers the rule.
 - A doccheck rule that the Makefile's test registries cover the tree: every
   `tools/fuzz_*.py` is in `FUZZERS` and run by `make test-tools` in that order, and every
   `tools/*.py` exposing `--self-test` is run by `make test-tools` or `make exercise`. A
@@ -194,6 +202,12 @@ above reserves minor bumps for that.
 
 ### Changed
 
+- uv runs in `--locked` mode, not `--frozen`. `--frozen` installs whatever `uv.lock`
+  says without checking it still describes `pyproject.toml`, so a dependency added to
+  `pyproject.toml` and never locked kept the previous set installed and every gate
+  stayed green on it; `--locked` refuses to run until `uv lock` regenerates the lock.
+  `make setup` and every target that runs a tool go through it, so the lock is checked
+  once per gate.
 - `ruff.toml` selects two more rule groups. `ISC` rejects implicit string concatenation
   inside a collection, where two adjacent literals read as one element but are in fact two,
   and `+` concatenation that the formatter would otherwise rewrite. `PGH` rejects a bare
@@ -313,6 +327,11 @@ above reserves minor bumps for that.
 
 ### Fixed
 
+- `make ci` runs green again. `tools/restore_drill.py` raised ruff's ISC004 on two
+  finding messages, so `make lint` failed on the committed tree and every gate that
+  runs after it (`check`, `exercise`, `test-tools`, `sbom`) never executed. The two
+  messages are now parenthesized, which is what the rule asks for; the text is
+  unchanged.
 - `config_check.py` exited 2 on a config file that could not be read, where
   `tools/README.md` -> Command-line contract and its own docstring make a path that
   does not exist a check failure (1). A deploy script branching on the code read a
