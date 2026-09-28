@@ -23,6 +23,22 @@
   archives, `make verify-archive ARCHIVE=...` re-verifies an existing archive (the
   restore drill in docs/OPERATIONS.md). Secrets are never archived here: the identity map
   and HMAC key are backed up separately. Self-tests run under `make test-tools`.
+- `restore_drill.py`: performs the monthly restore drill
+  (`make drill-restore ARCHIVE=... WORK=... [CONFIG=...]`). It verifies the archive
+  against its manifest, copies its segments and index into an empty work directory
+  under their own file names, re-verifies the chain over the copy, and reads the
+  oldest and newest records back out. With `--config` it also resolves
+  `identityMap.path` and `hmacKey.path` and fails on a missing, zero-byte, or
+  past-cycle key, so a drill cannot pass on a chain nobody can attribute. The live
+  evidence directory is never written, and a non-empty work directory is refused
+  rather than merged into. Self-tests run under `make test-tools`.
+- `backup_status.py`: the read-only RPO check (`make backup-status ROOT=...`). It
+  verifies the archives in a root newest first and reports the age of the newest one
+  that verifies, measured from the manifest's `createdUtc` rather than the directory
+  timestamp a copy off the server resets. A root with no archive, an archive that
+  does not verify, and an archive older than the window are each reported by name, so
+  a scheduler that stopped running is a non-zero exit rather than a discovery made
+  during an incident. It writes nothing. Self-tests run under `make test-tools`.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
 - `config_check.py`: validates an operator's own config file the way the strict Phase 2
@@ -84,10 +100,11 @@ Every tool here is an entry point, so all of them follow the same rules:
 
 `make setup`, `make check`, `make lint`, and the fuzzers are the developer gate and run
 on the platforms CI runs, which is Linux today. The evidence tools
-(`evidence_check.py`, `evidence_export.py`) are a different case: the evidence
-directory lives on the host the game server runs on, so an operator runs them there,
-and a Windows host must get the same verdict as a Linux one. They therefore use the
-standard library only, no POSIX-only call, and no shell; `make` targets are the
+(`evidence_check.py`, `evidence_export.py`, `restore_drill.py`, `backup_status.py`) are a
+different case: the
+evidence directory lives on the host the game server runs on, so an operator runs them
+there, and a Windows host must get the same verdict as a Linux one. They therefore use
+the standard library only, no POSIX-only call, and no shell; `make` targets are the
 convenient path, not the only one, and `uv run python tools/evidence_export.py --dir
 <evidence-dir> --out <archive-root>` is the equivalent everywhere `uv` runs.
 

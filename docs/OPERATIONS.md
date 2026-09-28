@@ -132,7 +132,14 @@ archives is the operator's choice and must be named in the deployment notes.
 | Config: per upgrade | minutes | The deployed `server-guard.json` and the gitignored working copy (`config/server-guard.local.json`) are copied on every upgrade |
 
 An archive counts as existing only when `make verify-archive ARCHIVE=<dir>` exits 0.
-A scheduled copy whose exit code nobody checks is not a backup.
+A scheduled copy whose exit code nobody checks is not a backup. `make backup-status
+ROOT=<archive-root>` is the read-only check for the case neither the copy nor the
+verifier can see: it verifies the archives newest first and exits non-zero when the
+newest one that verifies is past the 24 h window, when a newer archive does not
+verify, or when the root holds none. Age comes from the archive manifest's
+`createdUtc`, not the directory timestamp, which copying off the server resets. Run
+it on the same schedule as the export, against the archive root the operator actually
+keeps off the server.
 
 ### What gets archived, and what does not
 
@@ -162,15 +169,21 @@ stolen archive containing both would turn every pseudonym in it into a named pla
 
 ### Schedule
 
-- Every 24 h: `make export-evidence` for the live evidence directory, then copy the
-  resulting archive off the server. Alert on a non-zero exit and on a missing
-  archive for a scheduled run; a silent archive is a missed backup, not a clean one.
-- Every 7 days: copy the identity map and the HMAC key to the separate store.
+- Every 24 h: `make backup DIR=<evidence-dir> OUT=<archive-root>` for the live evidence
+  directory, then copy the resulting archive off the server. The target archives and
+  re-verifies in one step and exits non-zero when the chain did not verify or the copy
+  did not match, so a scheduler that alerts on the exit code covers the whole run. A
+  silent archive is a missed backup, not a clean one; `make backup-status` on the same
+  schedule is what turns a scheduler that stopped running into a reported failure.
+- Every 7 days: copy the identity map and the HMAC key to the separate store. The
+  drill below reports either one as missing or older than this cycle, which is how a
+  copy that quietly stopped running becomes visible.
 - Before any retention expiry or purge: archive the affected segments first. Expiry
   and purge are the only mass-deletion paths in the system, and the archive is the
   undo.
 - Monthly: restore drill (below), and confirm the archives for the last 30 days are
-  present and verify.
+  present and verify. `make backup-status` on the archive root is the same check in
+  one command, and belongs on the 24 h schedule as well.
 
 ### Restore
 
@@ -195,11 +208,21 @@ stolen archive containing both would turn every pseudonym in it into a named pla
 ### Restore drill
 
 Monthly, into a scratch directory on a machine that is not the production server:
-`make verify-archive ARCHIVE=<dir>`, then copy the archive into an empty directory,
-run `make verify-evidence` against the copy, and open a recent finding. Record the
-date and the result in the deployment notes. An archive that has never been restored
-is a hypothesis, and the first real restore is the worst possible time to discover a
-missing key or a renamed segment.
+`make drill-restore ARCHIVE=<dir> WORK=<empty-dir> [CONFIG=<config-file>]`.
+
+The target verifies the archive against its manifest, copies its segments and index
+into `WORK` under their own file names, re-verifies the hash chain over the copy, and
+reads the oldest and newest records back out, printing their types and event IDs. With
+`CONFIG` it also resolves `identityMap.path` and `hmacKey.path` and fails when either
+is missing, zero bytes, or older than the 7-day copy cycle, so a drill cannot pass on
+an archive that restores records nobody can attribute. `WORK` must be empty or absent;
+a directory that still holds files is refused rather than merged into, because a
+restore that silently keeps a stale segment is the failure this exists to catch. The
+live evidence directory is never touched. A non-zero exit is a failed drill: record
+the date, the archive name, and the result in the deployment notes.
+
+An archive that has never been restored is a hypothesis, and the first real restore
+is the worst possible time to discover a missing key or a renamed segment.
 
 ## Upgrade and rollback
 

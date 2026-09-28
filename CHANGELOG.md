@@ -70,6 +70,30 @@ above reserves minor bumps for that.
   the render path survives any value in the fields the structural validator leaves
   free. Pair assertions drop and mistype each required field. Run by
   `make test-tools` and `make fuzz FUZZ=detector_spec`.
+- `tools/restore_drill.py`, driven by
+  `make drill-restore ARCHIVE=<archive> WORK=<empty-dir> [CONFIG=<config-file>]`: the
+  monthly restore drill as a command with an exit code. It verifies the archive
+  against its manifest, copies its segments and index into an empty work directory
+  under their own file names, re-verifies the hash chain over the copy, and reads the
+  oldest and newest records back out. With `--config` it also resolves
+  `identityMap.path` and `hmacKey.path` and fails when either is missing, zero bytes,
+  or older than the 7-day copy cycle, so a drill cannot pass on evidence nobody can
+  attribute. The live evidence directory is never written and a non-empty work
+  directory is refused rather than merged into. Self-tests run under
+  `make test-tools`.
+- `tools/backup_status.py`, driven by
+  `make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]`: the read-only RPO check.
+  It verifies the archives in a root newest first and reports the age of the newest
+  one that verifies, measured from the archive manifest's `createdUtc` rather than a
+  directory timestamp that copying off the server resets. A missing archive, an
+  archive that does not verify, and an archive older than the window are each reported
+  by name and exit non-zero, which is what makes a scheduler that stopped running
+  visible before an incident needs it. It writes nothing. Self-tests run under
+  `make test-tools`.
+- `make backup DIR=<evidence-dir> OUT=<archive-root>`: the scheduled archive run as
+  one command with one exit code, the same verification `make export-evidence` runs.
+  `make check` now requires the target, the drill, and the runbook lines that name
+  both, so the recovery contract and the commands that execute it cannot drift apart.
 - The archive manifest carries `manifestSha256`, a digest over its own remaining
   fields, and `manifestVersion` is 2. The per-file SHA-256s proved the archived
   bytes; the self-digest proves the attestation describing them, so a manifest

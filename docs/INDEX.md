@@ -74,11 +74,13 @@ bug to fix in the same change.
     ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
     ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain)
     ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
-    ├── evidence_export.py       evidence archiver and archive verifier, with the
-    │                            restore drill (make export-evidence, make
-    │                            verify-archive)
-    ├── replay_contract_check.py replay-trace semantic contract gate and its
-    │                            self-tests (make exercise)
+    ├── evidence_export.py       verified evidence archive export and restore drill
+    │                            (make export-evidence, make verify-archive)
+    ├── restore_drill.py         restores an archive into a scratch dir and reads it back
+    │                            (make drill-restore)
+    ├── backup_status.py         read-only RPO check over an archive root
+    │                            (make backup-status)
+    ├── replay_contract_check.py replay-trace semantic contract gate (make exercise)
     ├── fuzz_evidence_check.py   seeded fuzzer over the evidence parser (make test-tools)
     ├── fuzz_evidence_export.py  seeded fuzzer over the archive verifier and exporter
     │                            (make test-tools)

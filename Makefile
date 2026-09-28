@@ -3,7 +3,7 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz verify-config verify-evidence export-evidence verify-archive guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz verify-config verify-evidence export-evidence verify-archive backup backup-status drill-restore guard-python help
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
@@ -13,7 +13,7 @@ FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_
 # Tools carrying negative self-tests, addressable by `make self-test TOOL=<name>`.
 # This list is the registry: `make test-tools` runs every entry, so adding a
 # self-test here is enough to put it in the CI run.
-SELF_TESTS := evidence_check evidence_export config_check
+SELF_TESTS := evidence_check evidence_export restore_drill backup_status config_check
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -144,6 +144,36 @@ verify-archive:
 	@test -n "$(ARCHIVE)" || { echo "usage: make verify-archive ARCHIVE=/path/to/archive"; exit 2; }
 	$(UV) python tools/evidence_export.py --archive $(ARCHIVE)
 
+# The scheduled backup run as one command with one exit code: archive the live
+# evidence directory, which verifies the chain first and re-verifies every copy
+# before the archive is renamed into place. A non-zero exit means this run's RPO
+# window is open, so the scheduler has to alert on it; copy the archive off the
+# server afterwards (docs/OPERATIONS.md -> Schedule).
+# Usage: make backup DIR=/path/to/evidence OUT=/path/to/archive-root
+backup:
+	@test -n "$(DIR)" -a -n "$(OUT)" || { echo "usage: make backup DIR=<evidence-dir> OUT=<archive-root>"; exit 2; }
+	$(UV) python tools/evidence_export.py --dir "$(DIR)" --out "$(OUT)"
+
+# Is the archive root still meeting its RPO? Read-only: it verifies the
+# archives newest first and exits non-zero when the newest one that verifies is
+# older than the window, when a newer archive does not verify, or when the root
+# holds none. This is the check that catches a scheduler that stopped running,
+# which no amount of verifying an old archive can.
+# Usage: make backup-status ROOT=/path/to/archive-root [MAX_AGE_HOURS=24]
+backup-status:
+	@test -n "$(ROOT)" || { echo "usage: make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]" >&2; exit 2; }
+	$(UV) python tools/backup_status.py --root "$(ROOT)" $(if $(MAX_AGE_HOURS),--max-age-hours "$(MAX_AGE_HOURS)",)
+
+# The monthly restore drill, off the live store: verify the archive, copy it back
+# under its own file names, re-verify the chain over the copy, read the oldest
+# and newest records, and with CONFIG confirm the identity map and HMAC key the
+# archive cannot restore are present and inside the backup cycle. WORK must be
+# empty or absent; a non-empty work directory is refused, never merged into.
+# Usage: make drill-restore ARCHIVE=/path/to/archive WORK=/path/to/scratch [CONFIG=/path/to/server-guard.json]
+drill-restore:
+	@test -n "$(ARCHIVE)" -a -n "$(WORK)" || { echo "usage: make drill-restore ARCHIVE=<archive> WORK=<empty-dir> [CONFIG=<config>]"; exit 2; }
+	$(UV) python tools/restore_drill.py --archive "$(ARCHIVE)" --work "$(WORK)" $(if $(CONFIG),--config "$(CONFIG)",)
+
 help:
 	@echo "Targets:"
 	@echo "  make setup           materialize .venv from uv.lock (uv sync --frozen)"
@@ -152,7 +182,7 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        run the replay contract self-tests and validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
-	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, config_check)"
+	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, restore_drill, backup_status, config_check)"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make guard-python    interpreter pin gate every other target depends on"
@@ -160,6 +190,9 @@ help:
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"
 	@echo "  make verify-archive ARCHIVE=<dir>   re-verify an archive against its manifest"
+	@echo "  make backup DIR=<evidence-dir> OUT=<root>   the scheduled archive run, one exit code"
+	@echo "  make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]   is the newest backup inside the RPO"
+	@echo "  make drill-restore ARCHIVE=<dir> WORK=<empty-dir> [CONFIG=<file>]   the monthly restore drill"
 	@echo "Python version: .python-version, enforced exactly (uv installs it; local builds refuse any other)."
 	@echo "uv version: required-version in pyproject.toml, enforced by uv itself and pinned to the same release in CI."
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."

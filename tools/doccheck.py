@@ -1238,21 +1238,40 @@ def check_backup_runbook() -> list[str]:
     """The evidence store is the one state an operator cannot regenerate, so the
     archive tooling and the recovery contract must stay in place together: a
     Makefile target with no runbook, or a runbook citing a target that no longer
-    exists, is a backup nobody can run."""
+    exists, is a backup nobody can run. The scheduled run and the restore drill
+    are required alongside the archive tools, because an archive nobody drills is
+    a hypothesis and a scheduled run nobody checks is a silent miss."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     ops = (ROOT / "docs" / "OPERATIONS.md").read_text(encoding="utf-8")
     out = [
         f"Makefile: missing the '{target}' target"
-        for target in ("export-evidence", "verify-archive")
+        for target in (
+            "export-evidence",
+            "verify-archive",
+            "backup",
+            "backup-status",
+            "drill-restore",
+        )
         if f"\n{target}:" not in makefile
     ]
     if not _makefile_runs_self_test(makefile, "evidence_export"):
         out.append("Makefile: test-tools does not run the evidence export self-test")
+    if "tools/restore_drill.py --self-test" not in makefile:
+        out.append("Makefile: test-tools does not run the restore drill self-test")
+    if "tools/backup_status.py --self-test" not in makefile:
+        out.append("Makefile: test-tools does not run the backup status self-test")
     if "### Restore drill" not in ops:
         out.append("docs/OPERATIONS.md: no restore drill in the backup and restore runbook")
     out.extend(
         f"docs/OPERATIONS.md: backup runbook does not mention {marker!r}"
-        for marker in ("| RPO | RTO |", "make export-evidence", "make verify-archive")
+        for marker in (
+            "| RPO | RTO |",
+            "make export-evidence",
+            "make verify-archive",
+            "make backup",
+            "make backup-status",
+            "make drill-restore",
+        )
         if marker not in ops
     )
     return out
