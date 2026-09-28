@@ -128,6 +128,7 @@ REQUIRED_DOCS = [
     "docs/DECISIONS.md",
     "docs/OPERATIONS.md",
     "docs/METHODOLOGY.md",
+    "docs/UPGRADING.md",
     "TODO.md",
     "PRIVACY.md",
     "SECURITY.md",
@@ -492,6 +493,50 @@ def check_changelog_format() -> list[str]:
     return changelog_format_findings((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
 
 
+# The heading a release with a breaking change carries in docs/UPGRADING.md:
+# `## 0.4.1 to 0.5.0`, oldest first, so it reads as the direction of the upgrade.
+UPGRADE_SECTION_RE = re.compile(r"^## (\d+\.\d+\.\d+) to (\d+\.\d+\.\d+)$", re.MULTILINE)
+
+
+def upgrade_guide_findings(changelog: str, guide: str) -> list[str]:
+    """Every released break must name the upgrade step that gets a consumer past it.
+
+    A changelog entry states what changed; an entry that states only that, under a
+    heading the reader must already know to look for, leaves the reader with a diff and
+    no next action. A config that stops loading, a record that stops validating, and an
+    exit code that changes meaning each break an upgrade in a way the operator discovers
+    by restarting the server. The changelog rule above forces the entry, this one forces
+    the instruction, and both fire on the release commit that carries the break.
+
+    Only dated sections are compared. `## [Unreleased]` is the tree between releases, and
+    its section is written under the version it will be cut as, which the heading above
+    the comparison says rather than the heading itself.
+    """
+    released = RELEASED_SECTION_RE.findall(changelog)
+    breaking = {
+        title
+        for title, names in _changelog_sections(changelog)
+        if re.fullmatch(r"\d+\.\d+\.\d+", title) and BREAKING_TYPES & set(names)
+    }
+    covered = set(UPGRADE_SECTION_RE.findall(guide))
+    out = []
+    for older, newer in itertools.pairwise(reversed(released)):
+        if newer in breaking and (older, newer) not in covered:
+            out.append(
+                f"CHANGELOG.md: {newer} carries a break and docs/UPGRADING.md has no "
+                f"`## {older} to {newer}` section"
+            )
+    return out
+
+
+def check_upgrade_guide() -> list[str]:
+    """The shipped changelog and upgrade guide against the rule above."""
+    return upgrade_guide_findings(
+        (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+        (ROOT / "docs" / "UPGRADING.md").read_text(encoding="utf-8"),
+    )
+
+
 def check_release_version() -> list[str]:
     """Keep the manifest version and the changelog's newest release the same number.
 
@@ -558,6 +603,35 @@ def self_test() -> list[str]:
         "## [0.4.1] - 2026-09-20\n\n### Fixed\n\n- b\n"
     )
     out.extend(f"changelog format: {item}" for item in changelog_format_findings(clean))
+
+    breaking_release = (
+        "## [0.5.0] - 2026-10-01\n\n### Breaking\n\n- a\n\n"
+        "## [0.4.1] - 2026-09-20\n\n### Fixed\n\n- b\n"
+    )
+    guide_cases = [
+        (
+            "a break with no upgrade section",
+            breaking_release,
+            "# Upgrading\n\n## Before any upgrade\n",
+            "0.5.0 carries a break and docs/UPGRADING.md has no `## 0.4.1 to 0.5.0` section",
+        ),
+        (
+            "a break whose upgrade section names the wrong pair",
+            breaking_release,
+            "# Upgrading\n\n## 0.4.0 to 0.5.0\n",
+            "has no `## 0.4.1 to 0.5.0` section",
+        ),
+    ]
+    for label, document, upgrade_doc, needle in guide_cases:
+        found = upgrade_guide_findings(document, upgrade_doc)
+        if not any(needle in item for item in found):
+            out.append(f"upgrade guide: {label} not reported: expected {needle!r}, got {found}")
+    covered = upgrade_guide_findings(
+        breaking_release, "# Upgrading\n\n## 0.4.1 to 0.5.0\n\n- do the thing\n"
+    )
+    out.extend(f"upgrade guide: {item}" for item in covered)
+    no_break = "## [0.4.2] - 2026-10-01\n\n### Fixed\n\n- a\n\n## [0.4.1] - 2026-09-20\n\n"
+    out.extend(f"upgrade guide: {item}" for item in upgrade_guide_findings(no_break, "# Upgrading\n"))
     return out
 
 
@@ -1989,6 +2063,7 @@ def main() -> int:
         ("TODO checkboxes", check_todo_format),
         ("release version", check_release_version),
         ("changelog format", check_changelog_format),
+        ("upgrade guide", check_upgrade_guide),
         ("detector spec", check_spec),
         ("registry sync", check_registry_sync),
         ("detector registry coverage", check_detector_ids),
