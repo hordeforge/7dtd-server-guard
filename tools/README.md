@@ -22,7 +22,9 @@
   `export()` takes the instant it runs at as `stamp` and `now`, and both default to
   the wall clock; a caller replaying a run passes the instant it is replaying, so
   the same seed names the same archive and sweeps the same dead run's staging
-  directories it did the first time.
+  directories it did the first time. Two exports naming one archive at once are
+  decided by the same rule, so the one that loses the race exits 0 on identical
+  evidence.
   `make export-evidence DIR=... OUT=...`
   archives, the identical `make backup DIR=... OUT=...` is the same command under the name
   the scheduler calls, and `make verify-archive ARCHIVE=...` re-verifies an existing archive
@@ -42,7 +44,10 @@
   `--config` the verdict says the config went unchecked, so the drill record does
   not imply a cross-check that never ran. The live
   evidence directory is never written, and a non-empty work directory is refused
-  rather than merged into. Self-tests run under `make test-tools`.
+  rather than merged into. The copy is staged beside the work directory and moved
+  into place only once the chain verifies over it, so a failed drill leaves the work
+  directory as it found it and the same command re-runs. Self-tests run under
+  `make test-tools`.
 - `backup_status.py`: the read-only RPO check (`make backup-status ROOT=...`). It
   verifies the archives in a root newest first and reports the age of the newest one
   that verifies, measured from the manifest's `createdUtc` rather than the directory

@@ -13,7 +13,10 @@ hypothesis, so this tool refuses to copy anything it cannot verify first:
           fields. A chain error, an empty copy, or a byte mismatch aborts before
           any archive is declared complete. A retry of an export whose archive name
           the previous second already claimed converges on that archive when it
-          holds the same evidence, and is refused when it does not.
+          holds the same evidence, and is refused when it does not. The same rule
+          settles two exports naming one archive at once, so the one that loses
+          that race does not report a backup that is present and verified as
+          failed.
   verify  re-check an existing archive against its manifest and re-verify the
           chain inside it. This is the restore drill: an archive that passes
           can be copied back into place and read. A manifestVersion 1 archive
@@ -299,13 +302,17 @@ def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
     return []
 
 
-def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path, now: dt.datetime) -> None:
+def _sweep_stale_staging(
+    out_root: pathlib.Path, now: dt.datetime, keep: pathlib.Path | None = None
+) -> None:
     """Remove staging directories a dead run left behind, this run's excepted.
 
     Each export stages into its own directory, so a concurrent export cannot
-    delete a copy in progress. The leftovers of a killed run would otherwise
-    accumulate in the archive root, each holding a full copy of the evidence
-    stream, so a run older than STALE_STAGING_AGE_SECONDS is swept.
+    delete a copy in progress: only a directory older than
+    STALE_STAGING_AGE_SECONDS is swept, and a live run's is younger than that.
+    The leftovers of a killed run would otherwise accumulate in the archive
+    root, each holding a full copy of the evidence stream, so a run older than
+    STALE_STAGING_AGE_SECONDS is swept.
 
     The match is on STAGING_PREFIX alone, not on one archive's name: an archive
     name carries a one-second stamp, so a match on it would only ever see the
@@ -324,6 +331,29 @@ def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path, now: dt.dat
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:
             continue
+
+
+def _rename_into_place(
+    staging: pathlib.Path, dest: pathlib.Path, members: list[pathlib.Path]
+) -> list[str]:
+    """Claim `dest` for this run's staged archive, or converge on the run that claimed it.
+
+    The redo check above is a read followed by a write, so two exports naming the
+    same archive can both see it absent. The loser of that race fails the rename
+    with the directory already there, and reporting that raw failure would turn a
+    backup that is present and verified into a non-zero exit the schedule alerts
+    on, which is what the redo check exists to prevent. So the race is decided by
+    the same rule the check applies: the run that finds the name holding exactly
+    the evidence it would have written reports success, and the one that finds a
+    different evidence set is refused with the reason the check would have given.
+    """
+    try:
+        staging.rename(dest)
+    except OSError as exc:
+        if dest.exists():
+            return redo_errors(dest, members)
+        return [f"archive failed: {exc}"]
+    return []
 
 
 def export(
@@ -363,23 +393,26 @@ def export(
     label = stamp if stamp is not None else utc_stamp(moment)
     dest = out_root / f"{ARCHIVE_DIR_PREFIX}{label}"
     out_root.mkdir(parents=True, exist_ok=True)
+    # Swept before the redo check, not after staging: the runs that die are the
+    # ones whose preflight or copy failed, and a sweep those paths skipped left
+    # a full copy of the evidence stream in the root per death. The stamp is
+    # kept in the directory name so a human reading the root can tell which run
+    # a leftover belongs to; the sweep matches on STAGING_PREFIX, which carries
+    # no stamp, so it reaches the leftovers of every earlier run.
+    _sweep_stale_staging(out_root, now=moment)
     if dest.exists():
         return redo_errors(dest, members)
-    # The stamp is kept in the directory name so a human reading the root can tell
-    # which run a leftover belongs to; the sweep matches on STAGING_PREFIX, which
-    # carries no stamp, so it reaches the leftovers of every earlier run.
     staging = pathlib.Path(tempfile.mkdtemp(prefix=f"{STAGING_PREFIX}{label}-", dir=out_root))
-    _sweep_stale_staging(out_root, keep=staging, now=moment)
+    _sweep_stale_staging(out_root, now=moment, keep=staging)
     try:
         staging_errors = stage(staging, source, members, index_name, label)
         if staging_errors:
             return staging_errors
-        staging.rename(dest)
+        return _rename_into_place(staging, dest, members)
     except OSError as exc:
         return [f"archive failed: {exc}"]
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    return []
 
 
 def _is_size(value: object) -> bool:
@@ -861,7 +894,9 @@ def _self_test_stale_staging(source: pathlib.Path) -> list[str]:
     The staging directory holds a full copy of the evidence stream, so one left in
     the archive root per killed run is a per-death leak in a root that is otherwise
     only ever read. A run that dies in the same second as a later export is swept by
-    a name-keyed match; a run that dies in any other second never is.
+    a name-keyed match; a run that dies in any other second never is. The sweep runs
+    before the redo check as well as before the copy, so an export that converges on
+    an archive it already wrote still cleans up after the runs that died.
     """
     errs: list[str] = []
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-staging"
@@ -897,6 +932,72 @@ def _self_test_stale_staging(source: pathlib.Path) -> list[str]:
             errs.append(
                 f"self-test: the sweep deleted the staging directory of a live run: {running}"
             )
+
+        # The same root, swept on the run that converges on an archive it already
+        # wrote. A scheduled export that keeps meeting its own redo check is the
+        # run that keeps leaving a dead run's copy behind, since the copy is only
+        # made by the runs that die.
+        again = out_root / f"{STAGING_PREFIX}20260719T010000Z-def"
+        again.mkdir()
+        (again / "half-copied-segment.jsonl").write_text('{"partial": true}\n', encoding="utf-8")
+        os.utime(again, (old, old))
+        if errs_found := export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
+            errs.append(f"self-test: a re-run of a completed export reported {errs_found}")
+        if again.exists():
+            errs.append(
+                f"self-test: a converged re-run left {again.name} behind; a root whose "
+                "exports keep meeting the redo check never sweeps"
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _self_test_rename_race(source: pathlib.Path) -> list[str]:
+    """The export that loses the race for an archive name converges on the winner.
+
+    Two exports naming the same archive can both find it absent, so the loser of
+    the rename has to apply the redo rule itself. Reporting that as a failed
+    archive would raise a backup alert for a backup that is present and verified.
+    The race is not timed: the loser is staged and the winner's archive is already
+    in place, which is the state the rename failure reports.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-race"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        out_root = scratch / "archives"
+        if found := export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
+            return [f"self-test: could not build an archive: {found}"]
+        dest = out_root / f"{ARCHIVE_DIR_PREFIX}{SELF_TEST_STAMP}"
+        winner = {p.name: file_digest(p) for p in dest.iterdir() if p.is_file()}
+        members = archive_members(source, DEFAULT_INDEX_NAME)
+        staging = out_root / f"{STAGING_PREFIX}loser"
+        staging.mkdir()
+        (staging / "evidence-2026-07-21-000000.jsonl").write_text(
+            (source / "evidence-2026-07-21-000000.jsonl").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        if found := _rename_into_place(staging, dest, members):
+            errs.append(f"self-test: the export that lost the name race reported {found}")
+        if {p.name: file_digest(p) for p in dest.iterdir() if p.is_file()} != winner:
+            errs.append(
+                "self-test: the export that lost the name race disturbed the winner's archive"
+            )
+        # A different evidence set under the same name is a different export, and
+        # the race is not a way around that refusal.
+        other = scratch / "other-source"
+        write_sample_stream(other)
+        (other / "evidence-2026-07-23-000000.jsonl").write_text(
+            (other / "evidence-2026-07-21-000000.jsonl").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        stranger = out_root / f"{STAGING_PREFIX}stranger"
+        stranger.mkdir()
+        found = _rename_into_place(stranger, dest, archive_members(other, DEFAULT_INDEX_NAME))
+        if not any("refusing to overwrite" in e for e in found):
+            errs.append(f"self-test: losing the name race over other evidence reported {found}")
+        shutil.rmtree(other, ignore_errors=True)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return errs
@@ -913,6 +1014,7 @@ def self_test() -> list[str]:
         errs, archives = _self_test_happy_path(source, out_root)
         errs += _self_test_refusal(scratch, source, out_root)
         errs += _self_test_stale_staging(source)
+        errs += _self_test_rename_race(source)
         errs += _self_test_member_names()
         errs += _self_test_manifest_bytes()
         errs += _self_test_record_count()

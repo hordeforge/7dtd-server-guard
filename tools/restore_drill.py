@@ -20,7 +20,10 @@ is short.
 Nothing here touches the live evidence directory: the work directory is the only
 thing written, and a work directory that already holds files is refused rather
 than merged, because a restore that silently keeps a stale segment is the exact
-failure the drill exists to catch.
+failure the drill exists to catch. The copy is staged in a directory beside the
+work directory and moved into place only once the chain verifies over it, so a
+run that fails anywhere leaves the work directory exactly as it found it and the
+drill can simply be run again.
 
 Usage:
   uv run python tools/restore_drill.py --archive <archive-dir> --work <empty-dir>
@@ -44,6 +47,7 @@ import json
 import pathlib
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,6 +74,16 @@ SELF_TEST_NOW = dt.datetime(2026, 7, 21, 0, 0, tzinfo=dt.UTC)
 # tool refuses before it touches the archive. An archive that does not exist or
 # does not verify is a drill failure (1), not a usage error.
 USAGE_ERROR = 2
+
+# The directory a restore stages into, beside the work directory. The export
+# tool's prefix is deliberately not reused: the two sweep their own roots, and
+# one run's sweep must never reach into the other's.
+STAGING_PREFIX = ".drill-staging-"
+# A staging directory older than this belongs to a drill that died. The copy
+# inside it is a full second copy of the archived evidence, so one left in the
+# work directory's parent per death is a per-death leak; the bound keeps a
+# concurrent drill's staging directory, which is younger, safe.
+STALE_STAGING_AGE_SECONDS = 24 * 60 * 60
 
 
 def _now() -> dt.datetime:
@@ -104,21 +118,87 @@ def work_dir_errors(work: pathlib.Path) -> list[str]:
     return []
 
 
+def _sweep_stale_staging(parent: pathlib.Path, keep: pathlib.Path) -> None:
+    """Remove staging directories a dead drill left beside the work directory.
+
+    Each drill stages into its own directory, so a concurrent drill cannot delete
+    a copy in progress. A killed drill would otherwise leave a full copy of the
+    archived evidence in the work directory's parent, once per death.
+    """
+    cutoff = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS
+    for path in parent.glob(f"{STAGING_PREFIX}*"):
+        if path == keep or not path.is_dir():
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _stage_restore(
+    members: list[pathlib.Path], staging: pathlib.Path, index_name: str
+) -> list[str]:
+    """Fill the staging directory and prove the copy is a restorable chain.
+
+    A copy that does not match its source, or a chain that does not verify over
+    it, is reported here and never reaches the work directory.
+    """
+    for member in members:
+        try:
+            shutil.copy2(member, staging / member.name)
+        except OSError as exc:
+            return [f"restore failed: {member.name}: {exc}"]
+        if ee.file_digest(member) != ee.file_digest(staging / member.name):
+            return [f"{member.name}: restored copy does not match the archive"]
+    return [f"chain: {e}" for e in ec.verify_dir(staging, index_name)]
+
+
+def _move_into_place(staging: pathlib.Path, work: pathlib.Path) -> list[str]:
+    """Put the verified copy under the work directory, keeping the file names.
+
+    Nothing is in the work directory before this point, so a move that fails
+    partway is the one partial state a restore can still leave; the operator
+    clears it and re-runs, which is a stated step rather than a silent merge.
+    """
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+        for staged in sorted(staging.iterdir()):
+            shutil.move(str(staged), str(work / staged.name))
+    except OSError as exc:
+        return [f"restore failed: {work}: {exc}"]
+    return []
+
+
 def restore(archive: pathlib.Path, work: pathlib.Path, index_name: str) -> list[str]:
     """Copy every archived member into work under its own name, then verify the
-    copy. Names are preserved because the cross-segment links are name ordered."""
+    copy. Names are preserved because the cross-segment links are name ordered.
+
+    The copy is staged and verified before any of it lands in `work`, so a run
+    that fails anywhere leaves `work` absent or empty, exactly as it was found. A
+    failed drill is the run an operator re-runs, and a partial restore left in
+    place would make every re-run refuse on its own leftovers, turning one
+    transient failure into a permanently unrunnable drill.
+    """
     errs = work_dir_errors(work)
     if errs:
         return errs
     members = ee.archive_members(archive, index_name)
     if not members:
         return [f"{archive}: archive holds no {ee.SEGMENT_GLOB} segments to restore"]
-    work.mkdir(parents=True, exist_ok=True)
-    for member in members:
-        shutil.copy2(member, work / member.name)
-        if ee.file_digest(member) != ee.file_digest(work / member.name):
-            return [f"{member.name}: restored copy does not match the archive"]
-    return [f"chain: {e}" for e in ec.verify_dir(work, index_name)]
+    try:
+        work.parent.mkdir(parents=True, exist_ok=True)
+        staging = pathlib.Path(
+            tempfile.mkdtemp(prefix=f"{STAGING_PREFIX}{work.name}-", dir=work.parent)
+        )
+    except OSError as exc:
+        return [f"restore failed: {work.parent}: {exc}"]
+    _sweep_stale_staging(work.parent, keep=staging)
+    try:
+        errs = _stage_restore(members, staging, index_name) or _move_into_place(staging, work)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return errs
 
 
 def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str, set[str]]:
@@ -680,6 +760,58 @@ def _self_test_config_match() -> list[str]:
     return errs
 
 
+def _self_test_rerun() -> list[str]:
+    """A drill that fails leaves the work directory as it found it, so it can be re-run.
+
+    A failed drill is the drill an operator runs again, and the tool refuses a
+    work directory that holds files. If a failed run left half a restore there,
+    the re-run would refuse on the first run's own leftovers and the drill would
+    never run again without a hand-written cleanup. The failure is induced in
+    the restore itself, on a copy whose bytes are faithful and whose chain is
+    broken, so it is the staged verify that rejects it.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "restore-drill-self-test-rerun"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+        tampered = scratch / "tampered"
+        shutil.copytree(archive, tampered)
+        # A record edited in place, in a segment the next one links to: the copy
+        # out of the archive is faithful, so the staged chain walk is what
+        # rejects it. The last record is not the one to edit; nothing links to it.
+        target = tampered / "evidence-2026-07-21-000000.jsonl"
+        lines = target.read_text(encoding="utf-8").splitlines()
+        edited = json.loads(lines[0])
+        edited["type"] = "audit"
+        lines[0] = ec.canonical(edited)
+        target.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+
+        work = scratch / "work"
+        if not restore(tampered, work, ec.DEFAULT_INDEX):
+            errs.append("self-test: a restore of a broken chain reported success")
+        if work.exists() and any(work.iterdir()):
+            errs.append(
+                f"self-test: a failed restore left {[p.name for p in work.iterdir()]} "
+                "in the work directory; a re-run would refuse on them"
+            )
+        # The same work directory, the same drill, the archive that does verify:
+        # a re-run has to work without the operator clearing anything first.
+        found, summary = drill(DrillRequest(archive=archive, work=work))
+        if found:
+            errs.append(f"self-test: a re-run into the same work directory failed: {found}")
+        if "3 record(s)" not in summary:
+            errs.append(f"self-test: the re-run did not read the records back: {summary!r}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     errs = _self_test_restore()
     errs += _self_test_without_index()
@@ -688,6 +820,7 @@ def self_test() -> list[str]:
     errs += _self_test_config()
     errs += _self_test_config_match()
     errs += _main_contract_self_test()
+    errs += _self_test_rerun()
     return errs
 
 

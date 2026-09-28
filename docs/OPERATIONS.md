@@ -166,9 +166,15 @@ directory the first attempt wrote. A retry that finds that archive holding exact
 segments and index it would have copied exits 0 and writes nothing: the retry is a
 no-op, not a second archive and not a failed backup. A retry that finds a different
 evidence set under that name is refused, because that is a different export and must
-not replace an archive the operator may already have copied off the server. Each
+not replace an archive the operator may already have copied off the server. The same
+rule settles two exports naming the same archive at once: the one that loses the race
+applies it against the archive the winner wrote, so the loser exits 0 on identical
+evidence and is refused on different evidence. Each
 export stages into its own directory, so two exports running at once cannot delete
-each other's copy in progress.
+each other's copy in progress. A staging directory left by a run that died is removed
+by the next export into that root, whichever second it died in and including a run that
+converged on an archive it had already written, so a root whose exports keep retrying
+does not accumulate a second copy of the evidence stream per death.
 
 The identity map and the HMAC key are archived separately, under different
 credentials, in a different failure domain than the evidence they explain. A single
@@ -240,8 +246,11 @@ says so, so the drill record does not imply a cross-check that never ran. `WORK`
 be empty or absent;
 a directory that still holds files is refused rather than merged into, because a
 restore that silently keeps a stale segment is the failure this exists to catch. The
-live evidence directory is never touched. A non-zero exit is a failed drill: record
-the date, the archive name, and the result in the deployment notes.
+copy is staged in a directory beside `WORK` and moved into place only once the chain
+verifies over it, so a drill that fails anywhere leaves `WORK` as it found it and the
+same command can simply be run again. The live evidence directory is never touched. A
+non-zero exit is a failed drill: record the date, the archive name, and the result in
+the deployment notes.
 
 An archive that has never been restored is a hypothesis, and the first real restore
 is the worst possible time to discover a missing key or a renamed segment.

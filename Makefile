@@ -195,7 +195,9 @@ backup-status: guard-python
 # and newest records, and with CONFIG confirm the config hashes to what those
 # records were written under and that the identity map and HMAC key the archive
 # cannot restore are present and inside the backup cycle. WORK must be
-# empty or absent; a non-empty work directory is refused, never merged into.
+# empty or absent; a non-empty work directory is refused, never merged into. The
+# copy is staged beside WORK and moved into place only once the chain verifies over
+# it, so a failed drill leaves WORK as it found it and the same command re-runs.
 # Usage: make drill-restore ARCHIVE=/path/to/archive WORK=/path/to/scratch [CONFIG=/path/to/server-guard.json]
 drill-restore: guard-python
 	@test -n "$(ARCHIVE)" && test -n "$(WORK)" || { echo "usage: make drill-restore ARCHIVE=<archive> WORK=<empty-dir> [CONFIG=<config>]" >&2; exit 2; }
