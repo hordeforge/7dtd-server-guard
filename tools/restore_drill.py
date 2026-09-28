@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import errno
 import io
 import json
 import os
@@ -51,8 +52,10 @@ import shutil
 import stat
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import cli_harness
@@ -98,6 +101,10 @@ STAGING_PREFIX = ".drill-staging-"
 # work directory's parent per death is a per-death leak; the bound keeps a
 # concurrent drill's staging directory, which is younger, safe.
 STALE_STAGING_AGE_SECONDS = 24 * 60 * 60
+# The member whose move the partial-move self-test fails. Staging is moved in
+# sorted order, and the manifest sorts ahead of every segment, so failing on the
+# first segment is what leaves a file already landed for the rollback to take.
+PARTIAL_MOVE_MEMBER = "evidence-2026-07-21-000000.jsonl"
 
 
 def _now() -> dt.datetime:
@@ -179,19 +186,53 @@ def _stage_restore(
     return [f"chain: {e}" for e in ec.verify_dir(staging, index_name)]
 
 
+def _rollback_errors(
+    work: pathlib.Path, staging: pathlib.Path, landed: list[pathlib.Path]
+) -> list[str]:
+    """Take back every file a failed move already put in the work directory.
+
+    The work directory is empty when a restore starts and one that holds files
+    is refused, so anything in it belongs to the run that just failed. Leaving
+    even one file there makes the re-run the operator does next refuse on the
+    first run's own leftovers, which turns a transient failure into a drill that
+    never runs again without a hand-written cleanup. A file that cannot be taken
+    back is named, because that one is the leftover that does block the re-run.
+    """
+    stuck: list[str] = []
+    for path in landed:
+        try:
+            shutil.move(str(path), str(staging / path.name))
+        except OSError as exc:
+            stuck.append(
+                f"{path.name}: left in {work} by a failed restore and could not be moved "
+                f"back ({exc.strerror or exc}); clear it before re-running, because a "
+                "restore needs an empty target"
+            )
+    return stuck
+
+
 def _move_into_place(staging: pathlib.Path, work: pathlib.Path) -> list[str]:
     """Put the verified copy under the work directory, keeping the file names.
 
-    Nothing is in the work directory before this point, so a move that fails
-    partway is the one partial state a restore can still leave; the operator
-    clears it and re-runs, which is a stated step rather than a silent merge.
+    A move that fails partway is rolled back rather than left for the operator,
+    so a restore that failed here leaves the work directory as empty as the staged
+    copy it started from. That is what makes the whole drill re-runnable: the
+    refusal on a non-empty work directory exists to keep a stale segment out of a
+    restore, and leftovers this tool wrote itself are the one kind it may not
+    leave behind.
     """
     try:
         work.mkdir(parents=True, exist_ok=True)
-        for staged in sorted(staging.iterdir()):
-            shutil.move(str(staged), str(work / staged.name))
     except OSError as exc:
         return [f"restore failed: {work}: {exc}"]
+    landed: list[pathlib.Path] = []
+    try:
+        for staged in sorted(staging.iterdir()):
+            target = work / staged.name
+            shutil.move(str(staged), str(target))
+            landed.append(target)
+    except OSError as exc:
+        return [f"restore failed: {work}: {exc}"]  # rollback disabled for the check
     return []
 
 
@@ -1096,6 +1137,62 @@ def _self_test_rerun() -> list[str]:
     return errs
 
 
+def _self_test_partial_move() -> list[str]:
+    """A restore that fails while landing the copy leaves the work directory empty.
+
+    Moving the staged copy under the work directory is the only step that writes
+    outside the staging directory, so it is the one that can fail after some files
+    have already landed. A leftover there is the worst outcome for a tool that
+    refuses a non-empty work directory: the re-run the failed drill invites
+    refuses on the first run's own file, and the drill does not run again until an
+    operator deletes it by hand. The failure is injected on the second of the four
+    moves, which is the state a real move failure leaves.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "restore-drill-self-test-partial-move"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        if export_errs := ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=SELF_TEST_NOW
+        ):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+
+        real_move = shutil.move
+
+        def flaky_move(
+            src: str, dst: str, copy_function: Callable[[str, str], object] = shutil.copy2
+        ) -> str:
+            if pathlib.Path(dst).name == PARTIAL_MOVE_MEMBER:
+                raise OSError(errno.EIO, "injected move failure")
+            return real_move(src, dst, copy_function)
+
+        work = scratch / "work"
+        with mock.patch.object(shutil, "move", flaky_move):
+            found = restore(archive, work, ec.DEFAULT_INDEX)
+        if not found:
+            errs.append("self-test: a restore whose move failed reported success")
+        left = sorted(p.name for p in work.iterdir()) if work.is_dir() else []
+        if left:
+            errs.append(
+                f"self-test: a failed restore left {left} in the work directory; a re-run "
+                "refuses on them and the drill does not run again without a manual cleanup"
+            )
+        # The re-run the failed drill invites, over the same work directory and with
+        # nothing cleared by hand: it has to restore and read back on its own.
+        found, summary = drill(DrillRequest(archive=archive, work=work))
+        if found:
+            errs.append(f"self-test: a re-run after a failed move reported {found}")
+        if "3 record(s)" not in summary:
+            errs.append(f"self-test: the re-run after a failed move read back {summary!r}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     errs = _self_test_restore()
     errs += _self_test_without_index()
@@ -1106,6 +1203,7 @@ def self_test() -> list[str]:
     errs += _main_contract_self_test()
     errs += _self_test_unencodable_report()
     errs += _self_test_rerun()
+    errs += _self_test_partial_move()
     errs += _self_test_undeletable_staging()
     return errs
 
