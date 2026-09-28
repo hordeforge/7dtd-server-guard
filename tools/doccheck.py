@@ -65,10 +65,14 @@ SOURCE_FILES = sorted(
         *ROOT.glob("*.ini"),
         *(ROOT / "tools").glob("*.py"),
         *(ROOT / "tools").glob("*.yaml"),
+        *(ROOT / "tools").rglob("*.json"),
+        *(ROOT / "tools").rglob("*.jsonl"),
         *(ROOT / "config").rglob("*.json"),
+        *(ROOT / "config").rglob("*.jsonl"),
         *(ROOT / ".github").rglob("*.yml"),
+        *(ROOT / ".github").rglob("*.yaml"),
     ]
-    if p.is_file()
+    if p.is_file() and "__pycache__" not in p.parts
 )
 
 REQUIRED_DOCS = [
@@ -209,20 +213,28 @@ def check_todo_format() -> list[str]:
 
 
 def spec_ids() -> set[str]:
-    return {d["id"] for d in render_detectors.load_spec()}
+    """Registry ids, or an empty set when the spec does not parse (check_spec reports that)."""
+    try:
+        return {d["id"] for d in render_detectors.load_spec()}
+    except Exception:
+        return set()
 
 
 def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
     """Threshold keys are unique, typed, and carry a sane range and default."""
     out = []
-    keys = [t["key"] for t in thresholds]
-    if len(keys) != len(set(keys)):
+    keys = [t.get("key") for t in thresholds]
+    if None in keys:
+        out.append(f"{did}: threshold missing key")
+    elif len(keys) != len(set(keys)):
         out.append(f"{did}: duplicate threshold keys")
     for t in thresholds:
-        if t.get("type") not in SPEC_THRESHOLD_TYPES:
-            out.append(f"{did}: threshold {t.get('key')} bad type {t.get('type')}")
+        ttype = t.get("type")
+        if ttype not in SPEC_THRESHOLD_TYPES:
+            out.append(f"{did}: threshold {t.get('key')} bad type {ttype}")
+            continue
         rng = t.get("range")
-        if t["type"] not in {"int", "float"} or not isinstance(rng, list):
+        if ttype not in {"int", "float"} or not isinstance(rng, list):
             continue
         if len(rng) != RANGE_BOUNDS or rng[0] > rng[1]:
             out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
@@ -236,7 +248,7 @@ def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
 
 def _detector_errors(d: Json) -> list[str]:
     """Required fields, input authority/role vocabulary, fixtures, and the D-07 rule."""
-    did = d["id"]
+    did = d.get("id")
     out = []
     if d.get("family") not in SPEC_FAMILIES:
         out.append(f"{did}: bad family {d.get('family')}")
@@ -290,7 +302,9 @@ def check_spec() -> list[str]:
         return [f"tools/detector_spec.yaml unparseable: {exc}"]
 
     out = []
-    ids = [d["id"] for d in detectors]
+    ids: list[str] = [str(d.get("id")) for d in detectors if d.get("id") is not None]
+    if len(ids) != len(detectors):
+        out.append("detector entry without an id in tools/detector_spec.yaml")
     if len(ids) != len(set(ids)):
         dups = sorted({i for i in ids if ids.count(i) > 1})
         out.append(f"duplicate detector ids in spec: {dups}")
@@ -327,7 +341,9 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
     spec_by_id = {d["id"]: d for d in render_detectors.load_spec()}
     manifest_keys: dict[str, dict[str, Json]] = {}
+    manifest_ids: set[str] = set()
     for entry in manifest["detectors"]:
+        manifest_ids.add(entry["detectorId"])
         spec_entry = spec_by_id.get(entry["detectorId"])
         if spec_entry is None:
             out.append(f"manifest detector {entry.get('detectorId')} not in spec")
@@ -345,6 +361,15 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
             for t in entry.get("thresholds", [])
             if t["key"] not in declared
         )
+        out.extend(
+            f"manifest is missing threshold {entry['detectorId']}.{key} declared in spec; "
+            "re-run make detectors"
+            for key in sorted(declared - set(manifest_keys[entry["detectorId"]]))
+        )
+    out.extend(
+        f"manifest is missing detector {d} declared in spec; re-run make detectors"
+        for d in sorted(set(spec_by_id) - manifest_ids)
+    )
     for did, keys in example.get("thresholds", {}).items():
         out.extend(
             f"example config threshold {did}.{key} not in generated manifest"
@@ -385,6 +410,10 @@ def _threshold_value_errors(did: str, key: str, value: Json, threshold: Json) ->
 def check_detector_ids() -> list[str]:
     registered = spec_ids()
     out: list[str] = []
+    if not registered:
+        # Reporting every doc token and example-config mode as unknown would bury
+        # the real cause; the detector spec check reports why the registry is empty.
+        return ["tools/detector_spec.yaml yields no detector ids; see the detector spec check"]
     for p in MD_FILES:
         text = p.read_text(encoding="utf-8")
         out.extend(
@@ -552,8 +581,13 @@ def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: in
         pattern_schema = next((sub for pat, sub in pats.items() if re.match(pat, k)), None)
         if pattern_schema is not None:
             errs += _schema_validate(v, pattern_schema, f"{path}.{k}", depth + 1)
-        elif schema.get("additionalProperties") is False:
+            continue
+        # additionalProperties false rejects the key; a subschema validates its value.
+        additional = schema.get("additionalProperties", True)
+        if additional is False:
             errs.append(f"{path}: unexpected key {k!r}")
+        elif additional is not True:
+            errs += _schema_validate(v, additional, f"{path}.{k}", depth + 1)
     errs.extend(
         f"{path}: missing required key {req!r}"
         for req in schema.get("required", [])

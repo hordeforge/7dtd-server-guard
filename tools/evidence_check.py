@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import sys
 from collections.abc import Iterable, Iterator
 from typing import Any, NamedTuple
@@ -46,6 +47,20 @@ SHA256_HEX_LEN = 64
 GENESIS = "0" * SHA256_HEX_LEN
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
+SEGMENT_DIGITS = re.compile(r"(\d+)")
+
+
+def segment_sort_key(path: pathlib.Path) -> tuple[tuple[int, int, str], ...]:
+    """Order segments naturally, so an unpadded `<seq>` beyond 9 does not sort first.
+
+    Segments are `evidence-<UTC-date>-<seq>.jsonl` and chain in that order; plain
+    lexicographic order puts `...-10` before `...-2` and breaks the link check on a
+    day with ten or more segments.
+    """
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part)
+        for part in SEGMENT_DIGITS.split(path.name)
+    )
 
 
 def canonical(record: Record) -> str:
@@ -151,7 +166,7 @@ def load_index(index_path: pathlib.Path) -> tuple[dict[str, Any] | None, list[st
 
 
 def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
-    segments = sorted(evidence_dir.glob("evidence-*.jsonl"))
+    segments = sorted(evidence_dir.glob("evidence-*.jsonl"), key=segment_sort_key)
     if not segments:
         return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
     index, errs = load_index(evidence_dir / index_name)
@@ -234,6 +249,21 @@ def self_test() -> list[str]:
             "self-test: tampered record inside a non-first segment went unchecked: "
             f"{tail_errors}"
         )
+
+    # non-first-segment links are checked by the caller (verify_dir); exercise the skip
+    # branch so it keeps running without raising.
+    verify_chain([(1, dict(recs[0]), "")], first_of_stream=False)
+    # Segment order decides which chain link crosses the segment boundary, so an
+    # unpadded <seq> past 9 must sort after 2, not before it.
+    names = [pathlib.Path(f"evidence-2026-09-28-{i}.jsonl") for i in (2, 10, 1, 11)]
+    ordered = [p.name for p in sorted(names, key=segment_sort_key)]
+    if ordered != [
+        "evidence-2026-09-28-1.jsonl",
+        "evidence-2026-09-28-2.jsonl",
+        "evidence-2026-09-28-10.jsonl",
+        "evidence-2026-09-28-11.jsonl",
+    ]:
+        errs.append(f"self-test: segments ordered wrongly: {ordered}")
     return errs
 
 
