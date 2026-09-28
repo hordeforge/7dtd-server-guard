@@ -187,12 +187,15 @@ def check_deep_nesting() -> None:
 
 
 def check_datetime_format() -> None:
-    """Timestamp fields must be offset-qualified instants, not local-time strings.
+    """Timestamp fields must be UTC instants spelled with `Z`, not local-time strings.
 
     A value like `2026-07-21T12:34:56` names no instant: each reader resolves it
     against its own zone, so the same record reads as a different moment in
     different deployments. An impossible calendar date is rejected by the same
-    path, since `format` is asserted by the platform parser.
+    path, since `format` is asserted by the platform parser. A non-UTC offset
+    names the right moment and is still refused, because its calendar date is
+    the writer's local one and the segment that holds the record is named for
+    the UTC date.
     """
     schema = json.loads(
         (ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text(encoding="utf-8")
@@ -202,7 +205,7 @@ def check_datetime_format() -> None:
         rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
     }
     field_of = {"finding": "utc", "audit": "utc", "reconciliation": "savedAt"}
-    good = "2026-07-21T12:34:56.789Z"
+    good_values = ("2026-07-21T12:34:56.789Z", "2026-07-21T12:34:56Z")
     bad_values = {
         "2026-07-21T12:34:56.789": "no offset: resolved against the reader's zone",
         "2026-07-21 12:34:56Z": "space separator instead of the RFC 3339 T",
@@ -210,11 +213,16 @@ def check_datetime_format() -> None:
         "2026-02-30T00:00:00Z": "impossible calendar date",
         "1753098896": "epoch seconds in a string field",
         "yesterday": "not a date at all",
+        "2026-07-21T12:34:56+02:00": "non-UTC offset: right instant, local calendar date",
+        "2026-07-21T12:34:56-00:00": "zero spelled as a numeric offset rather than Z",
+        "2026-07-21T12:34:56+0200": "numeric offset without the RFC 3339 colon",
+        "20260721T123456Z": "basic-format date-time, not the extended form",
     }
     for rec_type, field in field_of.items():
         pristine = records[rec_type]
-        if dc._schema_validate({**pristine, field: good}, schema):
-            raise InvariantBrokenError(f"{rec_type}.{field}: valid instant rejected")
+        for good in good_values:
+            if dc._schema_validate({**pristine, field: good}, schema):
+                raise InvariantBrokenError(f"{rec_type}.{field}: valid instant {good!r} rejected")
         for value, why in bad_values.items():
             if not dc._schema_validate({**pristine, field: value}, schema):
                 raise InvariantBrokenError(f"{rec_type}.{field}={value!r} accepted: {why}")

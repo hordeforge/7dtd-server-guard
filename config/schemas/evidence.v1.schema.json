@@ -11,6 +11,12 @@
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
+    "utcInstant": {
+      "description": "An instant the writer serialized in UTC, as `utc` and `savedAt` are. `format: date-time` alone admits any offset, and `2026-07-21T12:34:56+02:00` is the shape a serializer emits on a host outside UTC: it names the right moment, but its calendar date is the local one, so it disagrees with the `evidence-<UTC-date>-<seq>.jsonl` segment that holds it and its string no longer sorts by instant. A `Z` terminal makes UTC the only spelling, which is what the segment naming and every reader of the chain assume.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
     "personalDataDenyList": {
       "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through. The list holds stems matched anywhere in the key, not whole spellings: an enumerated-spelling list is bypassed by the first variant nobody wrote down (`ipaddress`, `hwaddr`, `clientip` all read as ordinary-looking snake_case and carry exactly what `ip_address` was denied for). Case is covered by the `[a-z_]` charset the key must already match, so the stems are lowercase.",
       "type": "string",
@@ -60,8 +66,7 @@
           "const": "finding"
         },
         "utc": {
-          "type": "string",
-          "format": "date-time"
+          "$ref": "#/definitions/utcInstant"
         },
         "monotonicMs": {
           "type": "integer",
@@ -72,6 +77,7 @@
           "minimum": 0
         },
         "tickHealthMs": {
+          "description": "How far the tick loop ran behind its budget, in milliseconds, taken from the server monotonic clock. The minimum is a contract, not a clamp: a lag measured against the wall clock reads negative when timesync steps the clock, and a negative value here is refused rather than silently floored, so the field must be monotonic-derived (docs/SCHEMAS.md -> Evidence stream).",
           "type": "integer",
           "minimum": 0
         },
@@ -299,8 +305,7 @@
           ]
         },
         "savedAt": {
-          "type": "string",
-          "format": "date-time"
+          "$ref": "#/definitions/utcInstant"
         },
         "replayedFrom": {
           "type": [
@@ -461,8 +466,7 @@
           "const": "audit"
         },
         "utc": {
-          "type": "string",
-          "format": "date-time"
+          "$ref": "#/definitions/utcInstant"
         },
         "actor": {
           "type": "string",

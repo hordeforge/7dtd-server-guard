@@ -168,12 +168,19 @@ the repeat is intact because it links to whatever record preceded it. A repeated
 `eventId` is therefore a chain error in its own right, reported by the verifier, and the
 writer must not append an `eventId` it has already written. The verifier keeps the last
 65536 `eventId`s while it walks, so a repeat inside that window is reported and one older
-than the window is not. `utc` and `savedAt` are RFC 3339 date-times carrying an explicit
-offset (serialized as `Z`); the schema declares `format: date-time` and the gate rejects a
-value without an offset, which names no instant and would be read in the reader's own local
-zone. Duration fields (`monotonicMs`, `latencyMs`, `uptimeS`) come from the server monotonic
+than the window is not. `utc` and `savedAt` are RFC 3339 date-times serialized in UTC with a
+`Z` terminal, declared once as `definitions/utcInstant` and `$ref`ed by both fields; the schema
+declares `format: date-time` and the gate rejects a value without an offset, which names no
+instant and would be read in the reader's own local zone, and a value with a non-`Z` offset,
+which names the right instant but carries the writer's local calendar date and so disagrees
+with the `evidence-<UTC-date>-<seq>.jsonl` segment holding it. Duration fields (`monotonicMs`,
+`tickHealthMs`, `latencyMs`, `uptimeS`) come from the server monotonic
 clock, so they measure elapsed time within one process and are never compared across
-processes or machines. The verifier is `make verify-evidence DIR=<evidence-dir>`
+processes or machines. `tickHealthMs` is the tick loop's lag, the monotonic time a tick
+overran its budget by, and the monotonic clock is the only clock it can be measured against:
+a lag taken from the wall clock goes negative the moment timesync steps the clock backwards,
+and the schema's `minimum: 0` then refuses the whole record, losing a finding over a clock
+event that says nothing about the player. The verifier is `make verify-evidence DIR=<evidence-dir>`
 and the shipped sample (`config/schemas/evidence.v1.sample.jsonl`) is a real, verifiable
 chain run by the doccheck gate. The verifier walks each segment line by line, so its
 memory cost does not grow with segment size.
