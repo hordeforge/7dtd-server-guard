@@ -112,6 +112,16 @@ MAX_FILE_NAME_LEN = 128
 # a different file from the one the operator sees. Every name this repo writes is
 # ASCII, so nothing legitimate is lost.
 FILE_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+# Stems that name a device rather than a file on a Windows host, where the check
+# is on the part before the first dot, so "nul" and "nul.jsonl" both resolve to
+# the null device. The evidence directory lives on the host the server runs on, so
+# a name that reads as a segment here can be a device there: the same manifest
+# would then verify against something that was never written.
+WINDOWS_DEVICE_STEMS = frozenset(
+    ["con", "prn", "aux", "nul"]
+    + [f"com{i}" for i in range(1, 10)]
+    + [f"lpt{i}" for i in range(1, 10)]
+)
 
 
 def valid_file_name(name: object) -> bool:
@@ -121,13 +131,35 @@ def valid_file_name(name: object) -> bool:
     `directory / name` resolves an absolute name to itself and walks out of the
     directory on a `..` segment, so both are rejected here rather than joined.
     The allowlist admits no path separator, which is what makes both impossible.
+
+    Two names that are ordinary files on a POSIX host are refused, because the
+    archive has to mean the same thing on every host that restores it: a Windows
+    device stem, and a trailing dot, which Windows strips so that "seg.jsonl."
+    silently opens "seg.jsonl" instead.
     """
     return (
         isinstance(name, str)
         and 0 < len(name) <= MAX_FILE_NAME_LEN
         and name not in (".", "..")
+        and not name.endswith(".")
+        and name.split(".", 1)[0].lower() not in WINDOWS_DEVICE_STEMS
         and all(c in FILE_NAME_CHARS for c in name)
     )
+
+
+def exact_child(directory: pathlib.Path, name: str) -> pathlib.Path | None:
+    """The entry of `directory` whose name is exactly `name`, or None.
+
+    A case-insensitive filesystem (NTFS, APFS, or ext4 mounted casefold) resolves
+    "Segment-Index.json" to "segment-index.json", so joining a name from a
+    manifest and opening it succeeds there and fails on a case-sensitive host. The
+    name is matched against the directory's own entries instead, so a manifest
+    that does not name the archived bytes exactly is reported on every host.
+    """
+    for entry in directory.iterdir():
+        if entry.name == name:
+            return entry
+    return None
 
 
 def _reject_non_finite(token: str) -> float:
@@ -301,7 +333,12 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
     segments = sorted(evidence_dir.glob("evidence-*.jsonl"), key=segment_sort_key)
     if not segments:
         return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
-    index, errs = load_index(evidence_dir / index_name)
+    # The index name is matched against the directory's own entries, not joined
+    # onto it: on a case-insensitive host a joined name opens a differently
+    # spelled file, and the cross-check below would then compare a spelling no
+    # archive actually holds.
+    index_path = exact_child(evidence_dir, index_name)
+    index, errs = load_index(index_path) if index_path is not None else (None, [])
 
     # The eventId window spans segments, so a repeat is caught whether it lands in
     # one segment or two.
@@ -678,7 +715,7 @@ def _verify_dir_tests() -> list[str]:
     )
     with tempfile.TemporaryDirectory(prefix="evidence-self-test-", dir=scratch) as td:
         root = pathlib.Path(td)
-        return [errs for i, case in enumerate(cases) for errs in case(f"{root}/{i}")]
+        return [errs for i, case in enumerate(cases) for errs in case(str(root / str(i)))]
 
 
 def _segment_dir(root: str) -> pathlib.Path:

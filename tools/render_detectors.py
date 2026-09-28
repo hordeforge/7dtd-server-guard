@@ -327,7 +327,10 @@ def main() -> int:
         if args.check:
             print(f"{MANIFEST.relative_to(ROOT)} is stale; run `make detectors`", file=sys.stderr)
             return 1
-        MANIFEST.write_text(rendered, encoding="utf-8")
+        # newline="\n": the file is tracked with the repo's LF policy (.gitattributes),
+        # and a text-mode write would translate to CRLF on a Windows host, rewriting
+        # a file that was already current.
+        MANIFEST.write_text(rendered, encoding="utf-8", newline="\n")
         print(f"wrote {MANIFEST.relative_to(ROOT)} ({len(manifest['detectors'])} detectors)")
         return 0
 
@@ -338,7 +341,7 @@ def main() -> int:
             state = "stale" if current is not None else "missing"
             print(f"docs/DETECTORS.md is {state}; run `make detectors`", file=sys.stderr)
             return 1
-        REGISTRY.write_text(fresh, encoding="utf-8")
+        REGISTRY.write_text(fresh, encoding="utf-8", newline="\n")
         print(f"regenerated {REGISTRY.relative_to(ROOT)}")
     else:
         print(f"{REGISTRY.relative_to(ROOT)} is current")

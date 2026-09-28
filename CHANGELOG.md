@@ -265,6 +265,28 @@ above reserves minor bumps for that.
 - The CI job is bounded by a 20-minute timeout, so a wedged fuzzer fails the run
   instead of holding a runner for the 6h default, and the checkout token is not
   persisted into `.git/config` between steps, since nothing pushes from CI.
+- An archive member name that is a Windows device stem (`nul`, `con`, `com1`,
+  `lpt9`, with or without an extension) or that ends in a dot is refused instead of
+  being joined onto the directory. On a Windows host, which is where the evidence
+  directory lives, the first resolves to a device and the second has its dot
+  stripped, so the name would not mean the same file there as it does on the host
+  that wrote the manifest.
+- A file named by an index or an archive manifest is matched against the directory's
+  own entries rather than joined onto it. On a case-insensitive filesystem (NTFS,
+  APFS, ext4 casefold) a name differing only in case opened the wrong file, so an
+  archive could verify clean on one host and report a missing member on another.
+- The doccheck link pass resolves each path component against the directory's own
+  entries, so a link whose case does not match the file on disk is reported instead
+  of passing on a contributor's case-insensitive checkout and breaking on the
+  case-sensitive host CI runs.
+- The generated registry, the generated config manifest, and a resealed replay
+  trace are written with LF line endings, the policy `.gitattributes` declares, so
+  regenerating them on a host whose default terminator is CRLF no longer rewrites
+  every line of a tracked file.
+- The `evidence_export.py` self-test read the clock to place its two exports in the
+  same second, so the same-second collision refusal it checks failed whenever the
+  second boundary fell between them (roughly one run in four). `export()` takes the
+  archive stamp as an argument and the self-test passes a fixed one.
 
 ## [0.4.1] - 2026-09-20
 

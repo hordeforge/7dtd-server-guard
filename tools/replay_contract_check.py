@@ -349,7 +349,10 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        TRACE.write_text(sealed, encoding="utf-8")
+        # newline="\n": the fixture is tracked with the repo's LF policy
+        # (.gitattributes), so a text-mode write must not re-terminate every line
+        # on a host whose default differs.
+        TRACE.write_text(sealed, encoding="utf-8", newline="\n")
         print(f"replay-contract: resealed {TRACE.relative_to(ROOT)}")
         return 0
 

@@ -176,14 +176,23 @@ def stage(
     return [f"archive did not verify: {e}" for e in verify(staging)]
 
 
-def export(source: pathlib.Path, out_root: pathlib.Path, index_name: str) -> list[str]:
+def export(
+    source: pathlib.Path, out_root: pathlib.Path, index_name: str, stamp: str | None = None
+) -> list[str]:
     """Verify, copy, and manifest. Returns errors; empty means the archive is
-    complete and verified. Nothing is written when verification fails."""
+    complete and verified. Nothing is written when verification fails.
+
+    `stamp` names the archive instead of reading the clock. The name carries a
+    one-second timestamp, so two exports into the same root inside one second are
+    refused as a collision; a caller that has to exercise that refusal (the
+    self-test) passes the same stamp rather than depending on where the second
+    boundary falls.
+    """
     members, errs = preflight(source, index_name)
     if errs:
         return errs
 
-    dest = out_root / f"evidence-{utc_stamp()}"
+    dest = out_root / f"evidence-{stamp or utc_stamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
@@ -226,8 +235,8 @@ def _member_errors(archive: pathlib.Path, entry: object) -> list[str]:
     if not isinstance(entry, dict) or not valid_member_name(entry.get("name")):
         return [f"{MANIFEST_NAME}: malformed file entry"]
     name = entry["name"]
-    path = archive / name
-    if not path.is_file():
+    path = ec.exact_child(archive, name)
+    if path is None or not path.is_file():
         return [f"{name}: listed in the manifest but missing from the archive"]
     sha, size = file_digest(path)
     if sha != entry.get("sha256"):
@@ -346,15 +355,19 @@ def _self_test_happy_path(
     source: pathlib.Path, out_root: pathlib.Path
 ) -> tuple[list[str], list[pathlib.Path]]:
     errs: list[str] = []
-    if export(source, out_root, DEFAULT_INDEX_NAME):
+    # One fixed archive name for both exports: the collision refusal is a
+    # same-second one, and reading the clock here made the case fail whenever the
+    # second boundary happened to fall between the two calls.
+    stamp = "20260721T000000Z"
+    if export(source, out_root, DEFAULT_INDEX_NAME, stamp=stamp):
         errs.append("self-test: export of a valid chain reported errors")
     archives = sorted(p for p in out_root.iterdir() if p.is_dir())
     if len(archives) != 1:
         return [*errs, "self-test: export did not produce exactly one archive"], archives
     if verify(archives[0]):
         errs.append("self-test: fresh archive did not verify")
-    # A second export into the same second must refuse, not overwrite.
-    if not export(source, out_root, DEFAULT_INDEX_NAME):
+    # A second export under the same archive name must refuse, not overwrite.
+    if not export(source, out_root, DEFAULT_INDEX_NAME, stamp=stamp):
         errs.append("self-test: a same-second export overwrote a live archive")
     if sorted(p for p in out_root.iterdir() if p.is_dir()) != archives:
         errs.append("self-test: a refused export still left a new archive behind")
@@ -430,7 +443,9 @@ def _self_test_member_names() -> list[str]:
     A manifest is untrusted text that names files. A name spelled with characters
     outside ASCII (fullwidth Latin, Arabic-Indic digits, a combining mark) reads to
     an operator as a segment name it is not, so it must be reported rather than
-    resolved; the names this tool writes are ASCII and must keep passing.
+    resolved; the names this tool writes are ASCII and must keep passing. A name a
+    Windows host resolves to a device or strips a dot off is refused for the same
+    reason: the archive has to name the same bytes on every host that restores it.
     """
     errs: list[str] = []
     accepted = [
@@ -444,6 +459,11 @@ def _self_test_member_names() -> list[str]:
         "evidence-2026-07-21-00000é.jsonl",  # NFD: e + combining acute
         "evidence-2026-07-21-000000\U0001f600.jsonl",  # astral
         "evidence-2026-07-21-000000.jsonl ",  # trailing space
+        "evidence-2026-07-21-000000.jsonl.",  # trailing dot: stripped by a Windows host
+        "nul",  # Windows device stem, so also "nul.jsonl" below
+        "nul.jsonl",
+        "COM1.jsonl",
+        "lpt9",
     ]
     errs.extend(
         f"self-test: archive member name rejected: {name!r}"
@@ -451,10 +471,41 @@ def _self_test_member_names() -> list[str]:
         if not valid_member_name(name)
     )
     errs.extend(
-        f"self-test: non-ASCII archive member name accepted: {name!r}"
+        f"self-test: archive member name accepted that is not a plain portable file name: {name!r}"
         for name in rejected
         if valid_member_name(name)
     )
+    return errs
+
+
+def _self_test_case_variant_name(archive: pathlib.Path) -> list[str]:
+    """A manifest name that differs only in case is reported on every host.
+
+    On a case-insensitive filesystem (NTFS, APFS) joining a name and opening it
+    succeeds anyway, so an archive whose manifest names "EVIDENCE-..." would verify
+    clean there and fail on a case-sensitive host. The name is matched against the
+    archive's own entries, so the two hosts cannot disagree about what was
+    archived.
+    """
+    errs: list[str] = []
+    path = archive / MANIFEST_NAME
+    text = path.read_text(encoding="utf-8")
+    try:
+        manifest = json.loads(text)
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"self-test: exported manifest unreadable: {exc}"]
+    segment = next(e for e in manifest["files"] if e["name"].endswith(".jsonl"))
+    segment["name"] = segment["name"].upper()
+    manifest[MANIFEST_DIGEST_FIELD] = manifest_digest(manifest)
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        found = verify(archive)
+        if not any("missing from the archive" in e for e in found):
+            errs.append(f"self-test: a case-variant member name verified: {found}")
+    finally:
+        path.write_text(text, encoding="utf-8")
+    if verify(archive):
+        errs.append("self-test: the restored manifest did not verify after the case-variant case")
     return errs
 
 
@@ -509,6 +560,7 @@ def self_test() -> list[str]:
     errs += _self_test_member_names()
     errs += _self_test_manifest_bytes()
     if archives:
+        errs += _self_test_case_variant_name(archives[0])
         errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
     shutil.rmtree(scratch, ignore_errors=True)
     return errs

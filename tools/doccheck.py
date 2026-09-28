@@ -225,6 +225,37 @@ def check_em_dashes() -> list[str]:
     return out
 
 
+def link_failure(start: pathlib.Path, target: str) -> str | None:
+    """Why a relative link target does not resolve under `start`, or None when it does.
+
+    `exists()` alone is not the check: on a case-insensitive filesystem (NTFS,
+    APFS, or ext4 mounted casefold) a link to `docs/index.md` opens `docs/INDEX.md`,
+    so a wrong-case link passes this gate on a contributor's machine and breaks on
+    the case-sensitive host CI runs on. Each component is matched against the
+    directory's own entries instead, which compares names exactly whatever the
+    host filesystem does with case, and a component that only matches when case is
+    folded is named as the case error it is.
+    """
+    current = start
+    for part in pathlib.PurePosixPath(target).parts:
+        if part == ".":
+            continue
+        if part == "..":
+            current = current.parent
+            continue
+        if not current.is_dir():
+            return "broken link"
+        names = {entry.name for entry in current.iterdir()}
+        if part not in names:
+            return (
+                "link target name case does not match the file on disk"
+                if any(name.casefold() == part.casefold() for name in names)
+                else "broken link"
+            )
+        current = current / part
+    return None if current.exists() else "broken link"
+
+
 def check_links() -> list[str]:
     out = []
     for p in MD_FILES:
@@ -239,9 +270,8 @@ def check_links() -> list[str]:
             path_part = target.partition("#")[0]
             if not path_part:
                 continue
-            resolved = (p.parent / path_part).resolve()
-            if not resolved.exists():
-                out.append(f"{p.relative_to(ROOT)}: broken link -> {target}")
+            if reason := link_failure(p.parent, path_part):
+                out.append(f"{p.relative_to(ROOT)}: {reason} -> {target}")
     return out
 
 

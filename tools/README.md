@@ -69,3 +69,26 @@ Every tool here is an entry point, so all of them follow the same rules:
 - `--help` documents every flag, including the fuzzer `--iterations` and `--seed`
   defaults, and each tool's module docstring carries its exit codes and the exact
   command to replay a reported fuzz failure.
+
+## Host platforms
+
+`make setup`, `make check`, `make lint`, and the fuzzers are the developer gate and run
+on the platforms CI runs, which is Linux today. The evidence tools
+(`evidence_check.py`, `evidence_export.py`) are a different case: the evidence
+directory lives on the host the game server runs on, so an operator runs them there,
+and a Windows host must get the same verdict as a Linux one. They therefore use the
+standard library only, no POSIX-only call, and no shell; `make` targets are the
+convenient path, not the only one, and `uv run python tools/evidence_export.py --dir
+<evidence-dir> --out <archive-root>` is the equivalent everywhere `uv` runs.
+
+Two rules keep an archive portable, and both are pinned by the self-tests under
+`make test-tools`:
+
+- A segment or index name is refused if it is a Windows device stem (`nul`,
+  `con`, `com1`, `lpt9`, with or without an extension) or ends in a dot, because a
+  Windows host resolves the first to a device and strips the second, so the name
+  would not mean the same file there.
+- A name from a manifest is matched against the archive's own entries, not joined
+  onto it, so a name differing only in case is reported on a case-sensitive host
+  and a case-insensitive one alike instead of verifying clean on one and failing on
+  the other.
