@@ -67,7 +67,17 @@ These are the properties a reader is most likely to assume and that no shipped c
 - No CI secret is used: no `secrets.*`, no registry push, no release job. Dependency updates come
   from Dependabot on the `github-actions` and `uv` ecosystems.
 - Dependencies resolve from a locked `uv.lock` through `uv sync --frozen`, so a stale lockfile
-  fails the run instead of silently re-resolving.
+  fails the run instead of silently re-resolving. Every artifact in the lock carries a sha256,
+  so an install verifies the bytes it fetched rather than the ones the index served.
+- The dependency set has a machine-readable inventory: `make sbom` renders `uv.lock` as
+  CycloneDX 1.6 (`tools/sbom.py`), one component per locked package with its hash, the
+  dependency graph, and a `runtime` or `dev` scope, and `make ci` renders it on every run
+  so a lock that cannot be inventoried fails the gate. `uv.lock` carries no license data, so
+  the document claims no license rather than guessing one.
+- Adding a dependency is a reviewed edit to `pyproject.toml`: the runtime list is
+  deliberately one package, every entry in the `dev` group is a tool that runs nowhere but
+  this repository's gate, and Dependabot covers the `uv` and `github-actions` ecosystems
+  weekly so the pin is the thing a human sees.
 
 ## Planned surface (not implemented)
 

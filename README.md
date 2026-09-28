@@ -120,8 +120,12 @@ Loop:
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
   iteration count, for editing a single tool. Seeds are deterministic, so a reported
   `seed=` reproduces the failure.
+- `make sbom`: render the CycloneDX 1.6 inventory of every package in `uv.lock`
+  (`dist/sbom.cdx.json`), with the sha256 the lock records for each and each package
+  marked `runtime` or `dev`. Deterministic, so an unchanged lock regenerates byte for
+  byte and a diff means the dependency set moved.
 - `make ci`: everything CI runs, locally in one step
-  (`lint` + `check` + `exercise` + `test-tools`). Recipes run with `TZ=UTC` and
+  (`lint` + `check` + `exercise` + `test-tools` + `sbom`). Recipes run with `TZ=UTC` and
   `PYTHONHASHSEED=0`, the same values ci.yml sets, so a local gate and the CI gate
   of one commit report the same thing.
 

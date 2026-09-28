@@ -81,6 +81,9 @@ bug to fix in the same change.
     ├── backup_status.py         read-only RPO check over an archive root
     │                            (make backup-status)
     ├── replay_contract_check.py replay-trace semantic contract gate (make exercise)
+    ├── config_check.py         pre-deploy validation of an operator's config file
+    │                            (make verify-config FILE=...)
+    ├── sbom.py                 CycloneDX 1.6 inventory rendered from uv.lock (make sbom)
     ├── fuzz_evidence_check.py   seeded fuzzer over the evidence parser (make test-tools)
     ├── fuzz_evidence_export.py  seeded fuzzer over the archive verifier and exporter
     │                            (make test-tools)

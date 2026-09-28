@@ -3,7 +3,7 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz verify-config verify-evidence export-evidence verify-archive backup backup-status drill-restore guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz sbom verify-config verify-evidence export-evidence verify-archive backup backup-status drill-restore guard-python help
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
@@ -13,7 +13,7 @@ FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_
 # Tools carrying negative self-tests, addressable by `make self-test TOOL=<name>`.
 # This list is the registry: `make test-tools` runs every entry, so adding a
 # self-test here is enough to put it in the CI run.
-SELF_TESTS := evidence_check evidence_export restore_drill backup_status config_check
+SELF_TESTS := evidence_check evidence_export restore_drill backup_status config_check sbom
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -114,7 +114,17 @@ fuzz: guard-python
 
 # CI entry point: everything CI runs, runnable locally as one step.
 # C# build + test layers 1-4 are added here in Phase 2 (TODO.md).
-ci: lint check exercise test-tools
+ci: lint check exercise test-tools sbom
+
+# Render the CycloneDX inventory of everything in uv.lock, so a scanner or an
+# auditor can read what shipped without running uv. Output is deterministic (the
+# serial number comes from the lock digest, no timestamp), so an unchanged lock
+# produces a byte-identical file. The document is written under dist/ rather than
+# committed: it describes a release, it is not source.
+# Usage: make sbom [OUT=dist/sbom.cdx.json]
+OUT ?= dist/sbom.cdx.json
+sbom: guard-python
+	$(UV) python tools/sbom.py --out "$(OUT)"
 
 # Validate an operator's config file before it is deployed: schema, detector
 # registry, per-detector manifest thresholds, and the env vars an enabled webhook
@@ -184,6 +194,7 @@ help:
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
 	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, restore_drill, backup_status, config_check)"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec)"
+	@echo "  make sbom [OUT=<file>]  render the CycloneDX 1.6 inventory from uv.lock"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make guard-python    interpreter pin gate every other target depends on"
 	@echo "  make verify-config FILE=<file> [SKIP_ENV=1]   validate a config file before deploying it"

@@ -49,6 +49,16 @@
   config and the SHA-256 written into evidence records, the health report, and the hook
   manifest. Secret values are never read: the config names the env var, the tool checks only
   that it is set. `make verify-config FILE=...`; self-tests run under `make test-tools`.
+- `sbom.py`: renders `uv.lock` as a CycloneDX 1.6 bill of materials
+  (`make sbom [OUT=dist/sbom.cdx.json]`), one component per locked package with the
+  sha256 the lock records, the dependency graph, and a `runtime` or `dev` scope property,
+  so a scanner or auditor can read the release's inventory without running uv. The
+  output is deterministic (the serial number is a UUID over the lock digest, and there is
+  no timestamp), so an unchanged lock regenerates byte for byte and a diff means the
+  dependency set moved. `uv.lock` records no license data, so no license is claimed: a
+  wrong license is worse than a missing one. A lock entry with no hash, or a dependency
+  the lock does not describe, is an error rather than a quietly omitted component. Runs
+  under `make ci`; self-tests run under `make test-tools`.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
   format, detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped

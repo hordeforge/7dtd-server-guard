@@ -36,6 +36,16 @@ above reserves minor bumps for that.
 
 ### Added
 
+- `tools/sbom.py`, driven by `make sbom [OUT=dist/sbom.cdx.json]`: renders `uv.lock` as a
+  CycloneDX 1.6 bill of materials, so a vulnerability scanner or an auditor can read what
+  a release contains without running uv. One component per locked package, carrying the
+  sha256 the lock records, the dependency graph, and a `runtime` or `dev` scope property
+  (the runtime list is one package; the rest is the dev toolchain). The output is
+  deterministic, the serial number being a UUID over the lock digest and the document
+  carrying no timestamp, so an unchanged lock regenerates byte for byte. `uv.lock` records
+  no license data, so the document claims none. A lock entry with no hash, or a dependency
+  the lock does not describe, is an error rather than a silently dropped component.
+  `make ci` renders it, so a lock that cannot be inventoried fails the gate.
 - `tools/config_check.py`, driven by `make verify-config FILE=<file> [SKIP_ENV=1]`:
   validates an operator's own config file before it is deployed, with the same rules
   the strict Phase 2 loader is specified from. It rejects unknown keys, types, enums,

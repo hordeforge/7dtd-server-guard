@@ -22,6 +22,7 @@ Nothing is installed globally: `make setup` materializes `.venv/` inside the clo
 make setup      # uv sync --frozen, once per clone
 make check      # docs quality gate: run before opening a change
 make lint       # black, ruff, mypy over the whole repository
+make sbom       # CycloneDX 1.6 inventory rendered from uv.lock
 make ci         # everything CI runs, in one local step
 ```
 
@@ -50,6 +51,17 @@ make detectors
 
 `make check` fails on a stale generated file, so never hand-edit the rendered tables
 or the manifest.
+
+## Dependencies
+
+The default is no new dependency. A package that only runs in this repository's
+gate (a formatter, a linter, a type checker) belongs in `[dependency-groups] dev` in
+[pyproject.toml](pyproject.toml); anything the shipped tools import at runtime belongs
+in `[project] dependencies`. The runtime list is one package today (`PyYAML`, for the
+detector spec), which is the point: uv.lock is the whole third-party surface, and it
+is regenerated with `uv lock` and reviewed like any other change. `make sbom` renders
+what the lock holds as CycloneDX 1.6, with each package marked `runtime` or `dev`, so
+the blast radius of a release is readable without running uv.
 
 ## Before you open a change
 
