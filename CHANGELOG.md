@@ -31,6 +31,13 @@ this file and are described only by their git tags.
 
 ### Changed
 
+- The Python toolchain pin is the whole version, not the minor: `.python-version` names
+  `3.12.12`, `tools/guard_python.py` fails on any other interpreter instead of accepting
+  an older patch, and CI pins the uv release it installs. CI also fixes `LC_ALL`, `TZ`,
+  and `PYTHONHASHSEED`, so gate output and rendered files do not follow the runner's
+  locale, zone, or hash order.
+- `make lint` and `make detectors` run the interpreter guard first, like the other
+  tool targets.
 - `tools/evidence_check.py` streams evidence segments instead of materializing them, so
   `make verify-evidence` costs constant memory on a production evidence directory
   (measured 217MB to 42MB peak RSS on a 25MB segment, flat from 25MB to 101MB segments).
@@ -49,10 +56,10 @@ this file and are described only by their git tags.
 
 ### Fixed
 
-- The shipped inventory stack trace carried a `determinism.fingerprint` that matched no
-  outcome projection, so `make check` and `make exercise` failed on a clean tree from
+- The shipped inventory replay fixture carried a `determinism.fingerprint` that matched
+  no outcome projection, so `make check` and `make exercise` failed on a clean tree from
   the commit that added the field. The fixture now carries the digest its own content
-  produces.
+  produces under the projection `tools/replay_contract_check.py` recomputes.
 - `doccheck.py`, `evidence_check.py`, and `replay_contract_check.py` printed
   failure detail on stdout, where a script reading the verdict also reads the
   diagnostics. A failing run now reports on stderr and a clean one on stdout, which
@@ -75,6 +82,14 @@ this file and are described only by their git tags.
   threshold whose declared type is `int` or `float` must carry a numeric default inside
   its range (a YAML `true` passed the range comparison as an int, and
   `render_manifest` copies that default into the shipped manifest).
+- `make check` verified the rendered detector registry against the spec but not
+  `config/detector-config-manifest.json`, so a manifest left behind by an earlier spec
+  edit could ship a stale threshold default, range, unit, or note.
+  `tools/render_detectors.py --manifest --check` now fails on that, and `doccheck.py`
+  runs it.
+- `doccheck.py` walked `.scratch/`, so a contributor following the workspace rule of
+  keeping scratch work there failed the docs gate on links in their own scratch notes.
+  Version control, the local environment, tool caches, and `.scratch/` are now skipped.
 - `fuzz_replay_trace.py` built its deep-nesting probe from a mutated trace and then
   indexed `cases[0]["events"][0]`, so a mutant that dropped or replaced either crashed
   the harness with a bare `TypeError`. The probe now copies the pristine sample. The

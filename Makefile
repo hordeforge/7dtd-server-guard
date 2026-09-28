@@ -21,9 +21,9 @@ SEED ?= 24301
 # re-resolving when uv.lock is stale.
 UV := uv run --frozen
 
-# The pinned minor in .python-version is the single source of truth for the
-# interpreter toolchain: uv installs exactly it, and the guard enforces it as a
-# floor before any tool runs.
+# The pinned version in .python-version is the single source of truth for the
+# interpreter toolchain: uv installs exactly it, and the guard fails unless the
+# running interpreter is that exact version, before any tool runs.
 guard-python:
 	@$(UV) python tools/guard_python.py
 
@@ -36,14 +36,14 @@ check: guard-python
 	$(UV) python tools/doccheck.py
 
 # Format, lint, and type gates for the shipped Python tooling.
-lint:
+lint: guard-python
 	$(UV) black --check tools
 	$(UV) ruff check tools
 	$(UV) mypy tools
 
 # Regenerate the detector registry tables and the per-detector config manifest
 # from tools/detector_spec.yaml (the single source of truth).
-detectors:
+detectors: guard-python
 	$(UV) python tools/render_detectors.py
 	$(UV) python tools/render_detectors.py --manifest
 
@@ -110,5 +110,5 @@ help:
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"
 	@echo "  make verify-archive ARCHIVE=<dir>   re-verify an archive against its manifest"
-	@echo "Python floor: .python-version (uv installs exactly it; local builds enforce it)."
+	@echo "Python version: .python-version, enforced exactly (uv installs it; local builds refuse any other)."
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."

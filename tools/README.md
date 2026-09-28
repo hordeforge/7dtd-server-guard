@@ -35,9 +35,9 @@
   `.scratch/`, never the system temp dir.
 - `fuzz_common.py`: the mutation engine all three fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
-- `guard_python.py`: fails the build when the interpreter is older than the floor in
-  `.python-version`. Runs first in `make check`, `make exercise`, `make test-tools`,
-  and `make fuzz`.
+- `guard_python.py`: fails the build unless the running interpreter is exactly the
+  version in `.python-version`. Runs first in `make check`, `make exercise`,
+  `make test-tools`, and `make fuzz`.
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
   (SCHEMAS.md). Planned; only the README contract exists, no code yet.
 - `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression

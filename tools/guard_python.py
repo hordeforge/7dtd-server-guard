@@ -1,9 +1,9 @@
-"""Exit nonzero unless the running interpreter meets the floor in .python-version.
+"""Exit nonzero unless the running interpreter is exactly the one in .python-version.
 
-The pinned minor in .python-version is the single source of truth for the Python
-toolchain: uv installs exactly it (uv reads the same file), and local builds
-enforce it as a floor before any tool runs, so a too-old host fails here with a
-clear message instead of inside a tool.
+The pinned version in .python-version is the single source of truth for the Python
+toolchain: uv installs exactly it (uv reads the same file), and local builds enforce
+it before any tool runs, so a host on a different patch fails here with a clear
+message instead of producing a gate result nobody else can reproduce.
 """
 
 from __future__ import annotations
@@ -13,8 +13,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSION_FILE = ".python-version"
-# A usable pin carries at least major and minor; the patch component is optional.
-MIN_VERSION_PARTS = 2
+# The pin must carry major, minor, and patch: a partial pin lets the patch float,
+# so two runs of the same source can execute different interpreters.
+PIN_PARTS = 3
 
 
 def main() -> int:
@@ -25,16 +26,15 @@ def main() -> int:
         print(f"guard-python: cannot read {VERSION_FILE}: {exc}", file=sys.stderr)
         return 1
     parts = raw.split(".")
-    if len(parts) < MIN_VERSION_PARTS or not all(p.isdigit() for p in parts):
-        print(f"guard-python: {VERSION_FILE} must look like '3.12', got {raw!r}", file=sys.stderr)
+    if len(parts) != PIN_PARTS or not all(p.isdigit() for p in parts):
+        print(f"guard-python: {VERSION_FILE} must look like '3.12.4', got {raw!r}", file=sys.stderr)
         return 1
-    floor = tuple(int(p) for p in parts[:MIN_VERSION_PARTS])
-    have = sys.version_info[:2]
-    if have < floor:
-        want = ".".join(str(x) for x in floor)
-        found = ".".join(str(x) for x in have)
+    want = tuple(int(p) for p in parts)
+    have = sys.version_info[:PIN_PARTS]
+    if have != want:
         print(
-            f"guard-python: need Python {want}+ (per {VERSION_FILE}), found {found}",
+            f"guard-python: need Python {'.'.join(str(x) for x in want)} (per {VERSION_FILE}), "
+            f"found {'.'.join(str(x) for x in have)}",
             file=sys.stderr,
         )
         return 1

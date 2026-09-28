@@ -17,6 +17,13 @@ jobs:
     runs-on: ubuntu-24.04
     # A wedged fuzzer must fail the job, not hold a runner for the 6h default.
     timeout-minutes: 20
+    env:
+      # Gate output and generated files must not depend on the runner's locale,
+      # zone, or hash seed: sort order and any time formatting are then the
+      # same here and on a developer machine.
+      LC_ALL: C.UTF-8
+      TZ: UTC
+      PYTHONHASHSEED: "0"
     steps:
       # actions/checkout, SHA-pinned per dependabot.yml: these actions are the
       # whole dependency surface, so tags must not be mutable refs. The
@@ -26,11 +33,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # astral-sh/setup-uv: uv installs the interpreter minor declared in
+      # astral-sh/setup-uv: uv installs the interpreter version declared in
       # .python-version and the locked dependency set, instead of whatever the
-      # runner image happens to ship.
+      # runner image happens to ship. The action SHA alone is not the pin: the
+      # uv release it fetches is named here, so the resolver that reads
+      # uv.lock cannot change under a green run.
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          version: "0.12.13"
           enable-cache: true
       # Same bootstrap path as a fresh local clone; CI carries no second,
       # diverging install recipe.

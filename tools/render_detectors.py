@@ -5,9 +5,10 @@ Usage (from repo root):
   uv run python tools/render_detectors.py            regenerate docs/DETECTORS.md in place
   uv run python tools/render_detectors.py --check    exit 1 if docs/DETECTORS.md is stale
   uv run python tools/render_detectors.py --manifest emit config/detector-config-manifest.json
+  uv run python tools/render_detectors.py --manifest --check  exit 1 if the manifest is stale
 
 Exit codes: 0 the generated files are current, 1 --check found a stale or missing
-docs/DETECTORS.md (or the spec is unusable), 2 usage error.
+target file (or the spec is unusable), 2 usage error.
 """
 
 from __future__ import annotations
@@ -206,12 +207,11 @@ def render_manifest(detectors: list[Detector]) -> dict[str, Any]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    mode = ap.add_mutually_exclusive_group()
-    mode.add_argument(
-        "--check", action="store_true", help="exit 1 if docs/DETECTORS.md is stale or missing"
+    ap.add_argument(
+        "--check", action="store_true", help="exit 1 if the target file is stale or missing"
     )
-    mode.add_argument(
-        "--manifest", action="store_true", help="emit config/detector-config-manifest.json"
+    ap.add_argument(
+        "--manifest", action="store_true", help="target config/detector-config-manifest.json"
     )
     args = ap.parse_args()
 
@@ -224,9 +224,15 @@ def main() -> int:
         manifest = render_manifest(detectors)
         # allow_nan=False: a non-finite threshold in the spec would otherwise be
         # written as a bare Infinity/NaN literal, which no JSON reader accepts.
-        MANIFEST.write_text(
-            json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8"
-        )
+        rendered = json.dumps(manifest, indent=2, allow_nan=False) + "\n"
+        current_manifest = MANIFEST.read_text(encoding="utf-8") if MANIFEST.is_file() else ""
+        if rendered == current_manifest:
+            print(f"{MANIFEST.relative_to(ROOT)} is current")
+            return 0
+        if args.check:
+            print(f"{MANIFEST.relative_to(ROOT)} is stale; run `make detectors`", file=sys.stderr)
+            return 1
+        MANIFEST.write_text(rendered, encoding="utf-8")
         print(f"wrote {MANIFEST.relative_to(ROOT)} ({len(manifest['detectors'])} detectors)")
         return 0
 

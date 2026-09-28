@@ -56,7 +56,7 @@ bug to fix in the same change.
 ├── Makefile                   setup, docs gate, lint, tool tests (make help)
 ├── pyproject.toml             tool dependencies and black config (uv, uv.lock)
 ├── ruff.toml, mypy.ini        lint and type-check settings (make lint)
-├── .python-version            pinned interpreter minor; uv installs exactly it
+├── .python-version            pinned interpreter version; uv installs exactly it
 ├── .github/                   CI workflow, dependabot, review prompts
 ├── config/
 │   ├── server-guard.example.json     example config v1
@@ -76,7 +76,7 @@ bug to fix in the same change.
     ├── fuzz_replay_trace.py     seeded fuzzer over the replay-trace contract checker
     │                            (make test-tools)
     ├── fuzz_common.py           mutation engine shared by the three fuzzers
-    ├── guard_python.py          enforces the .python-version floor before any tool runs
+    ├── guard_python.py          enforces the .python-version pin before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
     │                            inventory design vector now; the rest fill in at Phase 4)
     └── surface_inventory/       Phase 1 Mono.Cecil metadata probe (planned)

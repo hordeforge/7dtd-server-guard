@@ -93,8 +93,8 @@ the ledger, exit criteria, and known at-risk seams live in [TODO.md](TODO.md).
 
 ## Development
 
-Bootstrap (once per clone; needs [uv](https://docs.astral.sh/uv/), which installs the
-interpreter minor pinned in [.python-version](.python-version) on its own):
+Bootstrap (once per clone; needs [uv](https://docs.astral.sh/uv/) 0.12.13, which installs
+the exact interpreter version pinned in [.python-version](.python-version) on its own):
 
 - `make setup`: `uv sync --frozen`, materializing `.venv` from `uv.lock`. Nothing is
   installed globally.

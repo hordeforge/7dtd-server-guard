@@ -5,9 +5,9 @@ is gated separately by `make check`; this file is the runnable contract.
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/). It installs the interpreter minor pinned in
-  [.python-version](.python-version) and resolves the locked dependency set, so the
-  local toolchain is the CI toolchain.
+- [uv](https://docs.astral.sh/uv/) 0.12.13, the release CI pins. It installs the exact
+  interpreter version pinned in [.python-version](.python-version) and resolves the
+  locked dependency set, so the local toolchain is the CI toolchain.
 - `make` and a POSIX shell.
 - Network access on the first run, for the uv interpreter and lockfile download.
 

@@ -8,7 +8,8 @@ Checks:
    3. TODO.md checkboxes use the canonical `- [ ]` / `- [x]` format.
    4. tools/detector_spec.yaml is well-formed and satisfies the D-07/D-15 ceiling
       rule plus the normal+violation fixture requirement per detector.
-   5. docs/DETECTORS.md matches the rendered output of render_detectors.py.
+   5. docs/DETECTORS.md and config/detector-config-manifest.json match the rendered
+      output of render_detectors.py.
    6. Every backticked detector ID token (`family.subject`) used across docs is present in
       the spec; example-config mode keys match the registry both ways and never exceed the
       spec's default mode for a detector.
@@ -56,10 +57,12 @@ import render_detectors
 Json = Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Directories that hold nothing this repo ships: version control, the local
+# environment, tool caches, and the scratch tree the workspace rules tell
+# contributors to work in. Their contents are not docs and must not fail the gate.
+SKIP_DIRS = frozenset({".git", ".venv", ".mypy_cache", ".ruff_cache", ".scratch"})
 MD_FILES = sorted(
-    p
-    for p in ROOT.rglob("*.md")
-    if ".git" not in p.parts and ".venv" not in p.parts and "third-party" not in p.parts
+    p for p in ROOT.rglob("*.md") if not (SKIP_DIRS & set(p.parts)) and "third-party" not in p.parts
 )
 # The em-dash ban covers code comments and CI files, not just prose, so the gate
 # reads every text file this repo ships.
@@ -412,8 +415,17 @@ def _run_tool(script: str, *args: str, on_failure: str) -> list[str]:
 
 
 def check_registry_sync() -> list[str]:
-    """docs/DETECTORS.md tables must match the rendered output from the spec."""
-    return _run_tool("render_detectors.py", "--check", on_failure="registry is stale")
+    """Both generated files must match a fresh render of the spec: docs/DETECTORS.md
+    and the config manifest operators copy thresholds out of."""
+    return [
+        *_run_tool("render_detectors.py", "--check", on_failure="registry is stale"),
+        *_run_tool(
+            "render_detectors.py",
+            "--manifest",
+            "--check",
+            on_failure="config manifest is stale",
+        ),
+    ]
 
 
 def _threshold_map(entries: Json) -> dict[str, Json] | None:
