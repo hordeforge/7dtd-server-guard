@@ -11,6 +11,10 @@ Usage:
   uv run python tools/evidence_check.py --dir <evidence-dir> [--index segment-index.json]
   uv run python tools/evidence_check.py --sample        verify the shipped sample chain
   uv run python tools/evidence_check.py --self-test     run negative tests (tamper, genesis)
+
+Exit codes: 0 verified, 1 the chain failed verification, 2 usage error. A
+verification report goes to stdout when clean and to stderr when it found
+issues, so a redirected run never mixes a verdict with its diagnostics.
 """
 
 from __future__ import annotations
@@ -48,6 +52,9 @@ GENESIS = "0" * SHA256_HEX_LEN
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
 SEGMENT_DIGITS = re.compile(r"(\d+)")
+
+# Segment index file name inside --dir when --index is not given.
+DEFAULT_INDEX = "segment-index.json"
 
 
 def segment_sort_key(path: pathlib.Path) -> tuple[tuple[int, int, str], ...]:
@@ -267,12 +274,17 @@ def self_test() -> list[str]:
     return errs
 
 
-def report(label: str, errs: list[str]) -> int:
-    """Print a labeled report and return the process exit code."""
-    print(f"{label}: {len(errs)} issue(s)")
-    for e in errs:
-        print("  " + e)
-    return 1 if errs else 0
+def _report(label: str, errors: list[str]) -> int:
+    """Print a labeled report and return the process exit code.
+
+    The whole report goes to one stream: stdout when clean, stderr when it found
+    issues, so a redirected run never mixes a verdict with its diagnostics.
+    """
+    stream = sys.stdout if not errors else sys.stderr
+    print(f"{label}: {len(errors)} issue(s)", file=stream)
+    for error in errors:
+        print("  " + error, file=stream)
+    return 1 if errors else 0
 
 
 def main() -> int:
@@ -284,18 +296,25 @@ def main() -> int:
     mode.add_argument("--sample", action="store_true", help="verify the shipped sample chain")
     mode.add_argument("--self-test", action="store_true", help="run negative tests and exit")
     ap.add_argument(
-        "--index", default="segment-index.json", help="segment index file name inside --dir"
+        "--index",
+        default=DEFAULT_INDEX,
+        help=f"segment index file name inside --dir (default: {DEFAULT_INDEX})",
     )
     args = ap.parse_args()
 
+    if args.index != DEFAULT_INDEX and not args.dir:
+        ap.error(
+            f"--index applies to --dir only; pass --dir or drop --index (default {DEFAULT_INDEX})"
+        )
+
     if args.self_test:
-        return report("evidence-check self-test", self_test())
+        return _report("evidence-check self-test", self_test())
     if args.sample:
-        return report("sample chain", verify_sample())
+        return _report("sample chain", verify_sample())
     if args.dir:
         if not args.dir.is_dir():
-            return report(f"evidence chain ({args.dir})", [f"{args.dir}: no such directory"])
-        return report(f"evidence chain ({args.dir})", verify_dir(args.dir, args.index))
+            return _report(f"evidence chain ({args.dir})", [f"{args.dir}: no such directory"])
+        return _report(f"evidence chain ({args.dir})", verify_dir(args.dir, args.index))
     ap.print_help()
     return 2
 

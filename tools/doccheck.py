@@ -30,7 +30,9 @@ Checks:
   14. The backup and restore path stays wired: the archive targets exist in the Makefile,
       run under test-tools, and docs/OPERATIONS.md states RPO/RTO and a restore drill.
 
-Exit code 0 when clean; 1 otherwise. Prints a summary and any failures.
+Exit code 0 when clean; 1 otherwise. The one-line summary goes to stdout and the
+per-check failure detail to stderr, so a redirected run keeps the verdict on one
+stream and the diagnostics on the other.
 """
 
 from __future__ import annotations
@@ -867,11 +869,11 @@ def main() -> int:
     )
     for name, items in failures.items():
         if items:
-            print(f"\n[{name}]")
+            print(f"\n[{name}]", file=sys.stderr)
             for item in items[:MAX_REPORTED]:
-                print("  " + item)
+                print("  " + item, file=sys.stderr)
             if len(items) > MAX_REPORTED:
-                print(f"  ... and {len(items) - MAX_REPORTED} more")
+                print(f"  ... and {len(items) - MAX_REPORTED} more", file=sys.stderr)
     return 1 if total else 0
 
 

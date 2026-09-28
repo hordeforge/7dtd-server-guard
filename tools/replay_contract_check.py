@@ -1,4 +1,9 @@
-"""Exercise design-time replay contracts before the Phase 4 replay harness exists."""
+"""Exercise design-time replay contracts before the Phase 4 replay harness exists.
+
+Exit codes: 0 the vector satisfies the contract, 1 the contract failed or a
+fixture could not be read, 2 usage error. The summary goes to stdout and
+contract failures to stderr.
+"""
 
 from __future__ import annotations
 
@@ -250,7 +255,7 @@ def main() -> int:
     errors = contract_errors(trace, detector_ids)
     if errors:
         for error in errors:
-            print(f"replay-contract: {error}")
+            print(f"replay-contract: {error}", file=sys.stderr)
         return 1
     cases = trace["cases"]
     total_events = sum(len(case["events"]) for case in cases)

@@ -66,12 +66,12 @@ test-tools: guard-python
 # way to re-run a seed a failure reported. A failing seed replays exactly.
 # Usage: make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]
 fuzz: guard-python
-	@test -n "$(FUZZ)" || { echo "usage: make fuzz FUZZ=<$(subst $(space),|,$(FUZZERS))> [ITERATIONS=N] [SEED=S]"; exit 2; }
+	@test -n "$(FUZZ)" || { echo "usage: make fuzz FUZZ=<$(subst $(space),|,$(FUZZERS))> [ITERATIONS=N] [SEED=S]" >&2; exit 2; }
 	@case " $(FUZZERS) " in \
 	  *" $(FUZZ) "*) ;; \
-	  *) echo "unknown fuzzer '$(FUZZ)'; expected one of: $(FUZZERS)"; exit 2 ;; \
+	  *) echo "unknown fuzzer '$(FUZZ)'; expected one of: $(FUZZERS)" >&2; exit 2 ;; \
 	esac
-	$(UV) python tools/fuzz_$(FUZZ).py --iterations $(ITERATIONS) --seed $(SEED)
+	$(UV) python tools/fuzz_$(FUZZ).py --iterations "$(ITERATIONS)" --seed "$(SEED)"
 
 # CI entry point: everything CI runs, runnable locally as one step.
 # C# build + test layers 1-4 are added here in Phase 2 (TODO.md).
@@ -80,8 +80,8 @@ ci: lint check exercise test-tools
 # Verify an evidence directory's hash chain (append-only segments).
 # Usage: make verify-evidence DIR=/path/to/evidence
 verify-evidence:
-	@test -n "$(DIR)" || { echo "usage: make verify-evidence DIR=/path/to/evidence"; exit 2; }
-	$(UV) python tools/evidence_check.py --dir $(DIR)
+	@test -n "$(DIR)" || { echo "usage: make verify-evidence DIR=/path/to/evidence" >&2; exit 2; }
+	$(UV) python tools/evidence_check.py --dir "$(DIR)"
 
 # Archive an evidence directory: the chain is verified before and after the copy,
 # and a manifest of per-file sha256 is written beside it.

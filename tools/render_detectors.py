@@ -5,6 +5,9 @@ Usage (from repo root):
   uv run python tools/render_detectors.py            regenerate docs/DETECTORS.md in place
   uv run python tools/render_detectors.py --check    exit 1 if docs/DETECTORS.md is stale
   uv run python tools/render_detectors.py --manifest emit config/detector-config-manifest.json
+
+Exit codes: 0 the generated files are current, 1 --check found a stale or missing
+docs/DETECTORS.md (or the spec is unusable), 2 usage error.
 """
 
 from __future__ import annotations
@@ -192,7 +195,9 @@ def render_manifest(detectors: list[Detector]) -> dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--check", action="store_true", help="exit 1 if docs/DETECTORS.md is stale")
+    mode.add_argument(
+        "--check", action="store_true", help="exit 1 if docs/DETECTORS.md is stale or missing"
+    )
     mode.add_argument(
         "--manifest", action="store_true", help="emit config/detector-config-manifest.json"
     )
@@ -206,10 +211,11 @@ def main() -> int:
         return 0
 
     fresh = render_registry(detectors)
-    current = REGISTRY.read_text(encoding="utf-8")
+    current = REGISTRY.read_text(encoding="utf-8") if REGISTRY.exists() else None
     if fresh != current:
         if args.check:
-            print("docs/DETECTORS.md is stale; run `make detectors`", file=sys.stderr)
+            state = "stale" if current is not None else "missing"
+            print(f"docs/DETECTORS.md is {state}; run `make detectors`", file=sys.stderr)
             return 1
         REGISTRY.write_text(fresh, encoding="utf-8")
         print(f"regenerated {REGISTRY.relative_to(ROOT)}")

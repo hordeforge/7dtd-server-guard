@@ -24,6 +24,10 @@ Deterministic (seeded PRNG), stdlib only, no external fuzzer required.
 
 Usage:
   uv run python tools/fuzz_schema_validate.py [--iterations N] [--seed S]
+
+Exit codes: 0 every invariant held, 1 an invariant broke, 2 usage error. The
+replay of a reported failure is `uv run python tools/fuzz_schema_validate.py
+--seed <seed>`; the failure and its input go to stderr.
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
-from fuzz_common import InvariantBroken, Mutator, nested
+from fuzz_common import InvariantBroken, Mutator, add_fuzz_args, fuzz_args, nested
 
 # Schemas and instances are arbitrary JSON by construction here: the harness
 # exists to feed the validator documents no static type would admit.
@@ -231,9 +235,8 @@ def check_personal_data_denylist() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--iterations", type=int, default=1500)
-    ap.add_argument("--seed", type=int, default=0x5EED)
-    args = ap.parse_args()
+    add_fuzz_args(ap, default_iterations=1500)
+    args = fuzz_args(ap)
     rng = random.Random(args.seed)
     mut = Mutator(rng)
 

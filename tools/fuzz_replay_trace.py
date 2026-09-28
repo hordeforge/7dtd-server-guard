@@ -19,6 +19,10 @@ Deterministic (seeded PRNG), stdlib only, no external fuzzer required.
 
 Usage:
   uv run python tools/fuzz_replay_trace.py [--iterations N] [--seed S]
+
+Exit codes: 0 every invariant held, 1 an invariant broke, 2 usage error. The
+replay of a reported failure is `uv run python tools/fuzz_replay_trace.py
+--seed <seed>`; the failure and its input go to stderr.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import replay_contract_check as rcc
-from fuzz_common import InvariantBroken, Mutator, nested
+from fuzz_common import InvariantBroken, Mutator, add_fuzz_args, fuzz_args, nested
 
 DETECTOR_IDS = {"inventory.stack"}
 
@@ -59,9 +63,8 @@ def check(trace: object, where: str) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--iterations", type=int, default=2000)
-    ap.add_argument("--seed", type=int, default=0x5EED)
-    args = ap.parse_args()
+    add_fuzz_args(ap, default_iterations=2000)
+    args = fuzz_args(ap)
     rng = random.Random(args.seed)
     mut = Mutator(rng, weird_strings=DOMAIN_STRINGS, max_depth=4)
 

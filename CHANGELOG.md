@@ -42,6 +42,25 @@ this file and are described only by their git tags.
 
 ### Fixed
 
+- The shipped inventory stack trace carried a `determinism.fingerprint` that did not
+  match the outcome projection the checker recomputes, so `make check` and
+  `make exercise` failed on a clean tree. The digest is now the projection's.
+- `doccheck.py`, `evidence_check.py`, and `replay_contract_check.py` printed
+  failure detail on stdout, where a script reading the verdict also reads the
+  diagnostics. A failing run now reports on stderr and a clean one on stdout, which
+  is what `render_detectors.py` and the fuzzers already did.
+- `evidence_check.py` reported a missing `--dir` as a verification failure (exit 1)
+  and silently ignored `--index` without `--dir`; both are usage errors now (exit 2),
+  as is a bare invocation, which prints its help to stderr.
+- `render_detectors.py --check` raised a traceback when `docs/DETECTORS.md` was
+  absent; it now reports the registry as missing.
+- `--iterations` and `--seed` had no help text and accepted `0` or a negative count,
+  which reported a clean run having tested nothing. Every harness rejects a count
+  below 1, and the three fuzzers share one flag definition so the help, defaults,
+  and validation cannot drift apart.
+- `make fuzz` and `make verify-evidence` passed operator-supplied paths unquoted, so
+  an evidence directory containing a space split into two arguments, and their usage
+  errors printed to stdout.
 - `fuzz_replay_trace.py` built its deep-nesting probe from a mutated trace and then
   indexed `cases[0]["events"][0]`, so a mutant that dropped or replaced either crashed
   the harness with a bare `TypeError`. The probe now copies the pristine sample. The

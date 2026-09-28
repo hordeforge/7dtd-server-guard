@@ -42,3 +42,17 @@
   TEST_PLAN.md layers 4 and 7. The inventory stack design vector exists under `traces/`
   and is exercised by `make exercise`; the full corpus and replay harness remain Phase 4
   work, as do `regression/` (Phase 7/9) and `generators/`.
+
+## Command-line contract
+
+Every tool here is an entry point, so all of them follow the same rules:
+
+- Exit 0 when the check passed, 1 when it failed, 2 for a usage error (an unknown
+  flag, a missing argument, a path that does not exist). `make` targets that only
+  forward arguments exit 2 with the same meaning.
+- A clean run prints its one-line summary to stdout. A run that found something
+  prints the report to stderr and leaves stdout empty, so `tool > report.txt`
+  records the verdict and the diagnostics stay on the terminal.
+- `--help` documents every flag, including the fuzzer `--iterations` and `--seed`
+  defaults, and each tool's module docstring carries its exit codes and the exact
+  command to replay a reported fuzz failure.

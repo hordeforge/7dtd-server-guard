@@ -20,6 +20,10 @@ Deterministic (seeded PRNG), stdlib only, no external fuzzer required.
 
 Usage:
   uv run python tools/fuzz_evidence_check.py [--iterations N] [--seed S]
+
+Exit codes: 0 every invariant held, 1 an invariant broke, 2 usage error. The
+replay of a reported failure is `uv run python tools/fuzz_evidence_check.py
+--seed <seed>`; the failure and its input go to stderr.
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
-from fuzz_common import InvariantBroken, Mutator, weighted_choice
+from fuzz_common import InvariantBroken, Mutator, add_fuzz_args, fuzz_args, weighted_choice
 
 SAMPLE = ec.ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
 # Temporary segments go to the repo's gitignored scratch dir, not the system temp
@@ -183,9 +187,8 @@ def check_clean_chain_pair(tmp: pathlib.Path) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--iterations", type=int, default=2000)
-    ap.add_argument("--seed", type=int, default=0x5EED)
-    args = ap.parse_args()
+    add_fuzz_args(ap, default_iterations=2000)
+    args = fuzz_args(ap)
     rng = random.Random(args.seed)
     mut = Mutator(rng, max_depth=1)  # record-level surgery, values replaced whole
     seeds = seed_records()

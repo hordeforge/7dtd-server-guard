@@ -11,9 +11,40 @@ corpus rather than what the mutators emit.
 
 from __future__ import annotations
 
+import argparse
 import random
 import string
 from typing import Any
+
+# Default PRNG seed shared by every harness, so one invocation reproduces another.
+# The Makefile passes it in decimal; these are the values the harnesses use when run directly.
+DEFAULT_SEED = 0x5EED
+
+
+def add_fuzz_args(ap: argparse.ArgumentParser, *, default_iterations: int) -> None:
+    """Attach the --iterations/--seed flags every harness shares, so their help and
+    validation cannot drift apart. Each harness keeps its own full-run budget."""
+    ap.add_argument(
+        "--iterations",
+        type=int,
+        default=default_iterations,
+        help=f"mutations per target (default: {default_iterations})",
+    )
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help=f"PRNG seed; a reported failure replays exactly (default: {DEFAULT_SEED}, 0x5EED)",
+    )
+
+
+def fuzz_args(ap: argparse.ArgumentParser) -> argparse.Namespace:
+    """Parse the harness arguments, rejecting a run that would assert nothing."""
+    args = ap.parse_args()
+    if args.iterations < 1:
+        ap.error("--iterations must be 1 or more; a run of zero tests proves nothing")
+    return args
+
 
 WEIRD_STRINGS = [
     "",
