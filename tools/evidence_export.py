@@ -453,20 +453,29 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _read_member(archive: pathlib.Path, name: str) -> tuple[str, int, int | None] | str:
+def _read_member(
+    members: dict[str, pathlib.Path], name: str, records: int | None
+) -> tuple[str, int, int | None] | str:
     """(sha256, bytes, records) for a named member, or the message naming why not.
 
     A restore drill runs against whatever survived the disk, so a member the
     filesystem refuses to read, or one the server wrote with a truncated multi-byte
     sequence, is an answer the report carries. A traceback out of the verifier names
     no file and leaves every other entry unchecked.
+
+    `members` is the archive's own listing, taken once, and `records` the count the
+    chain walk already computed for a segment; a member the walk did not reach is
+    counted here, since its own number is the one that answers for it.
     """
     try:
-        path = ec.exact_child(archive, name)
+        path = members.get(name)
         if path is None or not path.is_file():
             return f"{name}: listed in the manifest but missing from the archive"
         sha, size = file_digest(path)
-        records = _record_count(path) if path.suffix == ".jsonl" else None
+        if path.suffix != ".jsonl":
+            records = None
+        elif records is None:
+            records = _record_count(path)
     except (OSError, UnicodeDecodeError) as exc:
         return f"{name}: unreadable: {exc}"
     return sha, size, records
@@ -485,12 +494,14 @@ def _entry_name(entry: object) -> str | None:
     return name if isinstance(name, str) and ec.valid_file_name(name) else None
 
 
-def _member_errors(archive: pathlib.Path, entry: object) -> list[str]:
+def _member_errors(
+    members: dict[str, pathlib.Path], counts: dict[str, int], entry: object
+) -> list[str]:
     """What one manifest file entry claims about its file, against the bytes on disk."""
     name = _entry_name(entry)
     if name is None or not isinstance(entry, dict):
         return [f"{MANIFEST_NAME}: malformed file entry"]
-    read = _read_member(archive, name)
+    read = _read_member(members, name, counts.get(name))
     if isinstance(read, str):
         return [read]
     sha, size, records = read
@@ -550,6 +561,14 @@ def verify(archive: pathlib.Path) -> list[str]:
     entries = manifest["files"]
     index_name = manifest.get("indexFile") or DEFAULT_INDEX_NAME
 
+    # The chain walk runs first so the record counts it computes are available to
+    # the per-member checks below; its findings are appended last, in the order
+    # they were reported before. The archive's own listing is taken once and
+    # looked up per member: re-listing the directory for every entry made the cost
+    # of verifying an archive quadratic in its member count.
+    chain_errors, counts = ec.verify_dir_with_counts(archive, index_name)
+    members = ec.child_map(archive)
+
     errs: list[str] = []
     listed: set[str] = set()
     for entry in entries:
@@ -561,7 +580,7 @@ def verify(archive: pathlib.Path) -> list[str]:
             errs.append(f"{MANIFEST_NAME}: file entry for {name} has no integer byte count")
             listed.add(name)
             continue
-        errs += _member_errors(archive, entry)
+        errs += _member_errors(members, counts, entry)
         if isinstance(entry, dict) and isinstance(entry.get("name"), str):
             listed.add(entry["name"])
     present = archive_file_names(archive)
@@ -572,7 +591,7 @@ def verify(archive: pathlib.Path) -> list[str]:
     for field in ("bytes", "records"):
         if _entry_total(entries, field) != manifest.get(f"total{field.capitalize()}"):
             errs.append(f"total{field.capitalize()} does not match the sum of its file entries")
-    errs += [f"chain: {e}" for e in ec.verify_dir(archive, index_name)]
+    errs += [f"chain: {e}" for e in chain_errors]
     return errs
 
 

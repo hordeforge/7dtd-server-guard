@@ -160,19 +160,30 @@ def valid_file_name(name: object) -> bool:
     )
 
 
-def exact_child(directory: pathlib.Path, name: str) -> pathlib.Path | None:
-    """The entry of `directory` whose name is exactly `name`, or None.
+def child_map(directory: pathlib.Path) -> dict[str, pathlib.Path]:
+    """Every entry of `directory`, keyed by its exact name.
 
     A case-insensitive filesystem (NTFS, APFS, or ext4 mounted casefold) resolves
     "Segment-Index.json" to "segment-index.json", so joining a name from a
-    manifest and opening it succeeds there and fails on a case-sensitive host. The
-    name is matched against the directory's own entries instead, so a manifest
+    manifest and opening it succeeds there and fails on a case-sensitive host.
+    Names are matched against the directory's own entries instead, so a manifest
     that does not name the archived bytes exactly is reported on every host.
+
+    The listing is taken once and looked up by name: a caller resolving every
+    member of an archive re-listed the same directory once per member, and the
+    cost of that was quadratic in the member count on a directory with more than
+    a few hundred entries.
     """
-    for entry in directory.iterdir():
-        if entry.name == name:
-            return entry
-    return None
+    return {entry.name: entry for entry in directory.iterdir()}
+
+
+def exact_child(directory: pathlib.Path, name: str) -> pathlib.Path | None:
+    """The entry of `directory` whose name is exactly `name`, or None.
+
+    One name at a time; a caller resolving a whole directory's worth of names
+    takes the listing once with child_map instead.
+    """
+    return child_map(directory).get(name)
 
 
 def _reject_non_finite(token: str) -> float:
@@ -360,14 +371,32 @@ def _index_errors(
 
 
 def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
+    return verify_dir_with_counts(evidence_dir, index_name)[0]
+
+
+def verify_dir_with_counts(
+    evidence_dir: pathlib.Path, index_name: str
+) -> tuple[list[str], dict[str, int]]:
+    """The findings for a directory, and the records each walked segment holds.
+
+    The counts are what the archive manifest attests to, and the chain walk
+    already knows them: a caller that needed both used to read every segment a
+    second time to count its records. A segment that failed to parse is absent
+    from the map rather than carrying the partial count of the lines read before
+    the bad one, so a caller falls back to its own count instead of being told a
+    truncated segment is complete.
+    """
     # The index name is joined onto the evidence directory below, and a name that
     # is absolute or walks up with `..` resolves outside it: the verifier would
     # then read, or archive, a file that is not part of this evidence stream.
     if not valid_file_name(index_name):
-        return [f"--index {index_name!r} is not a plain file name inside the evidence directory"]
+        return (
+            [f"--index {index_name!r} is not a plain file name inside the evidence directory"],
+            {},
+        )
     segments = sorted(evidence_dir.glob(SEGMENT_GLOB), key=segment_sort_key)
     if not segments:
-        return [f"no {SEGMENT_GLOB} segments found in {evidence_dir}"]
+        return [f"no {SEGMENT_GLOB} segments found in {evidence_dir}"], {}
     # The index name is matched against the directory's own entries, not joined
     # onto it: on a case-insensitive host a joined name opens a differently
     # spelled file, and the cross-check below would then compare a spelling no
@@ -378,6 +407,7 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
     # The eventId window spans segments, so a repeat is caught whether it lands in
     # one segment or two.
     seen = RecentEventIds()
+    counts: dict[str, int] = {}
     # Last record hash of the segment before the current one, and the name of a
     # segment that yielded no usable records. A segment that failed to load or is
     # empty carries no hash to link to, so the next segment's link is unverifiable
@@ -395,6 +425,7 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
         if chain is None:
             prev_last_hash, prev_unlinked = None, seg.name
             continue
+        counts[seg.name] = chain.record_count
         if chain.record_count == 0:
             errs.append(f"{seg.name}: empty segment")
             prev_last_hash, prev_unlinked = None, seg.name
@@ -416,7 +447,7 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
         prev_last_hash, prev_unlinked = chain.last_hash, None
 
     errs += _index_errors(index, segments, index_name)
-    return errs
+    return errs, counts
 
 
 def verify_sample() -> list[str]:

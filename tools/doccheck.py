@@ -383,6 +383,7 @@ def heading_slugs(text: str) -> set[str]:
 def check_links() -> list[str]:
     out = []
     dir_names: dict[pathlib.Path, frozenset[str]] = {}
+    slugs: dict[pathlib.Path, set[str]] = {}
     for p in MD_FILES:
         text = p.read_text(encoding="utf-8")
         for m in LINK_RE.finditer(text):
@@ -403,7 +404,16 @@ def check_links() -> list[str]:
             base = p.parent / path_part if path_part else p
             if base.suffix != ".md" or not base.is_file():
                 continue
-            if unquote(anchor) not in heading_slugs(base.read_text(encoding="utf-8")):
+            # Headings are read once per file, not once per link into it: a doc
+            # set whose links all carry anchors re-read and re-parsed the same
+            # targets for every link, and the anchors of one file are the same
+            # answer every time. The cache lives as long as this call, which is
+            # the window in which nothing writes to the tree.
+            anchors = slugs.get(base)
+            if anchors is None:
+                anchors = heading_slugs(base.read_text(encoding="utf-8"))
+                slugs[base] = anchors
+            if unquote(anchor) not in anchors:
                 out.append(f"{p.relative_to(ROOT)}: no heading matches the anchor -> {target}")
     return out
 
