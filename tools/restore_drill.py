@@ -388,6 +388,22 @@ def drill(request: DrillRequest) -> tuple[list[str], str]:
     # the default index, which the chain verifier treats as absent.
     archived_index = manifest.get("indexFile")
     index_name = archived_index if isinstance(archived_index, str) else ec.DEFAULT_INDEX
+    # The config is read before the restore, not after: a file that is not a
+    # config object is a shape error the check names, and a shape error found
+    # after the copy landed would leave `work` populated, so the re-run the
+    # staging contract promises would refuse on the leftovers of the run that
+    # found it. The same two checks still run after the readback, because the
+    # hashes and the restored path are theirs to read.
+    loaded: Record | None = None
+    if config_path is not None:
+        loaded, load_error = cc.load(config_path)
+        if loaded is None:
+            return [f"{config_path}: {load_error or 'unreadable'}"], ""
+        if not isinstance(loaded, dict):
+            return (
+                [f"{config_path}: config must be a JSON object, got {type(loaded).__name__}"],
+                "",
+            )
     errs += restore(archive, work, index_name)
     if errs:
         return errs, ""
@@ -395,14 +411,10 @@ def drill(request: DrillRequest) -> tuple[list[str], str]:
         work, archived_index if isinstance(archived_index, str) else ""
     )
     errs += chain_errs
-    if config_path is not None:
-        loaded, load_error = cc.load(config_path)
-        if loaded is None:
-            errs.append(f"{config_path}: {load_error or 'unreadable'}")
-        else:
-            errs += config_match_errors(loaded, hashes, config_path)
-            root = request.runtime_root or config_path.resolve().parent
-            errs += secrets_errors(loaded, root, request.max_age_hours, request.now or _now())
+    if config_path is not None and loaded is not None:
+        errs += config_match_errors(loaded, hashes, config_path)
+        root = request.runtime_root or config_path.resolve().parent
+        errs += secrets_errors(loaded, root, request.max_age_hours, request.now or _now())
     elif summary:
         # The summary is what a drill record is written from, so an unrun
         # cross-check says so there rather than leaving the record to imply one.
