@@ -1,11 +1,10 @@
 # Research and constraints
 
-Research date: 2026-07-21. Locally installed dedicated server: V3.2.0 (b9), Unity Mono. The
-build the mod pins and hooks against is still V3.1.0 (b14)
-([POLICY.md](POLICY.md) -> Supported build, D-01), so the V3.2.0 delta is open work, not a
-supported target. The `7dtd-engine-research` narratives under Local
-evidence now include **V3.1.0** regenerable dumps (`il/netpackages-v3.1.0/`,
-`il/dedi-complete-v3.1.0/`, `il/deep-v3.1.0/`, `il/loop-complete-v3.1.0/`); older narrative
+Research date: 2026-07-21. Local target: 7 Days to Die dedicated V3.2.0 (b9), Unity Mono
+(the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research` narratives under Local
+evidence now include **V3.2.0** regenerable dumps (`il/netpackages-v3.2.0/`,
+`il/dedi-complete-v3.2.0/`, `il/deep-v3.2.0/`, `il/loop-complete-v3.2.0/`) and the
+**V3.1.0** set (`il/netpackages-v3.1.0/` and siblings); older narrative
 text was produced against V3.0.1 (b4). Phase 1 still re-verifies every surface against the
 pinned build before any hook is written, but the build delta risk is partially de-risked.
 
@@ -30,7 +29,7 @@ pinned build before any hook is written, but the build delta risk is partially d
 8. The V3 protocol includes authoritative processing surfaces for movement, damage, inventory,
    transaction, wire, teleport, player, and entity packages. Exact hook viability must be verified
    from metadata and smoke tests for every supported game build.
-9. The V3.1.0 netpackage census (193 types, `il/netpackages-v3.1.0/INDEX.md`) names the seams:
+9. The V3.2.0 netpackage census (195 types, `il/netpackages-v3.2.0/INDEX.md`) names the seams:
    `NetPackageDamageEntity` and `NetPackageRangeCheckDamageEntity` are the two damage paths;
    `NetPackageEntityPosAndRot`/`RelPosAndRot`/`EntityPhysics`/`PlayerStats` carry movement;
    `NetPackageEntityTeleport` (client) vs `NetPackageTeleportPlayer` (server) split the
@@ -40,7 +39,10 @@ pinned build before any hook is written, but the build delta risk is partially d
    client-pushed progression seams; `NetPackageConsoleCmdClient/Server` are the console
    seams; `NetPackageSetBlock`, `NetPackageWireActions`, `NetPackageExplosionInitiate`, and
    `NetPackageRequestToSpawnEntity` are the world/entity seams. Every detector's declared
-   seam in `tools/detector_spec.yaml` cites these candidates; Phase 1 verifies them.
+   seam in `tools/detector_spec.yaml` cites these candidates; Phase 1 verifies them. The
+   census delta from V3.1.0 (193 types) to V3.2.0 adds `NetPackagePOIMetadataRequest`,
+   `NetPackagePOIMetadataResponse`, and `NetPackageConfirmSpawnEntity`, and drops
+   `NetPackagePOIAround`; every other named seam is present in both.
 
 ## Where findings landed
 
@@ -57,7 +59,7 @@ updates the owning document, not just this one:
 | 6 (ModEvents surface) | ARCHITECTURE.md → Hook policy |
 | 7 (EAC types) | THREAT_MODEL.md → Out of scope; SECURITY.md → Out of scope |
 | 8 (authoritative processing surfaces) | TODO.md → Phase 1; TEST_PLAN.md → Layer 3 |
-| 9 (V3.1.0 census names the seams) | DETECTORS.md → seam fields; tools/detector_spec.yaml; TODO.md → Phase 1 |
+| 9 (V3.2.0 census names the seams) | DETECTORS.md → seam fields; tools/detector_spec.yaml; TODO.md → Phase 1 |
 
 ## Community landscape (surveyed 2026-07-21)
 
@@ -99,7 +101,7 @@ inventory against the pinned build, unless noted otherwise.
 
 | Question | If unresolved | Resolved by |
 |---|---|---|
-| Is there a craft/recipe/workstation-queue seam the server can hook? | Craft detector degrades to unexplained-delta (Strong). The V3.1.0 census shows no craft package; whether `NetPackageInventoryTransactionRequest` covers craft transactions is the Phase 1 question | Phase 1, Phase 7 |
+| Is there a craft/recipe/workstation-queue seam the server can hook? | Craft detector degrades to unexplained-delta (Strong). The V3.2.0 census shows no craft package; whether `NetPackageInventoryTransactionRequest` covers craft transactions is the Phase 1 question | Phase 1, Phase 7 |
 | Is there an authoritative trader price/currency decision point? | Trader detector degrades to unexplained-delta (Strong). The census shows `NetPackageTraderData` sync only, no price/currency transaction package | Phase 1, Phase 7 |
 | Which client values does the vanilla server already validate or overwrite? | Duplicate validation, wrong authority class | Phase 1 |
 | Does the movement envelope hold against server-authoritative state on the pinned build? | Movement stays Strong, never Hard | Phase 1, Phase 5 |
@@ -120,7 +122,7 @@ inventory against the pinned build, unless noted otherwise.
 
 ## Local evidence
 
-- `../../7dtd-engine-research/il/netpackages-v3.1.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
+- `../../7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`: V3.2.0 netpackage census (195 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
 - `../../7dtd-engine-research/docs/loop/managers.md`: `ModEvents` inventory.
 - `../../7dtd-engine-research/docs/inventories/netpackages.md`: network package inventory and complexity.
 - `../../7dtd-engine-research/docs/network/protocol-frames.md`: decoded movement and damage frame structure.

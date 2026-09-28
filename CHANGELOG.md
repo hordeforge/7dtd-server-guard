@@ -31,6 +31,15 @@ this file and are described only by their git tags.
   schema, and POLICY.md. The installed build and the supported pin are now
   stated separately, and RESEARCH cites the V3.1.0 census path it actually
   names.
+- The V3.2.0 (b9) pin from 0.4.0 now reaches the whole design contract: `docs/POLICY.md`,
+  `docs/ARCHITECTURE.md`, `docs/SCHEMAS.md`, `docs/TEST_PLAN.md`, `docs/RESEARCH.md`,
+  `docs/METHODOLOGY.md`, `SECURITY.md`, `TODO.md`, the config v1 default, the config and
+  evidence samples, and the replay fixture all still named V3.1.0 (b14).
+- `docs/DECISIONS.md` records the re-pin as D-18 and marks D-01's build pin superseded; the
+  one-build fail-open rule is unchanged.
+- The seam map cites the V3.2.0 netpackage census (195 types) instead of the V3.1.0 census
+  (193 types), and `world.budget` no longer names `NetPackagePOIAround`, which the V3.2.0
+  census does not contain.
 
 ## [0.4.1] - 2026-09-20
 

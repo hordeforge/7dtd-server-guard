@@ -39,7 +39,7 @@ phase if Phase 1 finds no authoritative seam; the detector registry records the 
 - [x] Define observe, correct, quarantine, kick, review, and ban boundaries (`docs/POLICY.md`, mode ladder vs action set).
 - [x] Choose license (AGPL-3.0, `LICENSE`), disclosure policy (`SECURITY.md`), maintainer, security contact, and appeal owner (all maci / maci.stgn@gmail.com; see `docs/POLICY.md` roles table).
 - [x] Write player-facing privacy/monitoring notice and retention schedule (`PRIVACY.md`).
-- [x] Decide supported server builds; initially pin V3.1.0 (b14) only (`docs/POLICY.md`).
+- [x] Decide supported server builds; pin exactly one build at a time (currently V3.2.0 (b9), re-pinned from V3.1.0 (b14); `docs/POLICY.md`, DECISIONS.md D-18).
 - [x] Define severity vocabulary, evidence confidence, and operator override semantics (`docs/POLICY.md`).
 - [ ] Exit: policy reviewed before any enforcement code is written. (Docs drafted; human review pending.)
 
@@ -212,7 +212,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 Consolidated from the detector spec and the phases above; revisit each when new
 evidence lands:
 
-- **Craft transactions:** the V3.1.0 census confirms no craft/recipe/workstation-queue
+- **Craft transactions:** the V3.2.0 census confirms no craft/recipe/workstation-queue
   package; backpack crafting looks client-local and workstations sync as opaque tile-entity
   blobs. `NetPackageInventoryTransactionRequest` is a transaction package whose coverage
   (container moves, craft completion, trader purchase) is the Phase 1 question. Expected to
@@ -221,14 +221,15 @@ evidence lands:
   transaction package; purchases look like client-side inventory edits against synced trader
   state. Verify in Phase 1 or defer like craft.
 - **Second damage path:** `NetPackageDamageEntity` (the primary damage request) and
-  `NetPackageRangeCheckDamageEntity` are both in the V3.1.0 census and must be hooked
+  `NetPackageRangeCheckDamageEntity` are both in the V3.2.0 census and must be hooked
   together; a validator on one path only protects nothing (Phase 6).
 - **Vehicle envelopes:** physics-master vehicles are client-simulated; reconstructed
   terrain-aware limits stay Weak until validated, then Strong (DETECTORS.md -> Movement).
 - **Loadgen coverage:** the `7dtd-loadgen` golden set covers only movement, damage, and login;
   Phase 7 must extend it to container, trader, and craft traffic or the ledger phase cannot be
   exercised (Phase 7).
-- **Build delta:** older narratives were inventoried against V3.0.1 (b4); V3.1.0 regenerable
-  dumps (`il/netpackages-v3.1.0/`, `il/dedi-complete-v3.1.0/`) now exist, partially
-  de-risking the delta, but Phase 1 still re-verifies the pinned V3.1.0 (b14) before any
+- **Build delta:** older narratives were inventoried against V3.0.1 (b4) and V3.1.0 (b14);
+  regenerable dumps for both and for the pinned V3.2.0 (b9) exist
+  (`il/netpackages-v3.2.0/`, `il/dedi-complete-v3.2.0/`), partially
+  de-risking the delta, but Phase 1 still re-verifies the pinned V3.2.0 (b9) before any
   hook is written.

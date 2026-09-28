@@ -159,10 +159,10 @@ for a mode raise until its declared fixture set is green in observe mode.
 | `availability.cost` | X | X | X |  |  |  |  |  |
 | `availability.churn` | X | X |  | X |  |  |  |  |
 
-## Seam map (V3.1.0 census candidates)
+## Seam map (V3.2.0 census candidates)
 
-Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.1.0/INDEX.md`
-(193 types) and the protocol narratives; every seam is verified in Phase 1 before
+Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`
+(195 types) and the protocol narratives; every seam is verified in Phase 1 before
 a hook is written. Declared per detector in `tools/detector_spec.yaml`.
 
 | Detector | Candidate seam |
@@ -194,7 +194,7 @@ a hook is written. Declared per detector in `tools/detector_spec.yaml`.
 | `progression.health_stamina` | NetPackageEntityStatChanged, NetPackageEntityStatsBuff, NetPackageGameStats |
 | `inventory.delta` | NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag |
 | `inventory.stack` | NetPackageInventoryTransactionRequest, NetPackagePlayerInventory |
-| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.1.0 census) |
+| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.2.0 census) |
 | `inventory.replay` | NetPackageInventoryTransactionRequest (transaction idempotency) |
 | `inventory.container_race` | NetPackageInventoryTransactionRequest (atomic slot check) |
 | `inventory.quality` | NetPackageInventoryTransactionRequest, NetPackagePlayerInventory |
@@ -205,7 +205,7 @@ a hook is written. Declared per detector in `tools/detector_spec.yaml`.
 | `world.wire` | NetPackageWireActions, NetPackageWireToolActions |
 | `world.entity_spawn` | NetPackageRequestToSpawnEntity, NetPackageEntitySpawn/Response, NetPackageQuestEntitySpawn |
 | `world.explosion` | NetPackageExplosionInitiate, NetPackageExplosionClient |
-| `world.budget` | NetPackageMapChunks, NetPackagePOIAround, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes) |
+| `world.budget` | NetPackageMapChunks, NetPackagePOIMetadataRequest, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes) |
 | `availability.cost` | package decode counters across all census types |
 | `availability.churn` | NetPackagePlayerLogin, NetPackageRequestToEnterGame |
 

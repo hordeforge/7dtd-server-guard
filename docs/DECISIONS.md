@@ -11,8 +11,9 @@ see note).
 
 ## D-01: Pin one game build and fail open
 
-- **Status:** accepted.
-- **Decision:** Target exactly 7 Days to Die dedicated V3.1.0 (b14), Unity Mono. Every
+- **Status:** accepted; the one-build fail-open rule binds, its build pin is superseded by
+  D-18 (V3.2.0 (b9)).
+- **Decision:** Target exactly one 7 Days to Die dedicated build at a time, Unity Mono. Every
   Harmony hook resolves exact type, full signature, parameter roles, return type, and
   metadata token against that build and self-disables on mismatch. Other builds load in
   observe-only.
@@ -230,6 +231,23 @@ see note).
 - **Consequence:** TEST_PLAN.md Layer 4, SCHEMAS.md, and the fixture layout use replay-trace v1.
   `make exercise` checks a synthetic `inventory.stack` normal/violation vector while clearly
   leaving the live hook and detector unimplemented.
+
+## D-18: Re-pin the supported build to V3.2.0 (b9)
+
+- **Status:** accepted. Supersedes the build pin in D-01; D-01's one-build fail-open rule is
+  unchanged.
+- **Decision:** The pinned build is 7 Days to Die dedicated V3.2.0 (b9), Unity Mono, the build
+  installed locally. `buildPin.buildId` defaults to `3.2.0-b9` (SCHEMAS.md, config v1), and
+  the Phase 1 surface inventory, hook manifest, and metadata tests verify against it.
+- **Alternatives:** Stay on V3.1.0 (b14) (rejected: it is not the build the project runs, so
+  every recorded seam and manifest would describe a server nobody deploys); ship a
+  multi-build matrix now (rejected: D-01's reasoning still holds and Phase 10 still owes the
+  compatibility table).
+- **Consequence:** RESEARCH.md -> Local evidence points at the V3.2.0 netpackage census
+  (195 types) as the seam source for `tools/detector_spec.yaml`; `NetPackagePOIAround` is gone
+  from that census, so the `world.budget` fan-out seam cites `NetPackagePOIMetadataRequest`
+  instead. The V3.0.1 and V3.1.0 narratives stay as historical evidence; the V3.1.0 dumps
+  remain valid for deltas the V3.2.0 dump does not cover.
 
 ## Decision process
 

@@ -32,7 +32,7 @@ against it, and the strict loader in Phase 2 is generated from the same schema.
 | `schemaVersion` | int | 1 | exactly 1 | Reject otherwise |
 | `enabled` | bool | true | - | Master switch; `false` behaves like emergency disable at startup |
 | `emergencyDisable` | bool | false | - | Revert every detector to observe without restart; operator-only, audited |
-| `buildPin.buildId` | string | `3.1.0-b14` | exact match | Pinned game build; other builds load with all failing hooks disabled (observe-only) |
+| `buildPin.buildId` | string | `3.2.0-b9` | exact match | Pinned game build; other builds load with all failing hooks disabled (observe-only) |
 | `buildPin.policy` | string | `observe-else` | `observe-else` only in v1 | Behavior on build mismatch |
 | `modes.<detectorId>` | string | `observe` | `observe` / `correct` / `enforce` | Per-detector mode; raising requires the phase gates in POLICY.md, never just config editing |
 | `actions.correct` | bool | true | - | Permit `correct` transitions for Hard invariants in `correct`/`enforce` modes |
@@ -144,7 +144,7 @@ A `finding` example:
   "tick": 36547,
   "tickHealthMs": 41,
   "latencyMs": 88,
-  "buildId": "3.1.0-b14",
+  "buildId": "3.2.0-b9",
   "configHash": "cafe...",
   "hookManifestHash": "beef...",
   "sessionEpoch": 7,
@@ -227,7 +227,7 @@ by the metadata-contract tests (TEST_PLAN.md Layer 3). One entry per hook:
 ```json
 {
   "manifestVersion": 1,
-  "buildId": "3.1.0-b14",
+  "buildId": "3.2.0-b9",
   "buildFingerprint": "sha256:...",
   "configSchemaHash": "...",
   "hooks": [

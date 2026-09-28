@@ -495,7 +495,7 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.1.0 census)",
+      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.2.0 census)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -642,7 +642,7 @@
       "phase": 8,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "NetPackageMapChunks, NetPackagePOIAround, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes)",
+      "seam": "NetPackageMapChunks, NetPackagePOIMetadataRequest, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes)",
       "thresholds": [
         {
           "key": "max_actions_per_tick",

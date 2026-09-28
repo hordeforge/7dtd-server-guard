@@ -578,7 +578,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: inventory.craft
-    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.1.0 census)"
+    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.2.0 census)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -796,7 +796,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: world.budget
-    seam: "NetPackageMapChunks, NetPackagePOIAround, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes)"
+    seam: "NetPackageMapChunks, NetPackagePOIMetadataRequest, NetPackageChunk, NetPackageWorldInitInfoRequest (fan-out classes)"
     family: world
     phase: 8
     ceiling: Strong

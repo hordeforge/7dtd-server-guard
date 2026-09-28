@@ -3,7 +3,7 @@
   "traceId": "inventory.stack.contract-v1",
   "detectorId": "inventory.stack",
   "seed": 74071,
-  "build": {"gameVersion": "V3.1.0-b14", "hookManifestHash": "UNVERIFIED"},
+  "build": {"gameVersion": "V3.2.0-b9", "hookManifestHash": "UNVERIFIED"},
   "mode": "observe",
   "workBudget": {"maxEvents": 4, "maxStateEntries": 8, "maxWorkUnits": 32},
   "cases": [

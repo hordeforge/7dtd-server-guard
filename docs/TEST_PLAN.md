@@ -50,7 +50,7 @@ Exit: all invariants hold across randomized sessions; shrink reports are committ
 
 ### 3. Metadata contract tests
 
-Run against the locally installed pinned build (V3.1.0 b14). Resolve every type, full method
+Run against the locally installed pinned build (V3.2.0 b9). Resolve every type, full method
 signature, parameter role, return type, and metadata token used by any hook. A mismatch
 disables that detector and is reported; startup stays fail-open. Also verify the runtime
 fault guard: a hook fixture that throws increments the per-hook fault counter and self-disables
@@ -171,7 +171,7 @@ Organized by domain; each scenario maps to at least one detector fixture:
 
 ## Test environment and reproducibility
 
-- One pinned server build (V3.1.0 b14); every recorded trace carries the hook-manifest hash of
+- One pinned server build (V3.2.0 b9); every recorded trace carries the hook-manifest hash of
   the build that produced it.
 - Synthetic traces, loadgen scenarios, and property tests use fixed seeds and an injected
   clock; replay results are bit-reproducible.

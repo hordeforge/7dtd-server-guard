@@ -12,7 +12,7 @@ produces). They are separated below on purpose.
 ## Supported build
 
 Server Guard targets exactly one build until a compatibility matrix exists: **7 Days to Die
-dedicated V3.1.0 (b14), Unity Mono**. Every Harmony hook is pinned to this build's method
+dedicated V3.2.0 (b9), Unity Mono** (re-pinned from V3.1.0 (b14); DECISIONS.md D-18). Every Harmony hook is pinned to this build's method
 signatures and metadata tokens and fails open on mismatch. Other builds load in observe-only with
 all hooks that fail signature resolution disabled.
 

@@ -6,7 +6,7 @@ Use one small server mod DLL with separated collection, validation, scoring, evi
 response layers. Keep the hot path allocation-bounded. Perform no network calls on the game
 thread. The first release is deterministic and rule-based; statistical models are offline-only
 until a labeled dataset demonstrates calibration and false-positive behavior. Hooks are
-pinned to the single supported build (7 Days to Die dedicated V3.1.0 (b14)) and fail open
+pinned to the single supported build (7 Days to Die dedicated V3.2.0 (b9)) and fail open
 on any resolution mismatch (see [POLICY.md](POLICY.md)).
 
 ## Runtime pipeline
@@ -96,7 +96,7 @@ Prefer typed `ModEvents` for lifecycle and identity: `PlayerLogin`, `PlayerJoine
 the authoritative decision point. Every Harmony hook must specify the complete signature,
 record its metadata token at startup, have a fixture test, and disable itself on mismatch.
 
-Candidate authoritative seams to verify in Phase 1 come from the V3.1.0 netpackage census
+Candidate authoritative seams to verify in Phase 1 come from the V3.2.0 netpackage census
 ([RESEARCH.md](RESEARCH.md) finding 9) and the per-detector `seam` fields in
 `tools/detector_spec.yaml`: `NetPackage*.ProcessPackage`, both damage paths
 (`NetPackageDamageEntity` and `NetPackageRangeCheckDamageEntity`), movement

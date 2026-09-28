@@ -18,7 +18,7 @@ trail stays intact:
 5. Re-run `make check`; the doccheck gate fails if the contract is inconsistent.
 
 Boundary: stock-game reverse engineering lives in `../7dtd-engine-research/`, never here; this
-repo cites the regenerable dumps (for example the V3.1.0 netpackage census) and records the
+repo cites the regenerable dumps (for example the V3.2.0 netpackage census) and records the
 design consequence.
 
 ## 2. Detector lifecycle
