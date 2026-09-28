@@ -40,8 +40,8 @@ webhook, and no IPC in the tree.
 |---|---|---|---|
 | `tools/evidence_check.py:869` (`--dir`, `--sample`, `--self-test`, `--index`) | Evidence JSONL segments and the segment index, produced by the runtime or by an attacker who reached the evidence directory | `tools/evidence_check.py:191` (record hash), `:291` (`load_index`) | none |
 | `tools/evidence_export.py:798` (`--dir`, `--archive`, `--out`, `--index`, `--self-test`) | Evidence segments, an archive manifest, and the member names inside it | `tools/evidence_export.py:325`, `:337`, `:403` | `tools/evidence_export.py:286`, `:290`, `:302` |
-| `tools/restore_drill.py:381` (`--archive`, `--work`, `--config`, `--runtime-root`, `--key-max-age-hours`) | An archive directory, an empty work directory, and an operator config naming the key and identity-map paths | `tools/restore_drill.py:104`, `:151` | `tools/restore_drill.py:97` (restores into `--work`, refusing a non-empty one) |
-| `tools/backup_status.py:203` (`--root`, `--max-age-hours`) | An archive root: manifests and file digests | read-only | none |
+| `tools/restore_drill.py:390` (`--archive`, `--work`, `--config`, `--runtime-root`, `--key-max-age-hours`) | An archive directory, an empty work directory, and an operator config naming the key and identity-map paths | `tools/restore_drill.py:104`, `:151` | `tools/restore_drill.py:97` (restores into `--work`, refusing a non-empty one) |
+| `tools/backup_status.py:279` (`--root`, `--max-age-hours`) | An archive root: manifests and file digests | read-only | none |
 | `tools/config_check.py:446` (`--config`, `--show-effective`, `--skip-env`) | An operator config file, validated against the shipped JSON Schemas and detector registry | `tools/config_check.py:223` (process environment) | none |
 | `tools/sbom.py:429` (`--out`) | `uv.lock` | `uv.lock` | `tools/sbom.py:456` to `:459` |
 | `tools/doccheck.py:1291` (no flags) | The repository tree itself, treated as content to lint rather than as instructions; spawns three sibling tools as subprocesses | `tools/doccheck.py:487` (`subprocess.run`, literal script names, `shell` off) | none |

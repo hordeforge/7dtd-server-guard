@@ -3,7 +3,17 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz sbom verify-config verify-evidence export-evidence verify-archive backup backup-status drill-restore guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz sbom verify-config verify-evidence export-evidence verify-archive backup backup-status drill-restore guard-python help usage
+
+# A bare `make` names no target. Defaulting it to something that does work would
+# hide a scripted `make` that was meant to run a gate, and printing nothing at all
+# exits 0, so a CI step that lost its target reports success for work it never
+# did. The bare run is the usage error every other entry point here uses, and its
+# usage line goes to stderr like the targets' do.
+.DEFAULT_GOAL := usage
+usage:
+	@echo "usage: make <target>; 'make help' lists the targets" >&2
+	@exit 2
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
@@ -190,6 +200,7 @@ drill-restore: guard-python
 
 help:
 	@echo "Targets:"
+	@echo "  make help            this list (a bare 'make' exits 2 with this line on stderr)"
 	@echo "  make setup           materialize .venv from uv.lock (uv sync --frozen)"
 	@echo "  make check           run the docs quality gate (tools/doccheck.py)"
 	@echo "  make lint            black, ruff, and mypy over the whole repository"

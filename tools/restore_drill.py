@@ -25,12 +25,20 @@ Usage:
   uv run python tools/restore_drill.py --archive <archive-dir> --work <empty-dir>
   uv run python tools/restore_drill.py --archive <d> --work <d> --config <config.json>
   uv run python tools/restore_drill.py --self-test
+  make drill-restore ARCHIVE=/path/to/archive WORK=/path/to/scratch
+
+Exit codes: 0 the archive restored and reads back, 1 the drill found a problem,
+2 usage error. The one-line verdict goes to stdout and the per-issue detail to
+stderr, whether or not the run found something, so a redirected run records the
+verdict and never mixes it with its diagnostics.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import io
 import json
 import pathlib
 import shutil
@@ -56,6 +64,11 @@ KEY_MAX_AGE_HOURS = 24 * KEY_COPY_CYCLE_DAYS
 # so a self-test that left that to the host read the clock on every run and
 # could not be replayed from a pin.
 SELF_TEST_NOW = dt.datetime(2026, 7, 21, 0, 0, tzinfo=dt.UTC)
+
+# A run that never started work: an unknown flag, a bare run, or an argument the
+# tool refuses before it touches the archive. An archive that does not exist or
+# does not verify is a drill failure (1), not a usage error.
+USAGE_ERROR = 2
 
 
 def _now() -> dt.datetime:
@@ -221,12 +234,15 @@ def drill(request: DrillRequest) -> tuple[list[str], str]:
 
 
 def _report(label: str, errors: list[str], summary: str) -> int:
-    stream = sys.stdout if not errors else sys.stderr
-    print(f"{label}: {len(errors)} issue(s)", file=stream)
+    """The one-line verdict on stdout and the per-issue detail on stderr, whether
+    or not the run found something (tools/README.md), so a redirected run records
+    the verdict and leaves the diagnostics on the terminal. `label` is the verdict
+    line, already carrying the issue count."""
+    print(label)
     for error in errors:
-        print("  " + error, file=stream)
+        print("  " + error, file=sys.stderr)
     if summary and not errors:
-        print(f"  {summary}", file=stream)
+        print(f"  {summary}")
     return 1 if errors else 0
 
 
@@ -456,19 +472,66 @@ def _self_test_secrets() -> list[str]:
     return errs
 
 
+def _main_contract_self_test() -> list[str]:
+    """Pin the exit codes and stream split documented in tools/README.md.
+
+    A scheduled drill branches on these: 0 restored, 1 the drill found a problem
+    (an archive that does not exist included), 2 for a usage error, which writes
+    its help or its message to stderr and leaves stdout empty so a redirected run
+    cannot capture a help dump where a verdict belongs.
+    """
+    cases: list[tuple[str, list[str], int]] = [
+        ("bare run", [], USAGE_ERROR),
+        ("--archive without --work", ["--archive", "/nonexistent"], USAGE_ERROR),
+        (
+            "--key-max-age-hours out of range",
+            ["--archive", "/a", "--work", "/b", "--key-max-age-hours", "0"],
+            USAGE_ERROR,
+        ),
+        ("missing archive", ["--archive", "/nonexistent", "--work", "/nonexistent"], 1),
+    ]
+    errs: list[str] = []
+    saved = sys.argv
+    for label, argv, expected in cases:
+        out, err = io.StringIO(), io.StringIO()
+        sys.argv = ["restore_drill.py", *argv]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main()
+        except SystemExit as exc:  # argparse rejects a bad argument by exiting
+            code = int(exc.code or 0)
+        finally:
+            sys.argv = saved
+        if code != expected:
+            errs.append(f"{label}: exit {code}, expected {expected}")
+        if expected != USAGE_ERROR:
+            if not out.getvalue():
+                errs.append(f"{label}: a verdict run wrote nothing to stdout")
+            continue
+        if out.getvalue():
+            errs.append(f"{label}: usage error wrote to stdout: {out.getvalue()!r}")
+        if not err.getvalue():
+            errs.append(f"{label}: usage error wrote nothing to stderr")
+    return errs
+
+
 def self_test() -> list[str]:
     errs = _self_test_restore()
     errs += _self_test_without_index()
     errs += _self_test_refusals()
     errs += _self_test_secrets()
     errs += _self_test_config()
+    errs += _main_contract_self_test()
     return errs
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--self-test", action="store_true", help="run the drill self-tests and exit")
-    ap.add_argument("--archive", type=pathlib.Path, help="archive directory to restore")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--self-test", action="store_true", help="run the drill self-tests and exit")
+    mode.add_argument("--archive", type=pathlib.Path, help="archive directory to restore")
     ap.add_argument("--work", type=pathlib.Path, help="empty directory to restore into")
     ap.add_argument("--config", type=pathlib.Path, help="config file naming the key and map paths")
     ap.add_argument(
@@ -480,12 +543,14 @@ def main() -> int:
         "--key-max-age-hours",
         type=float,
         default=KEY_MAX_AGE_HOURS,
-        help="how old the identity map and HMAC key may be before the drill reports it",
+        help="how old the identity map and HMAC key may be before the drill reports it "
+        f"(default: {KEY_MAX_AGE_HOURS:g})",
     )
     args = ap.parse_args()
 
     if args.self_test:
-        return _report("restore-drill self-test", self_test(), "")
+        errs = self_test()
+        return _report(f"restore-drill self-test: {len(errs)} issue(s)", errs, "")
 
     if not args.archive:
         ap.print_help(sys.stderr)
@@ -506,7 +571,7 @@ def main() -> int:
             max_age_hours=args.key_max_age_hours,
         )
     )
-    return _report(f"restore drill {args.archive}", errs, summary)
+    return _report(f"restore drill {args.archive}: {len(errs)} issue(s)", errs, summary)
 
 
 if __name__ == "__main__":

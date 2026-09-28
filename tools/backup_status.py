@@ -21,12 +21,20 @@ Usage:
   uv run python tools/backup_status.py --root <archive-root>
   uv run python tools/backup_status.py --root <archive-root> --max-age-hours 24
   uv run python tools/backup_status.py --self-test
+  make backup-status ROOT=/path/to/archive-root
+
+Exit codes: 0 the RPO is met, 1 the window is open or an archive does not
+verify, 2 usage error. The one-line verdict goes to stdout and the per-issue
+detail to stderr, whether or not the run found something, so a redirected run
+records the verdict and never mixes it with its diagnostics.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import io
 import json
 import pathlib
 import shutil
@@ -39,6 +47,11 @@ import evidence_check as ec
 import evidence_export as ee
 
 Record = dict[str, Any]
+
+# A run that never started work: an unknown flag, a bare run, or an argument the
+# tool refuses before it inspects the archive root. A root that does not exist or
+# holds no verifiable archive is a check failure (1), not a usage error.
+USAGE_ERROR = 2
 
 # The evidence RPO (docs/OPERATIONS.md -> Targets): the oldest acceptable age
 # of the newest verifying archive. An archive exactly this old is at the limit
@@ -208,12 +221,15 @@ def _self_test() -> list[str]:
 
 
 def _report(label: str, errors: list[str]) -> int:
-    """The one-line verdict on stdout when clean, the report on stderr when not
-    (tools/README.md), so a redirected run records the verdict alone."""
-    stream = sys.stdout if not errors else sys.stderr
-    print(f"{label}: {len(errors)} issue(s)", file=stream)
+    """The one-line verdict on stdout and the per-issue detail on stderr, whether
+    or not the run found something (tools/README.md), so a redirected run records
+    the verdict and leaves the diagnostics on the terminal.
+
+    `label` is the verdict line, already carrying whatever count belongs in it.
+    """
+    print(label)
     for error in errors:
-        print("  " + error, file=stream)
+        print("  " + error, file=sys.stderr)
     return 1 if errors else 0
 
 
@@ -323,23 +339,72 @@ def _self_test_undated() -> list[str]:
     return errs
 
 
+def _self_test_main_contract() -> list[str]:
+    """Pin the exit codes and stream split documented in tools/README.md.
+
+    The scheduler branches on these: 0 the RPO is met, 1 the window is open (a
+    root that does not exist included), 2 for a usage error, which writes its
+    help or its message to stderr and leaves stdout empty so a redirected run
+    cannot capture a help dump where a verdict belongs.
+    """
+    cases: list[tuple[str, list[str], int]] = [
+        ("bare run", [], USAGE_ERROR),
+        (
+            "--max-age-hours out of range",
+            ["--root", "/nonexistent", "--max-age-hours", "0"],
+            USAGE_ERROR,
+        ),
+        ("missing root", ["--root", "/nonexistent"], 1),
+    ]
+    errs: list[str] = []
+    saved = sys.argv
+    for label, argv, expected in cases:
+        out, err = io.StringIO(), io.StringIO()
+        sys.argv = ["backup_status.py", *argv]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main()
+        except SystemExit as exc:  # argparse rejects a bad argument by exiting
+            code = int(exc.code or 0)
+        finally:
+            sys.argv = saved
+        if code != expected:
+            errs.append(f"{label}: exit {code}, expected {expected}")
+        if expected != USAGE_ERROR:
+            if not out.getvalue():
+                errs.append(f"{label}: a verdict run wrote nothing to stdout")
+            continue
+        if out.getvalue():
+            errs.append(f"{label}: usage error wrote to stdout: {out.getvalue()!r}")
+        if not err.getvalue():
+            errs.append(f"{label}: usage error wrote nothing to stderr")
+    return errs
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--self-test", action="store_true", help="run the status self-tests and exit")
-    ap.add_argument("--root", type=pathlib.Path, help="archive root to inspect")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--self-test", action="store_true", help="run the status self-tests and exit")
+    mode.add_argument("--root", type=pathlib.Path, help="archive root to inspect")
     ap.add_argument(
         "--max-age-hours",
         type=float,
         default=DEFAULT_MAX_AGE_HOURS,
-        help="how old the newest verifying archive may be before the RPO is reported open",
+        help="how old the newest verifying archive may be before the RPO is reported open "
+        f"(default: {DEFAULT_MAX_AGE_HOURS:g})",
     )
     args = ap.parse_args()
 
     if args.self_test:
-        return _report(
-            "backup-status self-test",
-            [*_self_test(), *_self_test_older_corrupt(), *_self_test_undated()],
-        )
+        errs = [
+            *_self_test(),
+            *_self_test_older_corrupt(),
+            *_self_test_undated(),
+            *_self_test_main_contract(),
+        ]
+        return _report(f"backup-status self-test: {len(errs)} issue(s)", errs)
 
     if args.root is None:
         ap.print_help(sys.stderr)
@@ -351,8 +416,7 @@ def main() -> int:
     status = check(args.root)
     errs = report(status, args.root, args.max_age_hours)
     if errs:
-        print(_verdict(status, args.root), file=sys.stderr)
-        return _report(f"backup status {args.root}", errs)
+        return _report(f"backup status {args.root}: {len(errs)} issue(s)", errs)
     print(_verdict(status, args.root))
     return 0
 
