@@ -76,13 +76,19 @@ def _now() -> dt.datetime:
 def created_utc(archive: pathlib.Path) -> dt.datetime | None:
     """The archive's own creation stamp, read from the manifest whose
     self-digest is checked by the verifier. The directory mtime is a filesystem
-    detail that a copy off the server resets, so it is never the age."""
+    detail that a copy off the server resets, so it is never the age.
+
+    A manifest the filesystem refuses to read is `None` here, like a manifest
+    that does not parse: an unreadable one is as unable to date the archive as
+    an unparseable one, and raising out of it would replace a reported archive
+    with a traceback for the whole root.
+    """
     path = archive / ee.MANIFEST_NAME
     if not path.is_file():
         return None
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     stamp = manifest.get("createdUtc") if isinstance(manifest, dict) else None
     if not isinstance(stamp, str):
@@ -442,8 +448,49 @@ def _self_test_undated() -> list[str]:
             errs.append(f"self-test: an undated-only root reported a backup: {only}")
         if not any("RPO window is open in full" in e for e in report(only, lonely)):
             errs.append(f"self-test: a root with no measurable backup reported no issue: {only}")
+
+        errs += _self_test_unreadable_manifest(scratch, archives, now)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _self_test_unreadable_manifest(
+    scratch: pathlib.Path, archives: pathlib.Path, now: dt.datetime
+) -> list[str]:
+    """A manifest the filesystem refuses to read is undated, not a traceback.
+
+    `check` walks the whole root, so one unreadable manifest raising out of the
+    read would replace a report naming every archive with a stack trace naming
+    none. The case runs only where a mode bit actually denies the read: a gate
+    running as root reads the file regardless, and there it is skipped rather
+    than reported as a pass.
+    """
+    errs: list[str] = []
+    root = scratch / "unreadable"
+    root.mkdir()
+    shutil.copytree(archives / "evidence-20260721T000000Z", root / "evidence-20990103T000000Z")
+    manifest = root / "evidence-20990103T000000Z" / ee.MANIFEST_NAME
+    manifest.chmod(0o000)
+    try:
+        manifest.read_bytes()
+    except OSError:
+        pass
+    else:
+        manifest.chmod(0o600)
+        return errs
+    try:
+        status = check(root, now=now)
+    except Exception as exc:
+        manifest.chmod(0o600)
+        return [f"self-test: an unreadable manifest raised {type(exc).__name__}: {exc}"]
+    if status.undated != ["evidence-20990103T000000Z"]:
+        manifest.chmod(0o600)
+        return [f"self-test: an unreadable manifest was not reported as undated: {status}"]
+    found = report(status, root)
+    manifest.chmod(0o600)
+    if not any("no readable createdUtc" in e for e in found):
+        errs.append(f"self-test: an unreadable manifest went unreported: {found}")
     return errs
 
 

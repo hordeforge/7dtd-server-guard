@@ -338,7 +338,7 @@ def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
 
 def _sweep_stale_staging(
     out_root: pathlib.Path, now: dt.datetime, keep: pathlib.Path | None = None
-) -> None:
+) -> list[str]:
     """Remove staging directories a dead run left behind, this run's excepted.
 
     Each export stages into its own directory, so a concurrent export cannot
@@ -358,16 +358,27 @@ def _sweep_stale_staging(
     must be aware: an mtime is an absolute epoch, so a naive cutoff would be
     read against the host's `TZ` and the same replay would sweep a different set
     of directories on a server set to a local zone.
+
+    A leftover the filesystem refuses to remove is reported, not skipped. Each one
+    holds a full copy of the evidence stream, so a directory that survives every
+    sweep fills the archive root until the next export cannot write there, and a
+    silent skip turns that into backups that stop landing with nothing failing.
     """
+    undeletable: list[str] = []
     cutoff = as_utc(now, "now").timestamp() - STALE_STAGING_AGE_SECONDS
     for path in out_root.glob(f"{STAGING_PREFIX}*"):
         if path == keep or not path.is_dir():
             continue
         try:
             if path.stat().st_mtime < cutoff:
-                shutil.rmtree(path, ignore_errors=True)
-        except OSError:
-            continue
+                shutil.rmtree(path)
+        except OSError as exc:
+            undeletable.append(f"{path.name}: {exc}")
+    return [
+        f"stale staging directory {name} could not be removed; it holds a full copy of the "
+        "evidence stream and the archive root fills until an export cannot land"
+        for name in undeletable
+    ]
 
 
 def _rename_into_place(
@@ -437,16 +448,16 @@ def export(
     # kept in the directory name so a human reading the root can tell which run
     # a leftover belongs to; the sweep matches on STAGING_PREFIX, which carries
     # no stamp, so it reaches the leftovers of every earlier run.
-    _sweep_stale_staging(out_root, now=moment)
+    swept = _sweep_stale_staging(out_root, now=moment)
     if dest.exists():
-        return redo_errors(dest, members)
+        return swept + redo_errors(dest, members)
     staging = pathlib.Path(tempfile.mkdtemp(prefix=f"{STAGING_PREFIX}{label}-", dir=out_root))
-    _sweep_stale_staging(out_root, now=moment, keep=staging)
+    swept += _sweep_stale_staging(out_root, now=moment, keep=staging)
     try:
         staging_errors = stage(staging, source, members, index_name, label)
         if staging_errors:
-            return staging_errors
-        return _rename_into_place(staging, dest, members)
+            return swept + staging_errors
+        return swept + _rename_into_place(staging, dest, members)
     except OSError as exc:
         return [f"archive failed: {exc}"]
     finally:
@@ -1067,6 +1078,45 @@ def _self_test_stale_staging(source: pathlib.Path) -> list[str]:
     return errs
 
 
+def _self_test_undeletable_staging(source: pathlib.Path) -> list[str]:
+    """A stale staging directory the filesystem refuses to remove is reported.
+
+    A skipped one is a full copy of the evidence stream that survives every sweep,
+    so the archive root fills until an export cannot land, and nothing anywhere
+    says why. The case runs only where a mode bit actually denies the delete: a
+    gate running as root removes the directory regardless, and there it is
+    skipped rather than reported as a pass.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-undeletable"
+    shutil.rmtree(scratch, ignore_errors=True)
+    stuck = scratch / "archives" / f"{STAGING_PREFIX}20260719T020000Z-stuck"
+    try:
+        stuck.mkdir(parents=True)
+        (stuck / "half-copied-segment.jsonl").write_text('{"partial": true}\n', encoding="utf-8")
+        old = SELF_TEST_NOW.timestamp() - STALE_STAGING_AGE_SECONDS - 60
+        os.utime(stuck, (old, old))
+        stuck.chmod(0o500)
+        try:
+            shutil.rmtree(stuck)
+        except OSError:
+            pass
+        else:
+            stuck.chmod(0o700)
+            return errs
+        found = export(source, stuck.parent, DEFAULT_INDEX_NAME, SELF_TEST_STAMP, now=SELF_TEST_NOW)
+        if not any(stuck.name in item for item in found):
+            errs.append(
+                f"self-test: an undeletable stale staging directory went unreported: {found}"
+            )
+        stuck.chmod(0o700)
+    finally:
+        if stuck.is_dir():
+            stuck.chmod(0o700)
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def _self_test_rename_race(source: pathlib.Path) -> list[str]:
     """The export that loses the race for an archive name converges on the winner.
 
@@ -1185,6 +1235,7 @@ def self_test() -> list[str]:
         errs, archives = _self_test_happy_path(source, out_root)
         errs += _self_test_refusal(scratch, source, out_root)
         errs += _self_test_stale_staging(source)
+        errs += _self_test_undeletable_staging(source)
         errs += _self_test_rename_race(source)
         errs += _self_test_clock_zone(source)
         errs += _self_test_member_names()

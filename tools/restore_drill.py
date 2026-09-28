@@ -132,22 +132,33 @@ def work_dir_errors(work: pathlib.Path) -> list[str]:
     return []
 
 
-def _sweep_stale_staging(parent: pathlib.Path, keep: pathlib.Path) -> None:
+def _sweep_stale_staging(parent: pathlib.Path, keep: pathlib.Path) -> list[str]:
     """Remove staging directories a dead drill left beside the work directory.
 
     Each drill stages into its own directory, so a concurrent drill cannot delete
     a copy in progress. A killed drill would otherwise leave a full copy of the
     archived evidence in the work directory's parent, once per death.
+
+    A leftover the filesystem refuses to remove is reported, not skipped. Each one
+    holds a full copy of the archived evidence, so a directory that survives every
+    sweep fills the drill's parent directory until a later drill cannot stage, and
+    a silent skip turns that into drills that stop running with nothing failing.
     """
+    undeletable: list[str] = []
     cutoff = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS
     for path in parent.glob(f"{STAGING_PREFIX}*"):
         if path == keep or not path.is_dir():
             continue
         try:
             if path.stat().st_mtime < cutoff:
-                shutil.rmtree(path, ignore_errors=True)
-        except OSError:
-            continue
+                shutil.rmtree(path)
+        except OSError as exc:
+            undeletable.append(f"{path.name}: {exc}")
+    return [
+        f"stale staging directory {name} could not be removed; it holds a full copy of the "
+        "archived evidence and the parent directory fills until a drill cannot stage"
+        for name in undeletable
+    ]
 
 
 def _stage_restore(
@@ -207,12 +218,12 @@ def restore(archive: pathlib.Path, work: pathlib.Path, index_name: str) -> list[
         )
     except OSError as exc:
         return [f"restore failed: {work.parent}: {exc}"]
-    _sweep_stale_staging(work.parent, keep=staging)
+    swept = _sweep_stale_staging(work.parent, keep=staging)
     try:
         errs = _stage_restore(members, staging, index_name) or _move_into_place(staging, work)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    return errs
+    return swept + errs
 
 
 def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str, set[str]]:
@@ -592,6 +603,55 @@ def _self_test_refusals() -> list[str]:
         if not drill(DrillRequest(archive=archive, work=not_a_dir))[0]:
             errs.append("self-test: a work path that is a file reported success")
     finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _self_test_undeletable_staging() -> list[str]:
+    """A stale staging directory the filesystem refuses to remove is reported.
+
+    A skipped one is a full copy of the archived evidence that survives every
+    sweep, so the directory the work path lives in fills until a later drill
+    cannot stage, and nothing anywhere says why. The case runs only where a mode
+    bit actually denies the delete: a gate running as root removes the directory
+    regardless, and there it is skipped rather than reported as a pass.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "restore-drill-self-test-undeletable"
+    shutil.rmtree(scratch, ignore_errors=True)
+    stuck = scratch / f"{STAGING_PREFIX}dead-work-xyz"
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        if export_errs := ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=SELF_TEST_NOW
+        ):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+
+        stuck.mkdir(parents=True)
+        (stuck / "half-restored-segment.jsonl").write_text('{"partial": true}\n', encoding="utf-8")
+        old = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS - 60
+        stuck.touch()
+        os.utime(stuck, (old, old))
+        stuck.chmod(0o500)
+        try:
+            shutil.rmtree(stuck)
+        except OSError:
+            pass
+        else:
+            stuck.chmod(0o700)
+            return errs
+        found, _summary = drill(DrillRequest(archive=archive, work=scratch / "work"))
+        if not any(stuck.name in item for item in found):
+            errs.append(
+                f"self-test: an undeletable stale staging directory went unreported: {found}"
+            )
+        stuck.chmod(0o700)
+    finally:
+        if stuck.is_dir():
+            stuck.chmod(0o700)
         shutil.rmtree(scratch, ignore_errors=True)
     return errs
 
@@ -1035,6 +1095,7 @@ def self_test() -> list[str]:
     errs += _main_contract_self_test()
     errs += _self_test_unencodable_report()
     errs += _self_test_rerun()
+    errs += _self_test_undeletable_staging()
     return errs
 
 
