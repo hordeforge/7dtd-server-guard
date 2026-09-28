@@ -1254,12 +1254,11 @@ def check_backup_runbook() -> list[str]:
         )
         if f"\n{target}:" not in makefile
     ]
-    if not _makefile_runs_self_test(makefile, "evidence_export"):
-        out.append("Makefile: test-tools does not run the evidence export self-test")
-    if "tools/restore_drill.py --self-test" not in makefile:
-        out.append("Makefile: test-tools does not run the restore drill self-test")
-    if "tools/backup_status.py --self-test" not in makefile:
-        out.append("Makefile: test-tools does not run the backup status self-test")
+    out.extend(
+        f"Makefile: test-tools does not run the {tool} self-test"
+        for tool in ("evidence_export", "restore_drill", "backup_status")
+        if not _makefile_runs_self_test(makefile, tool)
+    )
     if "### Restore drill" not in ops:
         out.append("docs/OPERATIONS.md: no restore drill in the backup and restore runbook")
     out.extend(

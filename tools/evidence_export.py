@@ -57,6 +57,9 @@ ManifestFile = dict[str, Any]
 
 MANIFEST_NAME = "archive-manifest.json"
 MANIFEST_VERSION = 2
+# The archive-name stamp: the format the writer emits and the two readers that
+# read a stamp back out of a manifest have to agree on, so it is stated once.
+STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 # The manifest's self-digest field, and the canonicalization the digest covers:
 # every field except the digest itself, so a byte edited anywhere in the manifest
 # (a source path, the creation stamp, a count) is detectable. The per-file
@@ -81,7 +84,7 @@ STALE_STAGING_AGE_SECONDS = 24 * 60 * 60
 
 
 def utc_stamp() -> str:
-    return dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    return dt.datetime.now(dt.UTC).strftime(STAMP_FORMAT)
 
 
 def file_digest(path: pathlib.Path) -> tuple[str, int]:
@@ -214,6 +217,18 @@ def stage(
     return [f"archive did not verify: {e}" for e in verify(staging)]
 
 
+def archive_file_names(archive: pathlib.Path) -> set[str]:
+    """The names an archive's own contents claim, ignoring the manifest itself.
+
+    A redo and a verify both ask this: which files are here, as opposed to which
+    the manifest says. The manifest is excluded, so a stale or forged one cannot
+    add a name to its own set.
+    """
+    return {p.name for p in archive.glob(SEGMENT_GLOB)} | {
+        p.name for p in archive.glob("*.json") if p.name != MANIFEST_NAME
+    }
+
+
 def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
     """What stops a re-run of the same export from being a no-op.
 
@@ -226,9 +241,7 @@ def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
     archive holding a different evidence set is a different export, and the
     second must not overwrite the first.
     """
-    archived = {p.name for p in dest.glob(SEGMENT_GLOB)} | {
-        p.name for p in dest.glob("*.json") if p.name != MANIFEST_NAME
-    }
+    archived = archive_file_names(dest)
     if archived != {m.name for m in members}:
         return [
             f"{dest}: an archive for this second holds a different evidence set; "
@@ -414,9 +427,7 @@ def verify(archive: pathlib.Path) -> list[str]:
         errs += _member_errors(archive, entry)
         if isinstance(entry, dict) and isinstance(entry.get("name"), str):
             listed.add(entry["name"])
-    present = {p.name for p in archive.glob(SEGMENT_GLOB)} | {
-        p.name for p in archive.glob("*.json") if p.name != MANIFEST_NAME
-    }
+    present = archive_file_names(archive)
     errs.extend(
         f"{name}: present in the archive but not in the manifest"
         for name in sorted(present - listed)
@@ -428,7 +439,7 @@ def verify(archive: pathlib.Path) -> list[str]:
     return errs
 
 
-def _write_sample_stream(source: pathlib.Path) -> pathlib.Path:
+def write_sample_stream(source: pathlib.Path) -> pathlib.Path:
     """Two linked segments plus a segment index: the smallest real evidence dir."""
     source.mkdir(parents=True, exist_ok=True)
     recs: list[Record] = []
@@ -500,7 +511,7 @@ def _self_test_redo_divergence(source: pathlib.Path, out_root: pathlib.Path) -> 
     errs: list[str] = []
     archive = min(p for p in out_root.iterdir() if p.is_dir())
     other = archive.parent / "other-source"
-    _write_sample_stream(other)
+    write_sample_stream(other)
     # Same file names, different bytes: the segment a restore would read differs.
     target = other / "evidence-2026-07-21-000000.jsonl"
     target.write_text(
@@ -669,7 +680,7 @@ def _self_test_manifest_bytes() -> list[str]:
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-bytes"
     shutil.rmtree(scratch, ignore_errors=True)
     try:
-        _write_sample_stream(scratch)
+        write_sample_stream(scratch)
         manifest = build_manifest(scratch, scratch, "20260721T000000Z", DEFAULT_INDEX_NAME)
         (scratch / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
         for bad, what in (
@@ -709,7 +720,7 @@ def _self_test_record_count() -> list[str]:
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-count"
     shutil.rmtree(scratch, ignore_errors=True)
     try:
-        _write_sample_stream(scratch)
+        write_sample_stream(scratch)
         seg = scratch / "evidence-2026-07-21-000000.jsonl"
         rec = json.loads(seg.read_text(encoding="utf-8").splitlines()[0])
         rec["note"] = f"a{RAW_LINE_SEP}b"
@@ -738,7 +749,7 @@ def _self_test_unreadable_files() -> list[str]:
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-unreadable"
     shutil.rmtree(scratch, ignore_errors=True)
     try:
-        _write_sample_stream(scratch)
+        write_sample_stream(scratch)
         manifest = build_manifest(scratch, scratch, "20260721T000000Z", DEFAULT_INDEX_NAME)
         (scratch / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
         for path, what in (
@@ -773,7 +784,7 @@ def self_test() -> list[str]:
     shutil.rmtree(scratch, ignore_errors=True)
     source = scratch / "source"
     out_root = scratch / "archives"
-    seg2 = _write_sample_stream(source)
+    seg2 = write_sample_stream(source)
     errs, archives = _self_test_happy_path(source, out_root)
     errs += _self_test_refusal(scratch, source, out_root)
     errs += _self_test_member_names()

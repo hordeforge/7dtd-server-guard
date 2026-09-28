@@ -68,7 +68,7 @@ def created_utc(archive: pathlib.Path) -> dt.datetime | None:
     if not isinstance(stamp, str):
         return None
     try:
-        return dt.datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
+        return dt.datetime.strptime(stamp, ee.STAMP_FORMAT).replace(tzinfo=dt.UTC)
     except ValueError:
         return None
 
@@ -116,12 +116,16 @@ def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
     age: float | None = None
     failed: list[tuple[str, str]] = []
     for archive_age, archive in dated:
+        if fresh is not None:
+            # Dated newest first, so everything past the archive that verified is
+            # older than it. Its state cannot open the RPO, and verifying it would
+            # cost a full chain walk per archive for a finding nobody acts on.
+            break
         errs = ee.verify(archive)
         if errs:
             failed.append((archive.name, errs[0]))
             continue
-        if fresh is None:
-            fresh, age = archive, archive_age
+        fresh, age = archive, archive_age
     return BackupStatus(fresh, age, failed, undated, len(found))
 
 
@@ -163,7 +167,7 @@ def _self_test() -> list[str]:
     try:
         source = scratch / "source"
         archives = scratch / "archives"
-        ee._write_sample_stream(source)
+        ee.write_sample_stream(source)
         if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
             return [f"self-test: could not build an archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
@@ -200,6 +204,60 @@ def _self_test() -> list[str]:
     return errs
 
 
+def _report(label: str, errors: list[str]) -> int:
+    """The one-line verdict on stdout when clean, the report on stderr when not
+    (tools/README.md), so a redirected run records the verdict alone."""
+    stream = sys.stdout if not errors else sys.stderr
+    print(f"{label}: {len(errors)} issue(s)", file=stream)
+    for error in errors:
+        print("  " + error, file=stream)
+    return 1 if errors else 0
+
+
+def _verdict(status: BackupStatus, root: pathlib.Path) -> str:
+    if status.fresh is None or status.age_hours is None:
+        return f"backup status {root}: none of the {status.total} present archive(s) verifies"
+    return (
+        f"backup status {root}: newest verifying archive {status.fresh.name} "
+        f"is {status.age_hours:.1f} h old of {status.total} present"
+    )
+
+
+def _self_test_older_corrupt() -> list[str]:
+    """`failed` names the runs newer than the archive that verified, and only those.
+
+    An archive older than the newest one that verified cannot open the RPO, so
+    reporting it would send an operator after a run that changed nothing.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "backup-status-self-test-older"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        older = archives / "evidence-20260721T000000Z"
+        newest = archives / "evidence-20260722T000000Z"
+        for stamp in ("20260721T000000Z", "20260722T000000Z"):
+            if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp=stamp):
+                return [f"self-test: could not build an archive: {export_errs}"]
+        # "now" sits after both stamps, so 20260722 is the newest and 20260721 the older.
+        now = dt.datetime(2026, 7, 23, 0, 0, tzinfo=dt.UTC)
+        before = check(archives, now=now)
+        if before.fresh != newest or before.failed:
+            errs.append(f"self-test: two healthy archives were misread: {before}")
+        target = older / "evidence-2026-07-22-000000.jsonl"
+        target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        after = check(archives, now=now)
+        if after.failed:
+            errs.append(f"self-test: an archive older than the newest was reported failed: {after}")
+        if after.fresh != newest:
+            errs.append(f"self-test: an older archive changed the effective backup: {after}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--self-test", action="store_true", help="run the status self-tests and exit")
@@ -213,11 +271,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        errs = _self_test()
-        print(f"backup-status self-test: {len(errs)} failure(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
+        return _report("backup-status self-test", [*_self_test(), *_self_test_older_corrupt()])
 
     if args.root is None:
         ap.print_help()
@@ -228,22 +282,11 @@ def main() -> int:
 
     status = check(args.root)
     errs = report(status, args.root, args.max_age_hours)
-    if status.fresh is not None and status.age_hours is not None and not errs:
-        print(
-            f"backup status {args.root}: newest verifying archive {status.fresh.name} "
-            f"is {status.age_hours:.1f} h old of {status.total} present"
-        )
-        return 0
-    if status.fresh is not None and status.age_hours is not None:
-        print(
-            f"backup status {args.root}: newest verifying archive {status.fresh.name} "
-            f"is {status.age_hours:.1f} h old of {status.total} present",
-            file=sys.stderr,
-        )
-    print(f"{len(errs)} issue(s)", file=sys.stderr)
-    for e in errs:
-        print("  " + e, file=sys.stderr)
-    return 1 if errs else 0
+    if errs:
+        print(_verdict(status, args.root), file=sys.stderr)
+        return _report(f"backup status {args.root}", errs)
+    print(_verdict(status, args.root))
+    return 0
 
 
 if __name__ == "__main__":

@@ -51,9 +51,6 @@ Record = dict[str, Any]
 # missing evidence archive and is only visible if something looks.
 KEY_COPY_CYCLE_DAYS = 7
 KEY_MAX_AGE_HOURS = 24 * KEY_COPY_CYCLE_DAYS
-# A restore must land in a directory that holds nothing, so a drill can never
-# pass on a mixture of restored and leftover files. A missing work directory is
-# created; an existing empty one is used as is.
 
 
 def _now() -> dt.datetime:
@@ -65,7 +62,7 @@ def _parse_stamp(value: object) -> dt.datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return dt.datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
+        return dt.datetime.strptime(value, ee.STAMP_FORMAT).replace(tzinfo=dt.UTC)
     except ValueError:
         return None
 
@@ -82,8 +79,12 @@ def _manifest(archive: pathlib.Path) -> Record | None:
 
 
 def work_dir_errors(work: pathlib.Path) -> list[str]:
-    """A restore target that is absent, empty, or a non-directory. An existing
-    non-empty directory is refused: a drill over mixed files proves nothing."""
+    """A restore target that is absent, empty, or a non-directory.
+
+    A missing work directory is created and an existing empty one is used as is;
+    an existing non-empty one is refused, so a drill can never pass on a mixture
+    of restored and leftover files.
+    """
     if not work.exists():
         return []
     if not work.is_dir():
@@ -245,7 +246,7 @@ def _self_test_restore() -> list[str]:
     try:
         source = scratch / "source"
         archives = scratch / "archives"
-        ee._write_sample_stream(source)
+        ee.write_sample_stream(source)
         export_errs = ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z")
         if export_errs:
             return [f"self-test: could not build an archive: {export_errs}"]
@@ -302,7 +303,7 @@ def _self_test_refusals() -> list[str]:
     try:
         source = scratch / "source"
         archives = scratch / "archives"
-        ee._write_sample_stream(source)
+        ee.write_sample_stream(source)
         if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
             return [f"self-test: could not build an archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
@@ -398,11 +399,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        errs = self_test()
-        print(f"restore-drill self-test: {len(errs)} failure(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
+        return _report("restore-drill self-test", self_test(), "")
 
     if not args.archive:
         ap.print_help()
