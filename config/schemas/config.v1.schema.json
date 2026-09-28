@@ -81,6 +81,11 @@
           "type": "boolean",
           "default": false
         },
+        "tempBanLocal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Permit operator-scoped local temp-bans (evidence action temp-ban-local). Requires the kick gate and per-incident operator approval (POLICY.md)."
+        },
         "throttle": {
           "type": "boolean",
           "default": true

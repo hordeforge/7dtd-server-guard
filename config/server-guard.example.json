@@ -57,6 +57,7 @@
       "worldMutation": false
     },
     "kick": false,
+    "tempBanLocal": false,
     "throttle": true
   },
   "thresholds": {

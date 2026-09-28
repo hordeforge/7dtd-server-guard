@@ -65,7 +65,7 @@ bug to fix in the same change.
 │   ├── detector-config-manifest.json generated per-detector thresholds (make detectors,
     │                            never hand-edited)
 │   └── schemas/                      JSON Schema: config.v1, config-manifest.v1,
-│                                    evidence.v1, replay-trace.v1
+    │                                 evidence.v1, replay-trace.v1 (+ the evidence sample)
 ├── docs/                      indexed contracts plus the non-binding proposal incubator
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects

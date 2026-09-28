@@ -79,6 +79,7 @@ where the serving environment is not the one running the check.
 | `actions.quarantine.containers` | bool | false | - | Same |
 | `actions.quarantine.worldMutation` | bool | false | - | Same |
 | `actions.kick` | bool | false | - | Subject to the kick gate in POLICY.md |
+| `actions.tempBanLocal` | bool | false | - | Permit the evidence action `temp-ban-local`; requires the kick gate plus per-incident operator approval (POLICY.md) |
 | `actions.throttle` | bool | true | - | Availability protection; never counts toward enforcement |
 | `thresholds.<detectorId>.<key>` | number/string | per detector | per detector | Placeholder until Phase 10 calibration; every key must be declared in the detector's config manifest |
 | `evidence.dir` | string | `ServerGuard/evidence` | writable, non-empty | Append-only JSONL segments |

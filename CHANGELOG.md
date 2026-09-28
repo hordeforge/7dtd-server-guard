@@ -215,6 +215,12 @@ above reserves minor bumps for that.
   `determinism.fingerprint` from its current outcome projection, rewriting only the
   digest. Editing a trace without resealing it failed the gate with two digests and no
   way to compute the right one short of running the projection by hand.
+- `actions.tempBanLocal` (bool, default `false`) in config v1. The `temp-ban (local)`
+  action was in the accepted action vocabulary (D-04, POLICY.md -> Action set) and in the
+  evidence action enum, but no config key enabled it, so the documented
+  "actions as separately enabled switches" did not hold for the one action that needs
+  the strongest gate. Enabling it still requires the kick gate and per-incident operator
+  approval.
 
 ### Fixed
 
@@ -224,6 +230,15 @@ above reserves minor bumps for that.
   succeeded, and the self-test failed on a correct tree. The stamp is now pinned through
   `export(..., stamp=...)`, so the collision is the export guard's doing rather than a race
   against the clock.
+- The accepted decision D-13 named `EntityAlive.DamageEntity` as the primary damage
+  path. No detector, seam, or registry entry has ever hooked it: the census-grounded seam
+  in `tools/detector_spec.yaml` and `docs/ARCHITECTURE.md` is `NetPackageDamageEntity`
+  paired with `NetPackageRangeCheckDamageEntity`. D-13, the Phase 6 checkbox in
+  `TODO.md`, and the corresponding open question in `docs/RESEARCH.md` now name the
+  package the code hooks.
+- D-05 credited "Layer 4 property tests" with the chain, truncation, and tombstone
+  invariants. Layer 4 is the offline replay layer; the property tests are Layer 2. The
+  entry now names the Layer 4 `review-surface` fixture family that actually covers them.
 - The shipped inventory replay fixture carried a `determinism.fingerprint` that matched
   no outcome projection, so `make check` and `make exercise` failed on a clean tree from
   the commit that added the field. The fixture now carries the digest its own content

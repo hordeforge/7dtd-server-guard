@@ -105,7 +105,7 @@ inventory against the pinned build, unless noted otherwise.
 | Is there an authoritative trader price/currency decision point? | Trader detector degrades to unexplained-delta (Strong). The census shows `NetPackageTraderData` sync only, no price/currency transaction package | Phase 1, Phase 7 |
 | Which client values does the vanilla server already validate or overwrite? | Duplicate validation, wrong authority class | Phase 1 |
 | Does the movement envelope hold against server-authoritative state on the pinned build? | Movement stays Strong, never Hard | Phase 1, Phase 5 |
-| Do `EntityAlive.DamageEntity` and `NetPackageRangeCheckDamageEntity` cover the same attack surface? | One path leaves a bypass | Phase 1, Phase 6 |
+| Do `NetPackageDamageEntity` and `NetPackageRangeCheckDamageEntity` cover the same attack surface? | One path leaves a bypass | Phase 1, Phase 6 |
 | Can vehicle physics-master limits be reconstructed server-side? | Vehicle signals stay Weak | Phase 5 |
 | Which seams changed between V3.0.1 (b4) and V3.2.0 (b9)? | Hooks misresolve; fail-open limits the damage, coverage gaps remain | Phase 1 re-verification |
 

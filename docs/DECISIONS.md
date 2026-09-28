@@ -60,7 +60,8 @@ see note).
 - **Alternatives:** One combined "severity -> action" map (rejected: `enforce` implies
   quarantine *or* kick, but which one is a policy choice, not a capability choice).
 - **Consequence:** POLICY.md owns both vocabularies; SCHEMAS.md config exposes modes
-  per detector and actions as separately enabled switches.
+  per detector and actions as separately enabled switches. `record` carries no switch
+  because it is available in every mode (POLICY.md -> Action set).
 
 ## D-05: Append-only hash-chained JSONL evidence with tombstones
 
@@ -70,9 +71,9 @@ see note).
 - **Alternatives:** SQLite (rejected: heavier dependency, still needs tamper-evidence
   handling, harder crash-safe segment semantics); a binary log (rejected: review tooling and
   exports are easier from JSONL); no chain (rejected: tamper detection is a stated value).
-- **Consequence:** SCHEMAS.md evidence v1 fixes the record grammar; TEST_PLAN.md Layer 4
-  property tests cover chain, truncation, and tombstone invariants. The chain proves
-  tampering by non-keyholders only (ARCHITECTURE.md -> Evidence model).
+- **Consequence:** SCHEMAS.md evidence v1 fixes the record grammar; the TEST_PLAN.md Layer 4
+  `review-surface` fixture family covers chain, truncation, and tombstone invariants. The
+  chain proves tampering by non-keyholders only (ARCHITECTURE.md -> Evidence model).
 
 ## D-06: HMAC pseudonyms with a separate identity map and key rotation
 
@@ -164,8 +165,9 @@ see note).
 ## D-13: Both damage paths must be hooked together
 
 - **Status:** accepted.
-- **Decision:** Combat validators hook both `EntityAlive.DamageEntity` and
-  `NetPackageRangeCheckDamageEntity`; a validator on one path only protects nothing.
+- **Decision:** Combat validators hook both `NetPackageDamageEntity` and
+  `NetPackageRangeCheckDamageEntity`; a validator on one path only protects nothing. Both
+  seams are the two damage paths named in the V3.2.0 netpackage census (D-18).
 - **Alternatives:** Hook the common post-damage sink only (rejected: the range-check path
   bypasses the sink; the at-risk seam list names it).
 - **Consequence:** RESEARCH.md open question, SIGNALS.md -> Correlation graph, TODO.md Phase 6,

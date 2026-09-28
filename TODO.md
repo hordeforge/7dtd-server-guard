@@ -142,7 +142,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 ## Phase 6: combat ledger
 
 - [ ] Correlate item action, ammo/reload, attack, hit, damage, death, and explosion IDs.
-- [ ] Hook both damage paths (`EntityAlive.DamageEntity` and
+- [ ] Hook both damage paths (`NetPackageDamageEntity` and
   `NetPackageRangeCheckDamageEntity`); a validator on one path only protects nothing.
 - [ ] Implement cadence, held-item/ammo, state, target-set, and repeat-damage invariants.
 - [ ] Reconstruct allowed damage from item, quality, mods, buffs, armor, difficulty, and hit zone.
