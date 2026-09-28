@@ -262,6 +262,67 @@ def _self_test_older_corrupt() -> list[str]:
     return errs
 
 
+def _self_test_undated() -> list[str]:
+    """An archive whose manifest carries no readable stamp is named, never counted.
+
+    Age comes from the manifest's own `createdUtc`, so an archive without one has
+    no age at all. Counting it would open the RPO silently, and skipping it
+    silently would leave the operator with a root full of archives and no report.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "backup-status-self-test-undated"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+        now = dt.datetime(2026, 7, 21, 0, 1, tzinfo=dt.UTC)
+
+        # A manifest stripped of its stamp, and one whose stamp is not a date: the
+        # root is newer than either can say, and neither may be read as a backup.
+        for name, manifest in (
+            ("evidence-20990101T000000Z", json.dumps({"segments": []})),
+            ("evidence-20990102T000000Z", json.dumps({"createdUtc": "not-a-stamp"})),
+        ):
+            (archives / name).mkdir()
+            (archives / name / ee.MANIFEST_NAME).write_text(manifest, encoding="utf-8")
+
+        status = check(archives, now=now)
+        if sorted(status.undated) != ["evidence-20990101T000000Z", "evidence-20990102T000000Z"]:
+            errs.append(f"self-test: an archive with no readable stamp was not named: {status}")
+        if status.fresh != archive or status.age_hours is None:
+            errs.append(f"self-test: an undated archive displaced the real backup: {status}")
+        found = report(status, archives)
+        errs += [
+            f"self-test: {name} was not reported as undated: {found}"
+            for name in ("evidence-20990101T000000Z", "evidence-20990102T000000Z")
+            if not any(name in e and "no readable createdUtc" in e for e in found)
+        ]
+        if any("RPO window is open in full" in e for e in found):
+            errs.append(
+                f"self-test: an undated archive was counted against a healthy root: {found}"
+            )
+
+        # A root whose only archive is undated has no backup to measure, so the
+        # window is open and the status says so.
+        lonely = scratch / "lonely"
+        lonely.mkdir()
+        shutil.copytree(
+            archives / "evidence-20990101T000000Z", lonely / "evidence-20990101T000000Z"
+        )
+        only = check(lonely, now=now)
+        if only.fresh is not None or only.age_hours is not None:
+            errs.append(f"self-test: an undated-only root reported a backup: {only}")
+        if not any("RPO window is open in full" in e for e in report(only, lonely)):
+            errs.append(f"self-test: a root with no measurable backup reported no issue: {only}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--self-test", action="store_true", help="run the status self-tests and exit")
@@ -275,7 +336,10 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        return _report("backup-status self-test", [*_self_test(), *_self_test_older_corrupt()])
+        return _report(
+            "backup-status self-test",
+            [*_self_test(), *_self_test_older_corrupt(), *_self_test_undated()],
+        )
 
     if args.root is None:
         ap.print_help(sys.stderr)

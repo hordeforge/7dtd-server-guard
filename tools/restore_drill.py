@@ -326,6 +326,92 @@ def _self_test_refusals() -> list[str]:
             errs.append("self-test: an edited archive reported success")
         if (scratch / "work-tampered").exists():
             errs.append("self-test: an unverified archive was copied into the work directory")
+
+        not_a_dir = scratch / "work-is-a-file"
+        not_a_dir.write_text("not a directory\n", encoding="utf-8")
+        if not drill(DrillRequest(archive=archive, work=not_a_dir))[0]:
+            errs.append("self-test: a work path that is a file reported success")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _self_test_config() -> list[str]:
+    """`--config` is the half of the drill an archive cannot carry, and the whole
+    path from flag to finding is only exercised here.
+
+    `secrets_errors` covers the missing and stale cases against a config it is
+    handed, but the operator runs `drill`: the config has to load, its relative
+    paths have to resolve against the runtime root rather than the process's
+    working directory, and a missing key has to fail the drill rather than ride
+    along as a note beside a successful restore. The keys live in a directory
+    that is not where the config is, so a resolution against the config's own
+    parent reports them missing and the clean case below stops being clean.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "restore-drill-self-test-config"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+
+        config_dir = scratch / "config"
+        config_dir.mkdir(parents=True)
+        config_path = config_dir / "server-guard.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "identityMap": {"path": "identity-map.json"},
+                    "hmacKey": {"path": "keys/hmac.key"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        runtime = scratch / "runtime"
+        (runtime / "keys").mkdir(parents=True)
+
+        # Neither key is in the runtime root yet: a clean restore must not read as
+        # a clean drill, and both sections have to be named.
+        request = DrillRequest(
+            archive=archive,
+            work=scratch / "work-missing",
+            config_path=config_path,
+            runtime_root=runtime,
+        )
+        found = drill(request)[0]
+        errs += [
+            f"self-test: a drill with --config did not report {section}: {found}"
+            for section in ("identityMap", "hmacKey")
+            if not any(section in e for e in found)
+        ]
+
+        (runtime / "identity-map.json").write_text("{}\n", encoding="utf-8")
+        (runtime / "keys" / "hmac.key").write_text("k\n", encoding="utf-8")
+        if found := drill(
+            DrillRequest(
+                archive=archive,
+                work=scratch / "work-present",
+                config_path=config_path,
+                runtime_root=runtime,
+            )
+        )[0]:
+            errs.append(f"self-test: a drill with both keys present reported {found}")
+
+        # A config the loader cannot read is named, not raised out of the drill.
+        broken = scratch / "broken.json"
+        broken.write_bytes(b'{"schemaVersion": 1, "level": "caf\xe9"}\n')
+        if not any(
+            "broken.json" in e
+            for e in drill(
+                DrillRequest(archive=archive, work=scratch / "work-broken", config_path=broken)
+            )[0]
+        ):
+            errs.append("self-test: a drill with an unreadable config reported success")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return errs
@@ -375,6 +461,7 @@ def self_test() -> list[str]:
     errs += _self_test_without_index()
     errs += _self_test_refusals()
     errs += _self_test_secrets()
+    errs += _self_test_config()
     return errs
 
 

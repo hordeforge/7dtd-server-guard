@@ -389,6 +389,7 @@ def self_test() -> list[str]:
     _effective_self_test(example, failures)
     _load_self_test(failures)
     _main_contract_self_test(failures)
+    _show_effective_self_test(failures)
     return failures
 
 
@@ -424,6 +425,50 @@ def _main_contract_self_test(failures: list[str]) -> None:
             failures.append(f"{label}: usage error wrote to stdout: {out.getvalue()!r}")
         if not err.getvalue():
             failures.append(f"{label}: usage error wrote nothing to stderr")
+
+
+def _show_effective_self_test(failures: list[str]) -> None:
+    """`--show-effective` is a machine-readable contract, not a printing mode.
+
+    A deployment step redirects stdout to a file and reads the effective config
+    back out of it, so the verdict has to stay on stderr: a validity line ahead
+    of the JSON, or the whole report on stdout, turns every consumer into a
+    parse failure at deploy time rather than a wrong answer. The hash line is
+    the one trailer stdout carries, and it must be the hash of the config printed
+    above it rather than a digest of some other serialization.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    saved = sys.argv
+    sys.argv = ["config_check.py", "--config", str(EXAMPLE_PATH), "--show-effective"]
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main()
+    finally:
+        sys.argv = saved
+    if code != 0:
+        failures.append(f"--show-effective on the shipped example: exit {code}, expected 0")
+    printed = out.getvalue()
+    lines = printed.splitlines()
+    if not lines or not lines[-1].startswith("config hash: "):
+        failures.append(
+            f"--show-effective stdout does not end in the config hash line: {printed!r}"
+        )
+        return
+    try:
+        document = json.loads("\n".join(lines[:-1]))
+    except json.JSONDecodeError as exc:
+        failures.append(f"--show-effective stdout is not the effective config JSON: {exc}")
+        return
+    if not isinstance(document, dict) or document.get("schemaVersion") != 1:
+        failures.append(f"--show-effective did not print the effective config: {document!r}")
+    if lines[-1] != f"config hash: {config_hash(document)}":
+        failures.append(
+            f"--show-effective hash line does not match the config printed above it: {lines[-1]!r}"
+        )
+    if "is valid" in printed:
+        failures.append(f"--show-effective wrote the verdict to stdout: {printed!r}")
+    if "is valid" not in err.getvalue():
+        failures.append(f"--show-effective did not write the verdict to stderr: {err.getvalue()!r}")
 
 
 def _report(label: str, errors: list[str]) -> int:
