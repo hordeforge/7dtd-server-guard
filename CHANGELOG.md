@@ -12,7 +12,16 @@ this file and are described only by their git tags.
 
 ### Added
 
-- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace> [ITERATIONS=N] [SEED=S]`
+- `tools/fuzz_detector_spec.py`: a seeded, structure-aware fuzzer over
+  `tools/detector_spec.yaml` and both of its consumers (doccheck's spec pass and the
+  renderers in `render_detectors.py`). It mutates the spec into YAML documents and
+  corrupts the document text, and asserts that `load_spec` either returns a list or
+  raises `SpecError`, that no doccheck spec consumer raises on any content, and that
+  the render path survives any value in the fields the structural validator leaves
+  free. Pair assertions drop and mistype each required field. Run by
+  `make test-tools` and `make fuzz FUZZ=detector_spec`.
+- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec>
+  [ITERATIONS=N] [SEED=S]`
   runs one fuzzer at a short iteration count, with a usage error naming the valid
   harnesses. Every harness already took `--iterations` and `--seed`.
 - `CONTRIBUTING.md` states the runnable path: prerequisites, bootstrap, the loop, the
@@ -90,6 +99,13 @@ this file and are described only by their git tags.
 - `doccheck.py` walked `.scratch/`, so a contributor following the workspace rule of
   keeping scratch work there failed the docs gate on links in their own scratch notes.
   Version control, the local environment, tool caches, and `.scratch/` are now skipped.
+- A malformed `tools/detector_spec.yaml` crashed the doccheck gate that is meant to report
+  it. `render_detectors.load_spec` raises `SpecError` instead of `KeyError` on a document
+  with no detector list; `doccheck` reads the spec through `parsed_spec()` and its
+  validators tolerate non-mapping records, non-mapping inputs and thresholds, non-list
+  fixture and context lists, and non-numeric threshold bounds; vocabulary membership goes
+  through `in_vocab`, because `x in {...}` raises on an unhashable `x`; and the renderers
+  skip list fields that are not lists instead of iterating or joining them.
 - `fuzz_replay_trace.py` built its deep-nesting probe from a mutated trace and then
   indexed `cases[0]["events"][0]`, so a mutant that dropped or replaced either crashed
   the harness with a bare `TypeError`. The probe now copies the pristine sample. The

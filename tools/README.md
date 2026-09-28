@@ -28,12 +28,14 @@
   schema/data pairs, evidence sample chain, replay-contract vector, evidence
   personal-data deny-list, backup/restore runbook, and folder structure.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`,
-  `fuzz_evidence_export.py`: seeded, deterministic structure-aware fuzzers over the evidence
-  parser, the JSON Schema validator in doccheck.py, the replay-trace contract checker, and
-  the archive verifier (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a
-  single harness from the Makefile's FUZZERS list at a short run). Temporary segments go under
-  `.scratch/`, never the system temp dir.
-- `fuzz_common.py`: the mutation engine all three fuzzers share, so their mutation policies
+  `fuzz_evidence_export.py`, `fuzz_detector_spec.py`: seeded, deterministic structure-aware
+  fuzzers over the evidence parser, the JSON Schema validator in doccheck.py, the
+  replay-trace contract checker, the archive verifier, and the detector spec
+  (`detector_spec.yaml`) with both of its consumers (doccheck's spec pass and the renderers in
+  render_detectors.py) (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a
+  single harness from the Makefile's FUZZERS list at a short run). Temporary segments and spec
+  files go under `.scratch/`, never the system temp dir.
+- `fuzz_common.py`: the mutation engine all five fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `guard_python.py`: fails the build unless the running interpreter is exactly the
   version in `.python-version`. Runs first in `make check`, `make exercise`,

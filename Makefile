@@ -6,7 +6,7 @@
 .PHONY: setup check ci lint detectors exercise test-tools fuzz verify-evidence export-evidence verify-archive guard-python help
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in harness order.
-FUZZERS := evidence_check schema_validate replay_trace
+FUZZERS := evidence_check schema_validate replay_trace detector_spec
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -53,7 +53,7 @@ exercise: guard-python
 
 # Tests for the shipped Python tooling: evidence hash-chain negative self-tests
 # plus seeded structure-aware fuzzers over the evidence parser, the JSON Schema
-# validator, and the replay-trace contract checker.
+# validator, the replay-trace contract checker, and the detector spec consumers.
 test-tools: guard-python
 	$(UV) python tools/evidence_check.py --self-test
 	$(UV) python tools/evidence_export.py --self-test
@@ -61,6 +61,7 @@ test-tools: guard-python
 	$(UV) python tools/fuzz_schema_validate.py
 	$(UV) python tools/fuzz_replay_trace.py
 	$(UV) python tools/fuzz_evidence_export.py
+	$(UV) python tools/fuzz_detector_spec.py
 
 # One fuzzer at a short iteration count: the loop for a single harness, and the
 # way to re-run a seed a failure reported. A failing seed replays exactly.
@@ -105,7 +106,7 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
-	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace)"
+	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, detector_spec)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"

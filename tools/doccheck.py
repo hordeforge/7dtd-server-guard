@@ -111,6 +111,20 @@ SPEC_CEILINGS = {"Hard", "Strong", "Weak"}
 SPEC_ROLES = {"observed", "decision"}
 SPEC_AUTHORITIES = {"server-derived", "client-declared"}
 SPEC_THRESHOLD_TYPES = {"int", "float", "string"}
+SPEC_MODES = {"observe", "correct", "enforce"}
+NUMERIC_THRESHOLD_TYPES = {"int", "float"}
+
+
+def in_vocab(value: Json, vocab: frozenset[str] | set[str]) -> bool:
+    """Whether a spec value is a member of a string vocabulary.
+
+    Every value reaching these checks comes from YAML, where a nested list or
+    mapping can land in any field. `x in vocab` raises on an unhashable x, so a
+    malformed spec would crash the gate instead of being reported by it.
+    """
+    return isinstance(value, str) and value in vocab
+
+
 # Fixture families are owned by render_detectors.py (they head the registry matrix);
 # importing keeps this validator from drifting from the rendered table.
 ALLOWED_FIXTURES = frozenset(render_detectors.FIXTURE_FAMILIES)
@@ -240,12 +254,22 @@ def check_todo_format() -> list[str]:
     return out
 
 
+def parsed_spec() -> list[object]:
+    """The spec records, or none when the file does not parse.
+
+    check_spec reports an unparseable spec. The cross-reference checks run in the
+    same pass as check_spec, so they read the spec through this accessor rather
+    than each raising a traceback on the same file.
+    """
+    try:
+        return render_detectors.load_spec()
+    except render_detectors.SpecError:
+        return []
+
+
 def spec_ids() -> set[str]:
     """Registry ids, or an empty set when the spec does not parse (check_spec reports that)."""
-    try:
-        return {d["id"] for d in render_detectors.load_spec() if isinstance(d.get("id"), str)}
-    except Exception:
-        return set()
+    return {did for did, _ in render_detectors.identified(parsed_spec())}
 
 
 def _range_default_errors(did: str, t: Json, ttype: str) -> list[str]:
@@ -285,13 +309,17 @@ def _threshold_errors(did: str, thresholds: Json) -> list[str]:
     """Threshold keys are unique, typed, and carry a sane range and default.
 
     Every field is read with .get: a hand-edited spec missing a key must be
-    reported, not raise out of the gate.
+    reported, not raise out of the gate, and an entry that is not a mapping at
+    all is reported the same way instead of being indexed.
     """
     if not isinstance(thresholds, list):
-        return [f"{did}: thresholds must be a list"]
-    out = []
-    keys = []
-    for t in thresholds:
+        return [f"{did}: thresholds must be a list, got {type(thresholds).__name__}"]
+    out: list[str] = []
+    entries = [t if isinstance(t, dict) else {} for t in thresholds]
+    if any(not isinstance(t, dict) for t in thresholds):
+        out.append(f"{did}: threshold entries must all be mappings")
+    keys: list[str] = []
+    for t in entries:
         key = t.get("key")
         if not isinstance(key, str) or not key:
             out.append(f"{did}: threshold missing key {key!r}")
@@ -299,26 +327,58 @@ def _threshold_errors(did: str, thresholds: Json) -> list[str]:
         keys.append(key)
     if len(keys) != len(set(keys)):
         out.append(f"{did}: duplicate threshold keys")
-    for t in thresholds:
+    for t in entries:
         ttype = t.get("type")
-        if ttype not in SPEC_THRESHOLD_TYPES:
+        if not isinstance(ttype, str) or not in_vocab(ttype, SPEC_THRESHOLD_TYPES):
             out.append(f"{did}: threshold {t.get('key')} bad type {ttype}")
             continue
         out.extend(_range_default_errors(did, t, ttype))
     return out
 
 
+def _input_errors(did: str, inputs: object) -> list[str]:
+    """Every declared input carries a known authority and role."""
+    if not isinstance(inputs, list):
+        return [f"{did}: inputs must be a list, got {type(inputs).__name__}"]
+    out = [] if inputs else [f"{did}: no inputs"]
+    for i in inputs:
+        if not isinstance(i, dict):
+            out.append(f"{did}: input must be a mapping, got {i!r}")
+            continue
+        if not in_vocab(i.get("authority"), SPEC_AUTHORITIES):
+            out.append(f"{did}: input {i.get('name')} bad authority {i.get('authority')}")
+        if not in_vocab(i.get("role"), SPEC_ROLES):
+            out.append(f"{did}: input {i.get('name')} bad role {i.get('role')}")
+    return out
+
+
+def _fixture_errors(did: str, fixtures: object) -> list[str]:
+    """Fixture names are TEST_PLAN families, and normal and violation are both declared."""
+    if not isinstance(fixtures, list):
+        return [f"{did}: fixtures must be a list, got {type(fixtures).__name__}"]
+    names = {f for f in fixtures if isinstance(f, str)}
+    out = [
+        f"{did}: fixture {f} outside TEST_PLAN families" for f in sorted(names - ALLOWED_FIXTURES)
+    ]
+    # TEST_PLAN.md Layer 4: every detector ships normal and violation traces.
+    if "normal" not in names or "violation" not in names:
+        out.append(f"{did}: must declare normal and violation fixtures (TEST_PLAN Layer 4)")
+    return out
+
+
 def _detector_errors(d: Json) -> list[str]:
     """Required fields, input authority/role vocabulary, fixtures, and the D-07 rule."""
-    did = d.get("id")
-    if not isinstance(did, str):
-        return [f"detector with no id: {d.get('id')!r}"]
+    if not isinstance(d, dict) or not isinstance(d.get("id"), str):
+        # Without a usable id nothing below can be attributed to a detector;
+        # check_spec reports the record through the structural validator.
+        return [f"detector record must be a mapping with a string id, got {d!r}"]
+    did = d["id"]
     out = []
-    if d.get("family") not in SPEC_FAMILIES:
+    if not in_vocab(d.get("family"), SPEC_FAMILIES):
         out.append(f"{did}: bad family {d.get('family')}")
-    if d.get("ceiling") not in SPEC_CEILINGS:
+    if not in_vocab(d.get("ceiling"), SPEC_CEILINGS):
         out.append(f"{did}: bad ceiling {d.get('ceiling')}")
-    if d.get("default_mode") not in {"observe", "correct", "enforce"}:
+    if not in_vocab(d.get("default_mode"), SPEC_MODES):
         out.append(f"{did}: bad default_mode {d.get('default_mode')}")
     for field, note in (
         ("summary", ""),
@@ -329,26 +389,16 @@ def _detector_errors(d: Json) -> list[str]:
         if not d.get(field):
             out.append(f"{did}: missing {field}{note}")
     inputs = d.get("inputs", [])
-    if not inputs:
-        out.append(f"{did}: no inputs")
-    for i in inputs:
-        if i.get("authority") not in SPEC_AUTHORITIES:
-            out.append(f"{did}: input {i.get('name')} bad authority {i.get('authority')}")
-        if i.get("role") not in SPEC_ROLES:
-            out.append(f"{did}: input {i.get('name')} bad role {i.get('role')}")
-    fixtures = set(d.get("fixtures", []))
-    out.extend(
-        f"{did}: fixture {f} outside TEST_PLAN families"
-        for f in sorted(fixtures - ALLOWED_FIXTURES)
-    )
-    # TEST_PLAN.md Layer 4: every detector ships normal and violation traces.
-    if "normal" not in fixtures or "violation" not in fixtures:
-        out.append(f"{did}: must declare normal and violation fixtures (TEST_PLAN Layer 4)")
+    out.extend(_input_errors(did, inputs))
+    out.extend(_fixture_errors(did, d.get("fixtures", [])))
     # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
     decision_client = [
         i.get("name")
         for i in inputs
-        if i.get("role") == "decision" and i.get("authority") == "client-declared"
+        if isinstance(i, dict)
+        and i.get("role") == "decision"
+        and i.get("authority") == "client-declared"
+        and isinstance(i.get("name"), str)
     ]
     if d.get("ceiling") == "Hard" and decision_client and not d.get("hard_condition"):
         out.append(
@@ -365,10 +415,12 @@ def check_spec() -> list[str]:
     except render_detectors.SpecError as exc:
         return [f"tools/detector_spec.yaml {exc}"]
 
-    out = []
-    # Entries with no usable id are reported by _detector_errors; they cannot take
-    # part in the duplicate-id comparison.
-    ids: list[str] = [d["id"] for d in detectors if isinstance(d.get("id"), str)]
+    out = [msg for i, d in enumerate(detectors) for msg in render_detectors.record_errors(i, d)]
+    # Entries with no usable id are reported by the structural validator and by
+    # _detector_errors; they cannot take part in the duplicate-id comparison.
+    ids: list[str] = [
+        d["id"] for d in detectors if isinstance(d, dict) and isinstance(d.get("id"), str)
+    ]
     if len(ids) != len(set(ids)):
         dups = sorted({i for i in ids if ids.count(i) > 1})
         out.append(f"duplicate detector ids in spec: {dups}")
@@ -428,34 +480,38 @@ def check_registry_sync() -> list[str]:
     ]
 
 
-def _threshold_map(entries: Json) -> dict[str, Json] | None:
-    """Threshold key -> threshold entry, or None when the list is malformed.
+def _threshold_keys(thresholds: object) -> set[str]:
+    """Declared threshold keys, ignoring entries the spec validator already reported.
 
-    Both the spec and the generated manifest carry thresholds as unvalidated
-    JSON, so a hand edit that drops a key is reported, not indexed.
+    The cross-references read a spec that may be malformed, and check_spec owns
+    the report on the entries that are; this pass only needs the keys.
     """
-    if not isinstance(entries, list):
-        return None
-    out: dict[str, Json] = {}
-    for t in entries:
-        if not isinstance(t, dict) or not isinstance(t.get("key"), str):
-            return None
-        out[t["key"]] = t
-    return out
+    if not isinstance(thresholds, list):
+        return set()
+    return {t["key"] for t in thresholds if isinstance(t, dict) and isinstance(t.get("key"), str)}
 
 
-def _manifest_errors(example: Json) -> list[str]:
+def _thresholds_by_key(thresholds: object) -> dict[str, Json]:
+    """Threshold entries keyed by their declared key, skipping unusable entries."""
+    if not isinstance(thresholds, list):
+        return {}
+    return {
+        t["key"]: t for t in thresholds if isinstance(t, dict) and isinstance(t.get("key"), str)
+    }
+
+
+def _manifest_errors(example: Json, out: list[str]) -> None:
     """Manifest metadata must track the spec, and both must cover the example config.
 
-    Like every check here, a hand-edited manifest or spec is reported as an error
-    list; nothing is read with [] on a field that may be absent.
+    Like every check here, a hand-edited manifest or spec is reported into the
+    caller's error list; nothing is read with [] on a field that may be absent.
     """
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
     entries = manifest.get("detectors")
     if not isinstance(entries, list):
-        return ["config/detector-config-manifest.json: detectors must be an array"]
-    spec_by_id = {d["id"]: d for d in render_detectors.load_spec() if "id" in d}
-    out: list[str] = []
+        out.append("config/detector-config-manifest.json: detectors must be an array")
+        return
+    spec_by_id = dict(render_detectors.identified(parsed_spec()))
     # detector id -> that manifest entry's thresholds, keyed by threshold key.
     manifest_keys: dict[str, dict[str, Json]] = {}
     manifest_ids: set[str] = set()
@@ -475,15 +531,12 @@ def _manifest_errors(example: Json) -> list[str]:
             or entry.get("defaultMode") != spec_entry.get("default_mode")
         ):
             out.append(f"manifest metadata drift for {detector_id}; re-run make detectors")
-        declared = _threshold_map(spec_entry.get("thresholds", []))
-        in_manifest = _threshold_map(entry.get("thresholds", []))
-        if declared is None or in_manifest is None:
-            out.append(f"malformed threshold list for {detector_id} in the spec or manifest")
-            continue
-        manifest_keys[detector_id] = in_manifest
+        declared = _threshold_keys(spec_entry.get("thresholds"))
+        entry_keys = _thresholds_by_key(entry.get("thresholds"))
+        manifest_keys[detector_id] = entry_keys
         out.extend(
             f"manifest threshold {detector_id}.{key} not declared in spec"
-            for key in in_manifest
+            for key in sorted(entry_keys)
             if key not in declared
         )
         out.extend(
@@ -508,7 +561,6 @@ def _manifest_errors(example: Json) -> list[str]:
             if (threshold := known.get(key)) is not None
             for error in _threshold_value_errors(did, key, value, threshold)
         )
-    return out
 
 
 def _threshold_value_errors(did: str, key: str, value: Json, threshold: Json) -> list[str]:
@@ -528,7 +580,11 @@ def _threshold_value_errors(did: str, key: str, value: Json, threshold: Json) ->
     if ttype == "string" and not isinstance(value, str):
         return [f"{path}: {value!r} is not a string"]
     rng = threshold.get("range")
-    if ttype not in {"int", "float"} or not isinstance(rng, list) or len(rng) != RANGE_BOUNDS:
+    if (
+        not in_vocab(ttype, NUMERIC_THRESHOLD_TYPES)
+        or not isinstance(rng, list)
+        or len(rng) != RANGE_BOUNDS
+    ):
         return []
     numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
     if not numeric or not rng[0] <= value <= rng[1]:
@@ -566,7 +622,7 @@ def check_detector_ids() -> list[str]:
         for mode_id in sorted(registered - example_modes)
     )
     out.extend(_example_mode_errors(example))
-    out.extend(_manifest_errors(example))
+    _manifest_errors(example, out)
     return out
 
 
@@ -578,7 +634,7 @@ MODE_SEVERITY = ("observe", "correct", "enforce")
 
 def _example_mode_errors(example: Json) -> list[str]:
     """The example config may not ship a mode above the spec's default for any detector."""
-    defaults = {d["id"]: d.get("default_mode") for d in render_detectors.load_spec() if "id" in d}
+    defaults = {did: d.get("default_mode") for did, d in render_detectors.identified(parsed_spec())}
     out = []
     for mode_id, mode in sorted(example.get("modes", {}).items()):
         if mode not in MODE_SEVERITY:
