@@ -135,7 +135,9 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
     """Parse and shape-check one segment line. Raises ValueError naming file:line."""
     try:
         rec = json.loads(line, parse_constant=_reject_non_finite)
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:
+        # JSONDecodeError and the non-finite hook both land here. The hook runs
+        # inside json.loads, so it cannot know which segment line it came from.
         raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
     except ValueError as exc:
         # The parse_constant hook raises a bare ValueError; every error out of a

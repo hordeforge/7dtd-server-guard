@@ -217,6 +217,33 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _member_errors(archive: pathlib.Path, entry: object) -> list[str]:
+    """What one manifest file entry claims about its file, against the bytes on disk."""
+    if not isinstance(entry, dict) or not valid_member_name(entry.get("name")):
+        return [f"{MANIFEST_NAME}: malformed file entry"]
+    name = entry["name"]
+    path = archive / name
+    if not path.is_file():
+        return [f"{name}: listed in the manifest but missing from the archive"]
+    sha, size = file_digest(path)
+    if sha != entry.get("sha256"):
+        return [f"{name}: sha256 mismatch (archive is corrupt or was edited)"]
+    if size != entry.get("bytes"):
+        return [f"{name}: byte count mismatch ({size} vs {entry.get('bytes')})"]
+    if entry.get("records") is None:
+        return []
+    records = _record_count(path)
+    return (
+        []
+        if records == entry["records"]
+        else [f"{name}: record count mismatch ({records} vs {entry['records']})"]
+    )
+
+
+def _entry_total(entries: list[object], field: str) -> int:
+    return sum(int(e[field]) for e in entries if isinstance(e, dict) and _is_int(e.get(field)))
+
+
 def verify(archive: pathlib.Path) -> list[str]:
     """Re-check an archive against its manifest and re-verify its chain."""
     manifest_path = archive / MANIFEST_NAME
@@ -238,20 +265,9 @@ def verify(archive: pathlib.Path) -> list[str]:
     errs: list[str] = []
     listed: set[str] = set()
     for entry in entries:
-        if not isinstance(entry, dict) or not valid_member_name(entry.get("name")):
-            errs.append(f"{MANIFEST_NAME}: malformed file entry")
-            continue
-        name = entry["name"]
-        listed.add(name)
-        path = archive / name
-        if not path.is_file():
-            errs.append(f"{name}: listed in the manifest but missing from the archive")
-            continue
-        sha, size = file_digest(path)
-        if sha != entry.get("sha256"):
-            errs.append(f"{name}: sha256 mismatch (archive is corrupt or was edited)")
-        elif size != entry.get("bytes"):
-            errs.append(f"{name}: byte count mismatch ({size} vs {entry.get('bytes')})")
+        errs += _member_errors(archive, entry)
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            listed.add(entry["name"])
     present = {p.name for p in archive.glob(SEGMENT_GLOB)} | {
         p.name for p in archive.glob("*.json") if p.name != MANIFEST_NAME
     }
@@ -259,9 +275,9 @@ def verify(archive: pathlib.Path) -> list[str]:
         f"{name}: present in the archive but not in the manifest"
         for name in sorted(present - listed)
     )
-    total = sum(e["bytes"] for e in entries if isinstance(e, dict) and _is_int(e.get("bytes")))
-    if total != manifest.get("totalBytes"):
-        errs.append("totalBytes in the manifest does not match the sum of its file entries")
+    for field in ("bytes", "records"):
+        if _entry_total(entries, field) != manifest.get(f"total{field.capitalize()}"):
+            errs.append(f"total{field.capitalize()} does not match the sum of its file entries")
     errs += [f"chain: {e}" for e in ec.verify_dir(archive, index_name)]
     return errs
 

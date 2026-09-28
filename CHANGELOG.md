@@ -10,6 +10,30 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+This ships as 0.5.0, not a patch: the entries under Breaking change config validation, the
+evidence schema, and the exit codes a script reading the tool CLIs sees, and the 0.x policy
+above reserves minor bumps for that.
+
+### Breaking
+
+- Config validation rejects an empty `evidence.dir`, `identityMap.path`, or `hmacKey.path`, and
+  rejects a `webhook.urlEnv` or `dashboard.secretEnv` that is not `^[A-Z][A-Z0-9_]*$`. Before
+  this release a lower-case or hyphenated environment variable name loaded, and a misspelled one
+  silently disabled the webhook sink or the dashboard secret. The config is rejected wholesale at
+  startup, so an operator whose deployed `server-guard.json` names such a variable must rename it
+  in the file and in the environment before upgrading. The values themselves are unchanged.
+- The evidence schema's root object is now `additionalProperties: false`. A record carrying an
+  unrecognized top-level key fails validation, where it passed before. No shipped sample carried
+  one, and a detector emitting one needs it named in `docs/SCHEMAS.md` first.
+- A replay trace requires the `determinism` block, so a trace written before this release no
+  longer validates. Regenerate traces with the current harness (including
+  `tools/fixtures/traces/inventory/stack.v1.sample.json`), which writes `startUtc`,
+  `startMonotonicMs`, and the recomputed `fingerprint`.
+- The tool CLIs report a usage error as exit 2 and a verification failure as exit 1, and print
+  failures on stderr with a clean verdict on stdout. A script that treated any nonzero exit as
+  "the evidence is bad" now sees 2 for its own invocation mistake and must read stdout to
+  distinguish a pass from a failure.
+
 ### Added
 
 - `tools/fuzz_detector_spec.py`: a seeded, structure-aware fuzzer over
@@ -37,6 +61,18 @@ this file and are described only by their git tags.
   cannot write a raw platform ID, player name, address, or credential into a
   record that operators and webhook consumers read. `doccheck.py` fails when an
   open object drops it, and the schema fuzzer pins that it rejects.
+- `tools/evidence_export.py`, driven by `make export-evidence DIR=<dir> OUT=<root>`
+  and `make verify-archive ARCHIVE=<dir>`: the evidence directory's hash chain is
+  verified before anything is copied, every copy is re-hashed, and the export is
+  refused outright if either fails, so a bad backup is never declared complete. The
+  archive carries `archive-manifest.json` (`manifestVersion: 1`) with the sha256,
+  byte count, and record count of every file written, described from the copies
+  rather than the source. `make verify-archive` re-checks an archive against its
+  manifest and re-verifies the chain inside it, which is the restore drill.
+- `docs/OPERATIONS.md` -> Backup and restore: the operator procedure for the
+  archive, including that the identity map and the HMAC key live outside the evidence
+  directory and are backed up separately. Archiving a pseudonym key beside the records
+  it unmasks would hand one stolen copy both halves.
 
 ### Changed
 
@@ -148,6 +184,24 @@ this file and are described only by their git tags.
   instead of raising `KeyError`.
 - `evidence.rotationSizeMB` is documented as decimal megabytes in
   `docs/SCHEMAS.md` and the config schema, so rotation sizing has one unit.
+- Evidence `utc` and `savedAt` are validated as offset-qualified RFC 3339
+  date-times. The schema now declares `format: date-time` and the gate rejects a
+  value carrying no offset, which names no instant and is read in the reader's own
+  local zone, so two readers of the same record could disagree on when it happened.
+- The evidence parser's rejection of a non-finite literal lost the `file:line`
+  prefix every other parse error carries, so a segment with a `NaN` anywhere was
+  reported without saying which line to look at.
+- The replay contract checker raised `ValueError` on a trace carrying a non-finite
+  number instead of reporting it, which broke its own contract to return an error
+  list for any input, and made a hand-edited trace a traceback rather than a
+  diagnosis.
+- `make verify-archive` checks the per-file and total record counts the manifest
+  records, not only the sha256 and byte count. An archive whose manifest misstated
+  how many records it holds verified clean, and the restore drill would have
+  accepted it.
+- The CI job is bounded by a 20-minute timeout, so a wedged fuzzer fails the run
+  instead of holding a runner for the 6h default, and the checkout token is not
+  persisted into `.git/config` between steps, since nothing pushes from CI.
 
 ## [0.4.1] - 2026-09-20
 
