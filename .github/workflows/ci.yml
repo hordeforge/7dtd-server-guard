@@ -15,11 +15,17 @@ jobs:
     # Pinned image instead of ubuntu-latest: the ambient toolchain (make, git,
     # tar) must not drift under a moving tag.
     runs-on: ubuntu-24.04
+    # A wedged fuzzer must fail the job, not hold a runner for the 6h default.
+    timeout-minutes: 20
     steps:
       # actions/checkout, SHA-pinned per dependabot.yml: these actions are the
       # whole dependency surface, so tags must not be mutable refs. The
       # trailing version comment on each `uses` line is the source of truth.
+      # The token is read-only and nothing pushes from CI, so the credential
+      # does not stay in .git/config between steps.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # astral-sh/setup-uv: uv installs the interpreter minor declared in
       # .python-version and the locked dependency set, instead of whatever the
       # runner image happens to ship.
