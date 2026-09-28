@@ -3,12 +3,17 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools fuzz verify-config verify-evidence export-evidence verify-archive guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools self-test fuzz verify-config verify-evidence export-evidence verify-archive guard-python help
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
 # short-run loop cannot reproduce a seed the full run reported.
 FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_spec
+
+# Tools carrying negative self-tests, addressable by `make self-test TOOL=<name>`.
+# This list is the registry: `make test-tools` runs every entry, so adding a
+# self-test here is enough to put it in the CI run.
+SELF_TESTS := evidence_check evidence_export config_check
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -43,6 +48,7 @@ guard-python:
 # One-time bootstrap on a fresh clone: materialize .venv from uv.lock, including
 # the dev group (black, ruff, mypy). Nothing is installed globally.
 setup:
+	@command -v uv >/dev/null 2>&1 || { echo "setup: uv not found on PATH." >&2; echo "setup: install uv (https://docs.astral.sh/uv/); the exact required release is" >&2; echo "setup: required-version in pyproject.toml, and uv refuses to run against any other." >&2; exit 2; }
 	uv sync --frozen
 
 check: guard-python
@@ -71,14 +77,26 @@ exercise: guard-python
 # archive verifier and exporter, the JSON Schema validator, the replay-trace
 # contract checker, and the detector spec consumers.
 test-tools: guard-python
-	$(UV) python tools/evidence_check.py --self-test
-	$(UV) python tools/evidence_export.py --self-test
-	$(UV) python tools/config_check.py --self-test
+	@set -e; for tool in $(SELF_TESTS); do \
+	  echo "$(UV) python tools/$$tool.py --self-test"; \
+	  $(UV) python tools/$$tool.py --self-test; \
+	done
 	$(UV) python tools/fuzz_evidence_check.py
 	$(UV) python tools/fuzz_schema_validate.py
 	$(UV) python tools/fuzz_replay_trace.py
 	$(UV) python tools/fuzz_evidence_export.py
 	$(UV) python tools/fuzz_detector_spec.py
+
+# One tool's negative self-tests: the loop while editing that tool, since
+# `make fuzz FUZZ=<name>` covers only its fuzzer, not its self-tests.
+# Usage: make self-test TOOL=evidence_check
+self-test: guard-python
+	@test -n "$(TOOL)" || { echo "usage: make self-test TOOL=<$(subst $(space),|,$(SELF_TESTS))>" >&2; exit 2; }
+	@case " $(SELF_TESTS) " in \
+	  *" $(TOOL) "*) ;; \
+	  *) echo "unknown self-test '$(TOOL)'; expected one of: $(SELF_TESTS)" >&2; exit 2 ;; \
+	esac
+	$(UV) python tools/$(TOOL).py --self-test
 
 # One fuzzer at a short iteration count: the loop for a single harness, and the
 # way to re-run a seed a failure reported. A failing seed replays exactly.
@@ -131,6 +149,7 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
+	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, config_check)"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make guard-python    interpreter pin gate every other target depends on"
@@ -139,4 +158,5 @@ help:
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"
 	@echo "  make verify-archive ARCHIVE=<dir>   re-verify an archive against its manifest"
 	@echo "Python version: .python-version, enforced exactly (uv installs it; local builds refuse any other)."
+	@echo "uv version: required-version in pyproject.toml, enforced by uv itself and pinned to the same release in CI."
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."

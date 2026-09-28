@@ -1203,6 +1203,20 @@ def check_required_docs() -> list[str]:
     return [d for d in REQUIRED_DOCS if not (ROOT / d).exists()]
 
 
+def _makefile_runs_self_test(makefile: str, tool: str) -> bool:
+    """Whether `make test-tools` runs the given tool's `--self-test`.
+
+    The Makefile's SELF_TESTS list is the registry of tools carrying self-tests, and
+    test-tools iterates it, so a tool that is in neither, or in a registry the
+    target no longer loops over, is a self-test that silently stopped running in CI.
+    """
+    registry = re.search(r"^SELF_TESTS\s*:?=\s*(.*(?:\n[ \t]+.*)*)", makefile, re.MULTILINE)
+    if registry is None or tool not in registry.group(1).split():
+        return False
+    target = re.search(r"^test-tools:.*(?:\n(?![\w-]+:).*)*", makefile, re.MULTILINE)
+    return target is not None and "$(SELF_TESTS)" in target.group(0)
+
+
 def check_backup_runbook() -> list[str]:
     """The evidence store is the one state an operator cannot regenerate, so the
     archive tooling and the recovery contract must stay in place together: a
@@ -1215,7 +1229,7 @@ def check_backup_runbook() -> list[str]:
         for target in ("export-evidence", "verify-archive")
         if f"\n{target}:" not in makefile
     ]
-    if "tools/evidence_export.py --self-test" not in makefile:
+    if not _makefile_runs_self_test(makefile, "evidence_export"):
         out.append("Makefile: test-tools does not run the evidence export self-test")
     if "### Restore drill" not in ops:
         out.append("docs/OPERATIONS.md: no restore drill in the backup and restore runbook")

@@ -43,11 +43,16 @@
   render_detectors.py) (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a
   single harness from the Makefile's FUZZERS list at a short run). Temporary segments and spec
   files go under `.scratch/`, never the system temp dir.
+- The Makefile's `SELF_TESTS` list is the registry of tools carrying `--self-test`
+  (`evidence_check.py`, `evidence_export.py`): `make test-tools` runs every entry, and
+  `make self-test TOOL=<name>` runs one alone while editing it. Adding a tool to that list
+  is the only edit needed to put its self-tests in the CI run.
 - `fuzz_common.py`: the mutation engine all five fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `guard_python.py`: fails the build unless the running interpreter is exactly the
-  version in `.python-version`. Runs first in `make check`, `make exercise`,
-  `make test-tools`, and `make fuzz`.
+  version in `.python-version`. Runs first in every target that executes a tool:
+  `make check`, `make lint`, `make detectors`, `make exercise`, `make test-tools`,
+  `make self-test`, and `make fuzz`.
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
   (SCHEMAS.md). Planned; only the README contract exists, no code yet.
 - `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression

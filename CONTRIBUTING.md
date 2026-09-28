@@ -5,10 +5,12 @@ is gated separately by `make check`; this file is the runnable contract.
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) 0.12.13, the release CI pins. It installs the exact
-  interpreter version pinned in [.python-version](.python-version) and resolves the
-  locked dependency set, so the local toolchain is the CI toolchain. `required-version`
-  in [pyproject.toml](pyproject.toml) makes any other uv release refuse to run here.
+- [uv](https://docs.astral.sh/uv/) 0.12.13, the release `required-version` pins under
+  `[tool.uv]` in [pyproject.toml](pyproject.toml) and the release CI installs. uv refuses to
+  run against any other release and names the one it wants, so the pin is checked by the
+  tool rather than by the reader. It installs the exact interpreter version pinned in
+  [.python-version](.python-version) and resolves the locked dependency set, so the local
+  toolchain is the CI toolchain.
 - `make` and a POSIX shell.
 - Network access on the first run, for the uv interpreter and lockfile download.
 
@@ -25,15 +27,17 @@ make ci         # everything CI runs, in one local step
 
 `make ci` is the same command CI runs, so a green `make ci` means a green workflow.
 
-Single harness while editing one tool:
+Single tool while editing it, without running the minutes-long `make test-tools`:
 
 ```
-make fuzz FUZZ=replay_trace                  # short run, default seed
+make self-test TOOL=evidence_check           # that tool's negative self-tests
 make fuzz FUZZ=evidence_check ITERATIONS=50 SEED=1234
 ```
 
-Fuzzers are seeded, so the `seed=` and `iterations=` a failure reported reproduce
-it exactly. `make help` lists every target.
+The two targets are the two halves of `make test-tools`; a fuzzer run covers only the
+fuzzer, so a change to a tool's self-tests needs `make self-test`. Fuzzers are seeded, so
+the `seed=` and `iterations=` a failure reported reproduce it exactly. `make help` lists
+every target.
 
 ## Generated files
 

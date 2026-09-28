@@ -51,7 +51,17 @@ above reserves minor bumps for that.
 - `sg config show` and `sg config check [path]` in `docs/OPERATIONS.md`: the effective
   config as loaded, under the recorded `configHash`, and a validation pass that reports
   what startup would refuse without reloading.
-
+- `make self-test TOOL=<evidence_check|evidence_export|config_check>` runs one tool's
+  negative self-tests,
+  the half of `make test-tools` that `make fuzz FUZZ=<name>` does not cover. The Makefile's
+  `SELF_TESTS` list is the registry: `make test-tools` iterates it, so a tool added to the list
+  joins the CI run with no other edit.
+- The uv release is pinned machine-readably as `required-version` under `[tool.uv]` in
+  `pyproject.toml`, the same release `astral-sh/setup-uv` installs in CI. uv refuses to run
+  against a mismatch and names the required release, so the check belongs to the tool instead
+  of to a line of prose in the README.
+- `tools/evidence_export.py`: `export` takes an optional `stamp` naming the archive rather than
+  timestamping it. The CLI default is unchanged.
 - `tools/fuzz_detector_spec.py`: a seeded, structure-aware fuzzer over
   `tools/detector_spec.yaml` and both of its consumers (doccheck's spec pass and the
   renderers in `render_detectors.py`). It mutates the spec into YAML documents and
@@ -163,6 +173,12 @@ above reserves minor bumps for that.
 
 ### Fixed
 
+- The evidence export self-test asserted that a second export refuses to overwrite a live
+  archive, but it relied on both exports landing in the same wall-clock second. When the
+  first export crossed a second boundary the two names differed, the export correctly
+  succeeded, and the self-test failed on a correct tree. The stamp is now pinned through
+  `export(..., stamp=...)`, so the collision is the export guard's doing rather than a race
+  against the clock.
 - The shipped inventory replay fixture carried a `determinism.fingerprint` that matched
   no outcome projection, so `make check` and `make exercise` failed on a clean tree from
   the commit that added the field. The fixture now carries the digest its own content

@@ -93,8 +93,10 @@ the ledger, exit criteria, and known at-risk seams live in [TODO.md](TODO.md).
 
 ## Development
 
-Bootstrap (once per clone; needs [uv](https://docs.astral.sh/uv/) 0.12.13, which installs
-the exact interpreter version pinned in [.python-version](.python-version) on its own):
+Bootstrap (once per clone; needs [uv](https://docs.astral.sh/uv/) at the release pinned in
+`required-version` under `[tool.uv]` in [pyproject.toml](pyproject.toml), the same one CI
+installs. uv enforces that pin itself and installs the exact interpreter version pinned in
+[.python-version](.python-version) on its own):
 
 - `make setup`: `uv sync --frozen`, materializing `.venv` from `uv.lock`. Nothing is
   installed globally.
@@ -110,7 +112,10 @@ Loop:
 - `make exercise`: validate the design-time replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
   (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
-  checker, detector spec consumers).
+  checker, detector spec consumers). It takes minutes; while editing a single tool, run its
+  two halves on their own.
+- `make self-test TOOL=evidence_check|evidence_export|config_check`: one tool's negative
+  self-tests, the half of `make test-tools` a `make fuzz FUZZ=` run does not cover.
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
   iteration count, for editing a single tool. Seeds are deterministic, so a reported
   `seed=` reproduces the failure.

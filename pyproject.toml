@@ -27,7 +27,9 @@ target-version = ["py312"]
 
 [tool.uv]
 package = false
-# uv is the resolver that reads uv.lock, so its release is part of the pinned
-# toolchain. CI installs 0.12.13; a different release refuses to run rather than
-# resolving the lock differently from the recorded build.
+# Machine-readable pin for the resolver itself, the same release CI installs via
+# astral-sh/setup-uv (0.12.13). uv refuses to run against a mismatch with the
+# required release named, so a contributor on a different uv learns that before a
+# lockfile is resolved or a gate result is produced, instead of resolving the lock
+# differently from the recorded build.
 required-version = "==0.12.13"

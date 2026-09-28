@@ -31,6 +31,7 @@ Usage:
   uv run python tools/evidence_export.py --dir <evidence-dir> --out <archive-root>
   uv run python tools/evidence_export.py --archive <archive-dir>
   uv run python tools/evidence_export.py --self-test
+  make self-test TOOL=evidence_export                   the same, through the task runner
 """
 
 from __future__ import annotations
@@ -67,6 +68,9 @@ DEFAULT_INDEX_NAME = ec.DEFAULT_INDEX
 # Read/write block size for copying and hashing, so archive size does not set the
 # process's memory ceiling.
 COPY_CHUNK_BYTES = 1 << 20
+# Archive-name stamp the self-tests pin, so a name collision under test is a
+# property of the export guard and not of when the test happened to run.
+SELF_TEST_STAMP = "20260723T120000Z"
 
 
 def utc_stamp() -> str:
@@ -203,20 +207,19 @@ def export(
     """Verify, copy, and manifest. Returns errors; empty means the archive is
     complete and verified. Nothing is written when verification fails.
 
-    `stamp` names the archive and defaults to the current second. It is a
-    parameter rather than a direct utc_stamp() call so a caller that must hit
-    the overwrite refusal, which is keyed on that name, can say which name it
-    means instead of depending on where the clock happens to be. The name
-    carries a one-second timestamp, so two exports into the same root inside
-    one second are refused as a collision; a caller that has to exercise that
-    refusal (the self-test) passes the same stamp rather than depending on
-    where the second boundary falls.
+    The archive is named after `stamp`, defaulting to the current second. An
+    explicit stamp names an archive rather than timestamping one, so a caller
+    that must hit the overwrite refusal, which is keyed on that name, says
+    which name it means instead of depending on where the clock happens to be.
+    The name carries a one-second timestamp, so two exports into the same root
+    inside one second are refused as a collision; the self-test passes the same
+    stamp rather than depending on where the second boundary falls.
     """
     members, errs = preflight(source, index_name)
     if errs:
         return errs
 
-    dest = out_root / f"evidence-{stamp if stamp is not None else utc_stamp()}"
+    dest = out_root / f"evidence-{stamp or utc_stamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
@@ -373,19 +376,20 @@ def _self_test_happy_path(
     # One fixed archive name for both exports: the collision refusal is a
     # same-second one, and reading the clock here made the case fail whenever the
     # second boundary happened to fall between the two calls.
-    stamp = "20260721T000000Z"
-    if export(source, out_root, DEFAULT_INDEX_NAME, stamp=stamp):
+    if export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
         errs.append("self-test: export of a valid chain reported errors")
     archives = sorted(p for p in out_root.iterdir() if p.is_dir())
     if len(archives) != 1:
         return [*errs, "self-test: export did not produce exactly one archive"], archives
+    if archives[0].name != f"evidence-{SELF_TEST_STAMP}":
+        return [*errs, "self-test: export did not honor the requested stamp"], archives
     if verify(archives[0]):
         errs.append("self-test: fresh archive did not verify")
-    # A second export under the same archive name must refuse, not overwrite. The
-    # name is pinned rather than left to the clock, or the case only runs when two
-    # exports happen to land in the same second and silently stops testing anything.
-    if not export(source, out_root, DEFAULT_INDEX_NAME, stamp=stamp):
-        errs.append("self-test: a same-second export overwrote a live archive")
+    # A second export naming an existing archive must refuse, not overwrite. The
+    # stamp is pinned rather than taken from the clock, so the collision is the
+    # export guard's doing and not a race against the wall-clock second.
+    if not export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
+        errs.append("self-test: a colliding export overwrote a live archive")
     if sorted(p for p in out_root.iterdir() if p.is_dir()) != archives:
         errs.append("self-test: a refused export still left a new archive behind")
     errs += [

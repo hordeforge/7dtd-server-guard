@@ -14,6 +14,7 @@ Usage:
   uv run python tools/evidence_check.py --dir <evidence-dir> [--index segment-index.json]
   uv run python tools/evidence_check.py --sample        verify the shipped sample chain
   uv run python tools/evidence_check.py --self-test     run negative tests (tamper, genesis)
+  make self-test TOOL=evidence_check                    the same, through the task runner
 
 Exit codes: 0 verified, 1 the chain failed verification, 2 usage error. A
 verification report goes to stdout when clean and to stderr when it found
