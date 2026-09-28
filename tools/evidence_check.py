@@ -858,8 +858,10 @@ def _case_error_cap(root: str) -> list[str]:
     found = verify_dir(directory, "segment-index.json")
     if len(found) > MAX_REPORTED_CHAIN_ERRORS + 1:
         return [
-            f"self-test: a wholly broken segment reported {len(found)} findings, "
-            f"which is not bounded: {found[:3]}"
+            (
+                f"self-test: a wholly broken segment reported {len(found)} findings, "
+                f"which is not bounded: {found[:3]}"
+            )
         ]
     return _expect_reported(
         found, "further chain error", "a fully broken segment's hidden findings"

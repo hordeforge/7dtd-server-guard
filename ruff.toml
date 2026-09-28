@@ -32,4 +32,8 @@ select = [
     "FA",  # future-annotations consistency with the pinned target version
     "ERA", # commented-out code, which hides unmerged work behind a passing gate
     "TD",  # TODO/FIXME must name an owner or a tracking issue
+    "ISC", # implicit string concat: adjacent literals in a collection read as one
+           # element, and `+` concat defeats the formatter
+    "PGH", # pygrep-hooks: a bare `# noqa` or `# type: ignore` with no rule or error
+           # code silences the whole line, hiding more than it names
 ]

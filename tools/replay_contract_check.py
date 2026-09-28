@@ -131,8 +131,10 @@ def _determinism_errors(trace: dict[str, Any]) -> list[str]:
     determinism = trace.get("determinism")
     if not isinstance(determinism, dict):
         return [
-            "trace: missing or non-object determinism block "
-            "(virtual clock origin and replay fingerprint)"
+            (
+                "trace: missing or non-object determinism block "
+                "(virtual clock origin and replay fingerprint)"
+            )
         ]
     errors: list[str] = []
 

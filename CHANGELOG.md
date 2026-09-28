@@ -153,6 +153,13 @@ above reserves minor bumps for that.
 
 ### Changed
 
+- `ruff.toml` selects two more rule groups. `ISC` rejects implicit string concatenation
+  inside a collection, where two adjacent literals read as one element but are in fact two,
+  and `+` concatenation that the formatter would otherwise rewrite. `PGH` rejects a bare
+  `# noqa` and a `# type: ignore` with no error code, so a suppression must name the rule
+  it silences instead of the whole line. Every existing suppression already named its rule,
+  so the tree passes both groups unchanged apart from five message literals that now carry
+  their concatenation parentheses.
 - The evidence schema's `personalDataDenyList` denies the identity spellings it
   missed: `xuid` (the same account as `steam` under the engine's own name), and
   `name`, `nick`, `handle`, `alias`, `ident`, `login` for the display-name family.

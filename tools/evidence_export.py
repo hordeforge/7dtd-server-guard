@@ -273,14 +273,18 @@ def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
     archived = archive_file_names(dest)
     if archived != {m.name for m in members}:
         return [
-            f"{dest}: an archive for this second holds a different evidence set; "
-            "refusing to overwrite an existing archive"
+            (
+                f"{dest}: an archive for this second holds a different evidence set; "
+                "refusing to overwrite an existing archive"
+            )
         ]
     diverged = [m.name for m in members if file_digest(m) != file_digest(dest / m.name)]
     if diverged:
         return [
-            f"{dest}: archived {', '.join(sorted(diverged))} differ from the source; "
-            "refusing to overwrite an existing archive"
+            (
+                f"{dest}: archived {', '.join(sorted(diverged))} differ from the source; "
+                "refusing to overwrite an existing archive"
+            )
         ]
     return []
 
@@ -421,8 +425,10 @@ def _attestation_errors(manifest: object) -> list[str]:
         return [f"{MANIFEST_NAME}: unsupported manifest version"]
     if manifest.get(MANIFEST_DIGEST_FIELD) != manifest_digest(manifest):
         return [
-            f"{MANIFEST_NAME}: {MANIFEST_DIGEST_FIELD} does not match the manifest; "
-            "the attestation itself was edited or is truncated"
+            (
+                f"{MANIFEST_NAME}: {MANIFEST_DIGEST_FIELD} does not match the manifest; "
+                "the attestation itself was edited or is truncated"
+            )
         ]
     if not isinstance(manifest.get("files"), list) or not manifest["files"]:
         return [f"{MANIFEST_NAME}: no file list"]
