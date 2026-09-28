@@ -55,14 +55,13 @@ SHA256_HEX_LEN = 64
 GENESIS = "0" * SHA256_HEX_LEN
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
+# Self-test scratch files go to the repo's gitignored scratch dir, not the system
+# temp dir: /tmp is tmpfs on this host, so the file would be charged to RAM.
+SCRATCH = ROOT / ".scratch"
 SEGMENT_DIGITS = re.compile(r"(\d+)")
 
 # Segment index file name inside --dir when --index is not given.
 DEFAULT_INDEX = "segment-index.json"
-
-# Self-test scratch files go to the repo's gitignored scratch dir, not the system
-# temp dir: /tmp is tmpfs on this host, so the file would be charged to RAM.
-SCRATCH = ROOT / ".scratch"
 
 
 def _reject_non_finite(token: str) -> float:
@@ -128,6 +127,8 @@ def iter_records(path: pathlib.Path) -> Iterator[ParsedLine]:
                 yield (i, _parse_line(name, i, line), line)
     except UnicodeDecodeError as exc:
         raise ValueError(f"{name}: not valid UTF-8: {exc}") from exc
+    except OSError as exc:
+        raise ValueError(f"{name}: unreadable: {exc}") from exc
 
 
 def load_records(path: pathlib.Path) -> list[ParsedLine]:
@@ -182,9 +183,30 @@ def load_index(index_path: pathlib.Path) -> tuple[dict[str, Any] | None, list[st
         return None, [f"{name} unparseable: {exc}"]
     except UnicodeDecodeError as exc:
         return None, [f"{name} not valid UTF-8: {exc}"]
+    except OSError as exc:
+        return None, [f"{name} unreadable: {exc}"]
     if not isinstance(index, dict):
         return None, [f"{name}: must be a JSON object"]
     return index, []
+
+
+def _index_errors(
+    index: dict[str, Any] | None, segments: list[pathlib.Path], name: str
+) -> list[str]:
+    """Cross-check the optional segment index against the files on disk.
+
+    A `segments` value that is not an array of objects is reported as such; it
+    names no file list, so comparing it to the directory would report a mismatch
+    that does not exist and bury the malformed index that caused it.
+    """
+    if not index or "segments" not in index:
+        return []
+    entries = index["segments"]
+    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+        return [f"{name}: 'segments' must be an array of objects"]
+    if [e.get("file") for e in entries] != [s.name for s in segments]:
+        return [f"{name}: segment list does not match files on disk"]
+    return []
 
 
 def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
@@ -193,37 +215,42 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
         return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
     index, errs = load_index(evidence_dir / index_name)
 
-    prev_segment_last_hash = None
+    # Last record hash of the segment before the current one, and the name of a
+    # segment that yielded no usable records. A segment that failed to load or is
+    # empty carries no hash to link to, so the next segment's link is unverifiable
+    # rather than broken; reporting a mismatch there would bury the real cause.
+    prev_last_hash: str | None = None
+    prev_unlinked: str | None = None
     for si, seg in enumerate(segments):
         try:
-            chain = verify_chain(iter_records(seg), first_of_stream=si == 0)
+            chain: SegmentChain | None = verify_chain(iter_records(seg), first_of_stream=si == 0)
         except ValueError as exc:
             errs.append(str(exc))
+            chain = None
+        if chain is None:
+            prev_last_hash, prev_unlinked = None, seg.name
             continue
         if chain.record_count == 0:
             errs.append(f"{seg.name}: empty segment")
+            prev_last_hash, prev_unlinked = None, seg.name
             continue
         errs += [f"{seg.name}: {e}" for e in chain.errors]
         # cross-segment link
         if si == 0 and chain.first_prev != GENESIS:
             errs.append(f"{seg.name}: first record of the stream must chain to genesis")
         if si > 0:
-            if prev_segment_last_hash is None:
-                errs.append(f"{seg.name}: previous segment had no records to chain to")
-            elif chain.first_prev != prev_segment_last_hash:
+            if prev_unlinked is not None:
+                errs.append(
+                    f"{seg.name}: previous segment {prev_unlinked} yielded no records; "
+                    "its link to this segment is unverified"
+                )
+            elif chain.first_prev != prev_last_hash:
                 errs.append(
                     f"{seg.name}: first record does not chain to previous segment's last record"
                 )
-        prev_segment_last_hash = chain.last_hash
+        prev_last_hash, prev_unlinked = chain.last_hash, None
 
-    # cross-check the index if present
-    if index and "segments" in index:
-        entries = index["segments"]
-        well_formed = isinstance(entries, list) and all(isinstance(e, dict) for e in entries)
-        index_files = [e.get("file") for e in entries] if well_formed else None
-        actual = [s.name for s in segments]
-        if index_files != actual:
-            errs.append(f"{index_name}: segment list does not match files on disk")
+    errs += _index_errors(index, segments, index_name)
     return errs
 
 
@@ -236,7 +263,8 @@ def verify_sample() -> list[str]:
 
 
 def self_test() -> list[str]:
-    """Negative tests: tamper, bad genesis, and non-finite numbers must be detected."""
+    """Negative tests: tamper, bad genesis, non-finite numbers, and the damaged-directory
+    reports."""
     errs = []
     base = [
         {"schemaVersion": 1, "type": "health", "eventId": "a", "chainPrev": GENESIS, "x": 1},
@@ -310,6 +338,40 @@ def self_test() -> list[str]:
         pass
     else:
         errs.append("self-test: canonical serialized a NaN")
+    errs += _dir_self_test(recs)
+    return errs
+
+
+def _dir_self_test(recs: list[Record]) -> list[str]:
+    """Directory-level negatives: an unreadable segment and a malformed index.
+
+    A segment that cannot be parsed must be reported once, and the segment after
+    it must be reported as unlinked rather than as a chain mismatch: the link
+    cannot be checked, and a mismatch would name a break that is not there.
+    """
+    errs: list[str] = []
+    SCRATCH.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="evidence-self-test-", dir=SCRATCH) as td:
+        run = pathlib.Path(td)
+        (run / "evidence-1.jsonl").write_text("{ not json\n", encoding="utf-8")
+        (run / "evidence-2.jsonl").write_text(canonical(recs[0]) + "\n", encoding="utf-8")
+
+        found = verify_dir(run, "segment-index.json")
+        if not any("unparseable JSON" in e for e in found):
+            errs.append(f"self-test: unreadable segment was not reported: {found}")
+        if any("does not chain to previous segment" in e for e in found):
+            errs.append(f"self-test: an unverifiable link was reported as a break: {found}")
+        if not any("unverified" in e for e in found):
+            errs.append(f"self-test: unverified link after a bad segment was not reported: {found}")
+
+        (run / "segment-index.json").write_text(
+            '{"segments": "evidence-1.jsonl"}', encoding="utf-8"
+        )
+        found = verify_dir(run, "segment-index.json")
+        if not any("'segments' must be an array of objects" in e for e in found):
+            errs.append(f"self-test: malformed index segments was not reported: {found}")
+        if any("does not match files on disk" in e for e in found):
+            errs.append(f"self-test: malformed index was reported as a file mismatch: {found}")
     return errs
 
 

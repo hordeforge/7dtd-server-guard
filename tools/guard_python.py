@@ -18,7 +18,12 @@ MIN_VERSION_PARTS = 2
 
 
 def main() -> int:
-    raw = ROOT.joinpath(VERSION_FILE).read_text(encoding="utf-8").strip()
+    path = ROOT.joinpath(VERSION_FILE)
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"guard-python: cannot read {VERSION_FILE}: {exc}", file=sys.stderr)
+        return 1
     parts = raw.split(".")
     if len(parts) < MIN_VERSION_PARTS or not all(p.isdigit() for p in parts):
         print(f"guard-python: {VERSION_FILE} must look like '3.12', got {raw!r}", file=sys.stderr)

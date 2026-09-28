@@ -69,14 +69,32 @@ FIXTURE_FAMILIES = [
 ]
 
 
+class SpecError(ValueError):
+    """tools/detector_spec.yaml is missing, unparseable, or not shaped like a spec."""
+
+
 @functools.cache
 def load_spec() -> list[Detector]:
-    """Parse the canonical spec. Cached: YAML parsing costs ~90ms and every
-    consumer in one process (the registry render, the doccheck spec, manifest,
-    and coverage checks) wants the same read. Callers must treat the result as
-    read-only."""
-    data: dict[str, Any] = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
-    detectors: list[Detector] = data["detectors"]
+    """The detector entries from the canonical spec. Cached: YAML parsing costs ~90ms
+    and every consumer in one process (the registry render, the doccheck spec,
+    manifest, and coverage checks) wants the same read. Callers must treat the result
+    as read-only.
+
+    Every way the spec can fail to be one (absent, unparseable YAML, no detector
+    list) is a SpecError naming the file, so a caller reports the broken spec
+    instead of propagating a bare OSError or KeyError.
+    """
+    try:
+        data: Any = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SpecError(f"{SPEC.name} unreadable: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise SpecError(f"{SPEC.name} unparseable: {exc}") from exc
+    if not isinstance(data, dict) or "detectors" not in data:
+        raise SpecError(f"{SPEC.name}: expected a mapping with a top-level 'detectors' list")
+    detectors = data["detectors"]
+    if not isinstance(detectors, list):
+        raise SpecError(f"{SPEC.name}: 'detectors' must be a list, got {type(detectors).__name__}")
     return detectors
 
 
@@ -203,7 +221,11 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    detectors = load_spec()
+    try:
+        detectors = load_spec()
+    except SpecError as exc:
+        print(f"render-detectors: {exc}", file=sys.stderr)
+        return 1
     if args.manifest:
         manifest = render_manifest(detectors)
         # allow_nan=False: a non-finite threshold in the spec would otherwise be

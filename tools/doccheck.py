@@ -44,6 +44,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -334,8 +335,8 @@ def check_spec() -> list[str]:
     """Validate tools/detector_spec.yaml and the D-07 ceiling rule."""
     try:
         detectors = render_detectors.load_spec()
-    except Exception as exc:
-        return [f"tools/detector_spec.yaml unparseable: {exc}"]
+    except render_detectors.SpecError as exc:
+        return [f"tools/detector_spec.yaml {exc}"]
 
     out = []
     ids: list[str] = [str(d.get("id")) for d in detectors if d.get("id") is not None]
@@ -349,21 +350,35 @@ def check_spec() -> list[str]:
     return out
 
 
+# A gated tool reads and parses files off disk; a run that has not finished in this
+# many seconds is stuck, and a gate that waits forever is indistinguishable from a
+# gate that passes.
+TOOL_TIMEOUT_S = 120
+
+
 def _run_tool(script: str, *args: str, on_failure: str) -> list[str]:
     """Run a sibling tool as a gate. Returns its output as errors when it exits nonzero.
 
     A separate process keeps each tool's argparse and exit-code contract as the gated
-    surface, instead of importing internals the CLI does not expose.
+    surface, instead of importing internals the CLI does not expose. Both streams are
+    reported: a tool that prints findings and then dies on an exception writes the
+    traceback to stderr, and dropping it hides the crash behind the findings.
     """
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / script), *args],
-        capture_output=True,
-        text=True,
-        cwd=ROOT,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / script), *args],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            check=False,
+            timeout=TOOL_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return [f"{' '.join([script, *args])}: no result after {TOOL_TIMEOUT_S}s"]
+    except OSError as exc:
+        return [f"{script}: could not be run: {exc}"]
     if proc.returncode != 0:
-        return [proc.stdout.strip() or proc.stderr.strip() or on_failure]
+        return [e for e in (proc.stdout.strip(), proc.stderr.strip()) if e] or [on_failure]
     return []
 
 
@@ -887,27 +902,42 @@ def check_backup_runbook() -> list[str]:
     return out
 
 
+def _run_check(name: str, check: Callable[[], list[str]]) -> tuple[str, list[str]]:
+    """Run one check, reporting an unexpected raise as that check's failure.
+
+    The checks read hand-edited YAML, JSON, and markdown, so a malformed one can
+    raise before it can report. Without this the first such check aborts the run
+    and the remaining checks never execute, turning a single broken input into a
+    gate that reports nothing.
+    """
+    try:
+        return name, check()
+    except Exception as exc:
+        return name, [f"{type(exc).__name__}: {exc} (check aborted; its input may be malformed)"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.parse_args()
 
-    failures: dict[str, list[str]] = {
-        "em dashes": check_em_dashes(),
-        "links": check_links(),
-        "TODO checkboxes": check_todo_format(),
-        "detector spec": check_spec(),
-        "registry sync": check_registry_sync(),
-        "detector registry coverage": check_detector_ids(),
-        "config example vs schema": check_config_example_keys(),
-        "config schema vs docs": check_config_contract(),
-        "config JSON schemas": check_config_schemas(),
-        "evidence personal data": check_evidence_personal_data(),
-        "evidence sample chain": check_evidence_sample_chain(),
-        "replay contract": check_replay_contract(),
-        "folder structure": check_folder_structure(),
-        "backup runbook": check_backup_runbook(),
-        "required docs": check_required_docs(),
-    }
+    checks = [
+        ("em dashes", check_em_dashes),
+        ("links", check_links),
+        ("TODO checkboxes", check_todo_format),
+        ("detector spec", check_spec),
+        ("registry sync", check_registry_sync),
+        ("detector registry coverage", check_detector_ids),
+        ("config example vs schema", check_config_example_keys),
+        ("config schema vs docs", check_config_contract),
+        ("config JSON schemas", check_config_schemas),
+        ("evidence personal data", check_evidence_personal_data),
+        ("evidence sample chain", check_evidence_sample_chain),
+        ("replay contract", check_replay_contract),
+        ("folder structure", check_folder_structure),
+        ("backup runbook", check_backup_runbook),
+        ("required docs", check_required_docs),
+    ]
+    failures = dict(_run_check(name, check) for name, check in checks)
     total = sum(len(v) for v in failures.values())
     print(
         f"doccheck: {total} issue(s) across {len(MD_FILES)} markdown "

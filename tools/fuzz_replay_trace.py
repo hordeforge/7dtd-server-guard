@@ -68,7 +68,11 @@ def main() -> int:
     rng = random.Random(args.seed)
     mut = Mutator(rng, weird_strings=DOMAIN_STRINGS, max_depth=4)
 
-    pristine = json.loads(rcc.TRACE.read_text(encoding="utf-8"))
+    try:
+        pristine = json.loads(rcc.TRACE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"fuzz-replay-trace: FAIL: shipped sample {rcc.TRACE.name}: {exc}", file=sys.stderr)
+        return 1
     current = pristine
     try:
         if check(pristine, "pristine sample"):

@@ -65,9 +65,14 @@ P_CORRUPT_INDEX_BYTES = 0.3
 
 
 def seed_records() -> list[ec.Record]:
-    recs = [
-        json.loads(line) for line in SAMPLE.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
+    try:
+        recs = [
+            json.loads(line)
+            for line in SAMPLE.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, ValueError) as exc:
+        raise InvariantBroken(f"shipped sample {SAMPLE.name} is unreadable: {exc}") from exc
     # synthetic genesis + chained tail so both chain positions are represented
     first = {
         "schemaVersion": 1,
@@ -185,13 +190,26 @@ def check_clean_chain_pair(tmp: pathlib.Path) -> bool:
     return True
 
 
+def load_seeds() -> list[ec.Record]:
+    """The seed corpus, or exit: without the shipped sample there is nothing to fuzz.
+
+    A missing or unparseable sample is a broken corpus, not a fuzzing finding, so
+    it is reported and the harness stops instead of raising out of main.
+    """
+    try:
+        return seed_records()
+    except InvariantBroken as exc:
+        print(f"fuzz-evidence-check: FAIL: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_fuzz_args(ap, default_iterations=2000)
     args = fuzz_args(ap)
     rng = random.Random(args.seed)
     mut = Mutator(rng, max_depth=1)  # record-level surgery, values replaced whole
-    seeds = seed_records()
+    seeds = load_seeds()
     stats = {"t1_records": 0, "t1_rejected": 0, "t2_runs": 0, "clean_chain_ok": False}
 
     SCRATCH.mkdir(exist_ok=True)

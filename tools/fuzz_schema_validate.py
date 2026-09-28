@@ -84,9 +84,14 @@ EVIDENCE_BAGS = ("context", "expected", "actual", "observations")
 def load_pairs() -> list[tuple[str, Json, list[Json]]]:
     out = []
     for schema_path, data_path in dc.SCHEMA_DATA_PAIRS:
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        instances = dc.load_instances(data_path)
         name = f"{schema_path.name} vs {data_path.name}"
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            instances = dc.load_instances(data_path)
+        except (OSError, ValueError) as exc:
+            raise InvariantBroken(
+                f"shipped pair {name} is unreadable or unparseable: {exc}"
+            ) from exc
         for inst in instances:
             errs = dc._schema_validate(inst, schema)
             if errs:
