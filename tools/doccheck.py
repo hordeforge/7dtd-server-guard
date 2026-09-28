@@ -10,12 +10,14 @@ Checks:
       rule plus the normal+violation fixture requirement per detector.
    5. docs/DETECTORS.md matches the rendered output of render_detectors.py.
    6. Every backticked detector ID token (`family.subject`) used across docs is present in
-      the spec; example-config mode keys match the registry both ways.
+      the spec; example-config mode keys match the registry both ways and never exceed the
+      spec's default mode for a detector.
    7. The generated config manifest matches the spec's phase/ceiling/mode metadata and
       declares exactly the spec's threshold keys; every example-config threshold key
-      exists in the manifest.
+      exists in the manifest and its value satisfies the manifest's type and range.
    8. Every key path in config/server-guard.example.json is declared in the config-schema
-      table of docs/SCHEMAS.md.
+      table of docs/SCHEMAS.md, and every key the config schema declares is documented
+      there and either defaulted or shown in the example.
    9. The shipped JSON Schemas parse, and the example config, generated manifest,
       evidence sample JSONL, and replay-trace fixture conform to them.
   10. The shipped evidence sample verifies as a hash chain (tools/evidence_check.py).
@@ -319,7 +321,7 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
     """Manifest metadata must track the spec, and both must cover the example config."""
     manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
     spec_by_id = {d["id"]: d for d in render_detectors.load_spec()}
-    manifest_keys: dict[str, set[str]] = {}
+    manifest_keys: dict[str, dict[str, Json]] = {}
     for entry in manifest["detectors"]:
         spec_entry = spec_by_id.get(entry["detectorId"])
         if spec_entry is None:
@@ -332,7 +334,7 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
         ):
             out.append(f"manifest metadata drift for {entry['detectorId']}; re-run make detectors")
         declared = {t["key"] for t in spec_entry.get("thresholds", [])}
-        manifest_keys[entry["detectorId"]] = {t["key"] for t in entry.get("thresholds", [])}
+        manifest_keys[entry["detectorId"]] = {t["key"]: t for t in entry.get("thresholds", [])}
         out.extend(
             f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec"
             for t in entry.get("thresholds", [])
@@ -342,8 +344,37 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
         out.extend(
             f"example config threshold {did}.{key} not in generated manifest"
             for key in keys
-            if key not in manifest_keys.get(did, set())
+            if key not in manifest_keys.get(did, {})
         )
+        for key, value in keys.items():
+            spec_threshold = manifest_keys.get(did, {}).get(key)
+            if spec_threshold is not None:
+                out.extend(_threshold_value_errors(did, key, value, spec_threshold))
+
+
+def _threshold_value_errors(did: str, key: str, value: Json, threshold: Json) -> list[str]:
+    """A threshold in the example config must satisfy the type and range its manifest entry
+    declares.
+
+    The strict Phase 2 loader enforces exactly this rule (SCHEMAS.md -> Per-detector config
+    manifest); the gate enforces it now, so an out-of-range value never ships in the example
+    an operator copies.
+    """
+    path = f"example config threshold {did}.{key}"
+    ttype = threshold.get("type")
+    if ttype == "int" and (not isinstance(value, int) or isinstance(value, bool)):
+        return [f"{path}: {value!r} is not an int"]
+    if ttype == "float" and (isinstance(value, bool) or not isinstance(value, (int, float))):
+        return [f"{path}: {value!r} is not a number"]
+    if ttype == "string" and not isinstance(value, str):
+        return [f"{path}: {value!r} is not a string"]
+    rng = threshold.get("range")
+    if ttype not in {"int", "float"} or not isinstance(rng, list) or len(rng) != RANGE_BOUNDS:
+        return []
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if not numeric or not rng[0] <= value <= rng[1]:
+        return [f"{path}: {value!r} outside declared range {rng}"]
+    return []
 
 
 def check_detector_ids() -> list[str]:
@@ -369,7 +400,30 @@ def check_detector_ids() -> list[str]:
         f"config example missing mode key for registered detector: {mode_id}"
         for mode_id in sorted(registered - example_modes)
     )
+    out.extend(_example_mode_errors(example))
     _manifest_errors(example, out)
+    return out
+
+
+# Detector modes in increasing severity. Raising one is a phase-gated operator decision
+# (SCHEMAS.md -> Config schema, POLICY.md -> Enforcement gates), so the shipped example may
+# never carry a mode above the one the spec declares as that detector's default.
+MODE_SEVERITY = ("observe", "correct", "enforce")
+
+
+def _example_mode_errors(example: Json) -> list[str]:
+    """The example config may not ship a mode above the spec's default for any detector."""
+    defaults = {d["id"]: d["default_mode"] for d in render_detectors.load_spec()}
+    out = []
+    for mode_id, mode in sorted(example.get("modes", {}).items()):
+        if mode not in MODE_SEVERITY:
+            continue
+        default = defaults.get(mode_id)
+        if default in MODE_SEVERITY and MODE_SEVERITY.index(mode) > MODE_SEVERITY.index(default):
+            out.append(
+                f"config example raises {mode_id} to '{mode}' above its spec default "
+                f"'{default}'; phases raise modes through the POLICY.md gates, not the example"
+            )
     return out
 
 
@@ -632,6 +686,58 @@ def check_config_example_keys() -> list[str]:
     ]
 
 
+# The only schema key the example may omit: it is required by the schema itself, so it is
+# present in the example by construction.
+UNCONDITIONAL_KEYS = frozenset({"schemaVersion"})
+
+# depth cap for the config-schema walk; the shipped config schema nests four levels.
+MAX_CONFIG_DEPTH = 20
+
+
+def _config_schema_leaves(schema: Json, prefix: str = "", depth: int = 0) -> list[tuple[str, Json]]:
+    """Dotted paths and subschemas for every declared leaf under `properties`.
+
+    patternProperties subtrees (per-detector mode and threshold keys) are skipped: their
+    keys come from the registry and the manifest, and are covered by the detector-id and
+    manifest checks instead.
+    """
+    if depth > MAX_CONFIG_DEPTH:
+        return []
+    out: list[tuple[str, Json]] = []
+    for key, sub in schema.get("properties", {}).items():
+        path = f"{prefix}.{key}" if prefix else key
+        if not isinstance(sub, dict) or sub.get("patternProperties"):
+            # A pattern-keyed subtree (modes, thresholds) has no leaves of its own: its
+            # keys come from the registry and the manifest, checked elsewhere.
+            continue
+        if sub.get("properties"):
+            out.extend(_config_schema_leaves(sub, path, depth + 1))
+        else:
+            out.append((path, sub))
+    return out
+
+
+def check_config_contract() -> list[str]:
+    """Every schema key is documented, and every key without a default is in the example.
+
+    Two drift directions the other checks do not cover: a schema key nobody documented
+    (an operator cannot discover it), and a key added to the schema with no default that
+    the example never shows (so every operator hits a required key they were never told
+    about). config/README.md states both rules; this enforces them.
+    """
+    schema = json.loads((ROOT / "config" / "schemas" / "config.v1.schema.json").read_text())
+    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    patterns = _schema_key_patterns()
+    example_keys = set(_flatten(example))
+    out = []
+    for path, sub in _config_schema_leaves(schema):
+        if not _matches_schema(path, patterns):
+            out.append(f"config schema key '{path}' not declared in SCHEMAS.md config table")
+        if "default" not in sub and path not in UNCONDITIONAL_KEYS and path not in example_keys:
+            out.append(f"config schema key '{path}' has no default and is missing from the example")
+    return out
+
+
 def check_required_docs() -> list[str]:
     return [d for d in REQUIRED_DOCS if not (ROOT / d).exists()]
 
@@ -648,6 +754,7 @@ def main() -> int:
         "registry sync": check_registry_sync(),
         "detector registry coverage": check_detector_ids(),
         "config example vs schema": check_config_example_keys(),
+        "config schema vs docs": check_config_contract(),
         "config JSON schemas": check_config_schemas(),
         "evidence sample chain": check_evidence_sample_chain(),
         "replay contract": check_replay_contract(),

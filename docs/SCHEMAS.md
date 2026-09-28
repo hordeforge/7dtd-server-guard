@@ -15,15 +15,23 @@ Rules that apply to every schema in this document:
   against a bounded charset: `[a-z0-9._-]`, max 64 chars.
 - No schema ever contains a raw platform identity, IP address, auth ticket, password, or
   full packet body. Identities are HMAC pseudonyms (see [PRIVACY.md](../PRIVACY.md)).
-- The file paths below are relative to the mod's data root, which the operator sets in the
-  config. Defaults live under the server's `UserDataFolder`-adjacent `ServerGuard/` tree;
-  the exact default location is confirmed in Phase 2.
+- The file paths below are relative to the mod's data root, which the loader derives from
+  the server's `UserDataFolder`-adjacent `ServerGuard/` tree. The data root is not a config
+  key, so a config can only name paths inside that tree; the exact default location is
+  confirmed in Phase 2.
 
 ## Config schema (config v1)
 
-File: `server-guard.json` (example in `config/server-guard.example.json`). Loaded at startup,
-rejected wholesale on any violation, reloadable by console command with the same checks.
-The machine form of this table is the JSON Schema at
+File: `server-guard.json` in the mod's data root. The repo ships
+`config/server-guard.example.json` (the documented contract); an operator keeps their working
+copy at `config/server-guard.local.json` (gitignored) and deploys it as
+`server-guard.json`. That deployed file is the only configuration source: there is no
+environment-variable override for any key in this table, so the file, not the environment,
+is what an operator changes. The two exceptions are secret *values* the file only names,
+`webhook.urlEnv` and `dashboard.secretEnv`.
+
+Loaded at startup, rejected wholesale on any violation, reloadable by console command with
+the same checks. The machine form of this table is the JSON Schema at
 `config/schemas/config.v1.schema.json`; the doccheck gate validates the example config
 against it, and the strict loader in Phase 2 is generated from the same schema.
 
@@ -42,14 +50,14 @@ against it, and the strict loader in Phase 2 is generated from the same schema.
 | `actions.kick` | bool | false | - | Subject to the kick gate in POLICY.md |
 | `actions.throttle` | bool | true | - | Availability protection; never counts toward enforcement |
 | `thresholds.<detectorId>.<key>` | number/string | per detector | per detector | Placeholder until Phase 10 calibration; every key must be declared in the detector's config manifest |
-| `evidence.dir` | string | `ServerGuard/evidence` | writable | Append-only JSONL segments |
+| `evidence.dir` | string | `ServerGuard/evidence` | writable, non-empty | Append-only JSONL segments |
 | `evidence.retentionDays` | int | 30 | 1..365 | Segment expiry |
 | `evidence.rotationSizeMB` | int | 64 | 1..1024 | Rotate at this size or at day boundary |
 | `evidence.positionHistoryDays` | int | 7 | 0..90 | 0 disables replay history |
 | `evidence.positionHistorySamplesPerPlayer` | int | 3600 | 0..20000 | Bounded replay timeline |
-| `identityMap.path` | string | `ServerGuard/identity-map.json` | restricted perms | Pseudonym -> platform identity, operator-only |
+| `identityMap.path` | string | `ServerGuard/identity-map.json` | restricted perms, non-empty | Pseudonym -> platform identity, operator-only |
 | `identityMap.permissions` | string | `0600` | POSIX octal | Enforced at startup on POSIX hosts |
-| `hmacKey.path` | string | `ServerGuard/hmac.key` | restricted perms | Pseudonym key; destroyed when evidence under it expires |
+| `hmacKey.path` | string | `ServerGuard/hmac.key` | restricted perms, non-empty | Pseudonym key; destroyed when evidence under it expires |
 | `hmacKey.rotationDays` | int | 90 | 1..365 | Starts a new pseudonym epoch |
 | `queues.actionQueueMax` | int | 4096 | 64..65536 | Main-thread action queue bound |
 | `queues.evidenceQueueMax` | int | 8192 | 64..65536 | Writer queue bound; drop soft first |
@@ -65,9 +73,9 @@ against it, and the strict loader in Phase 2 is generated from the same schema.
 | `console.permissionLevel` | string | `admin` | `admin` / `moderator` | Minimum level for Server Guard console commands |
 | `webhook.enabled` | bool | false | - | Optional alert sink |
 | `webhook.evidenceIdsOnly` | bool | true | must be true in v1 | No player identity in payloads |
-| `webhook.urlEnv` | string | `SERVERGUARD_WEBHOOK_URL` | env var name | Webhook URL comes from the environment, never the config file (workspace secrets rule) |
+| `webhook.urlEnv` | string | `SERVERGUARD_WEBHOOK_URL` | `^[A-Z][A-Z0-9_]*$` env var name | Webhook URL comes from the environment, never the config file (workspace secrets rule) |
 | `dashboard.enabled` | bool | false | - | Ships only after auth and permission tests (Phase 3) |
-| `dashboard.secretEnv` | string | `SERVERGUARD_DASHBOARD_SECRET` | env var name | Dashboard auth secret from the environment, never the config file |
+| `dashboard.secretEnv` | string | `SERVERGUARD_DASHBOARD_SECRET` | `^[A-Z][A-Z0-9_]*$` env var name | Dashboard auth secret from the environment, never the config file |
 | `metrics.enabled` | bool | true | - | APM-compatible counters |
 
 Config hash: SHA-256 over the normalized (sorted-key) JSON of the *effective* config,

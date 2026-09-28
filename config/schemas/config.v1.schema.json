@@ -107,6 +107,7 @@
       "properties": {
         "dir": {
           "type": "string",
+          "minLength": 1,
           "default": "ServerGuard/evidence"
         },
         "retentionDays": {
@@ -141,6 +142,7 @@
       "properties": {
         "path": {
           "type": "string",
+          "minLength": 1,
           "default": "ServerGuard/identity-map.json"
         },
         "permissions": {
@@ -156,6 +158,7 @@
       "properties": {
         "path": {
           "type": "string",
+          "minLength": 1,
           "default": "ServerGuard/hmac.key"
         },
         "rotationDays": {
@@ -308,6 +311,8 @@
         },
         "urlEnv": {
           "type": "string",
+          "description": "Environment variable holding the webhook URL; a misspelled name would silently disable the sink.",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
           "default": "SERVERGUARD_WEBHOOK_URL"
         }
       }
@@ -322,6 +327,8 @@
         },
         "secretEnv": {
           "type": "string",
+          "description": "Environment variable holding the dashboard secret; a misspelled name would silently disable auth.",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
           "default": "SERVERGUARD_DASHBOARD_SECRET"
         }
       }
