@@ -76,6 +76,7 @@ with the policy contract in [docs/POLICY.md](docs/POLICY.md).
 
 - [Privacy and player-monitoring notice](PRIVACY.md)
 - [Security and disclosure policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 - [License: AGPL-3.0](LICENSE)
 
@@ -107,7 +108,14 @@ Loop:
 - `make exercise`: validate the design-time replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
   (evidence parser, schema validator, replay-trace contract checker).
-- `make ci`: everything CI runs, locally in one step (`lint` + `check` + `test-tools`).
+- `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
+  iteration count, for editing a single tool. Seeds are deterministic, so a reported
+  `seed=` reproduces the failure.
+- `make ci`: everything CI runs, locally in one step
+  (`lint` + `check` + `exercise` + `test-tools`).
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the full path, including generated-file
+regeneration and what a change is expected to include.
 
 The detector spec, data schemas, and methodology are the design contract; see
 [docs/INDEX.md](docs/INDEX.md) for who owns what.

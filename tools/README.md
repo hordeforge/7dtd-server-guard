@@ -16,12 +16,14 @@
   schema/data pairs, evidence sample chain, replay-contract vector, and folder structure.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`: seeded,
   deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator
-  in doccheck.py, and the replay-trace contract checker (`make test-tools`). Temporary
+  in doccheck.py, and the replay-trace contract checker (`make test-tools`, or
+  `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` for one harness at a short run). Temporary
   segments go under `.scratch/`, never the system temp dir.
 - `fuzz_common.py`: the mutation engine all three fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `guard_python.py`: fails the build when the interpreter is older than the floor in
-  `.python-version`. Runs first in `make check`, `make exercise`, and `make test-tools`.
+  `.python-version`. Runs first in `make check`, `make exercise`, `make test-tools`,
+  and `make fuzz`.
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
   (SCHEMAS.md). Planned; does not exist yet.
 - `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression

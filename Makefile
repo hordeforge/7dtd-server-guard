@@ -3,7 +3,17 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools verify-evidence guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools fuzz verify-evidence guard-python help
+
+# Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in harness order.
+FUZZERS := evidence_check schema_validate replay_trace
+empty :=
+space := $(empty) $(empty)
+# Short-run defaults for the edit-test loop; the full budgets live in each
+# harness and are what `make test-tools` (and CI) runs. 24301 is 0x5EED, the
+# harnesses' own default seed, in decimal because make passes it unparsed.
+ITERATIONS ?= 200
+SEED ?= 24301
 
 # uv is the only Python toolchain here: it resolves the locked dependency set and
 # the interpreter pinned in .python-version, so a bare `make check` on a fresh
@@ -50,9 +60,20 @@ test-tools: guard-python
 	$(UV) python tools/fuzz_schema_validate.py
 	$(UV) python tools/fuzz_replay_trace.py
 
+# One fuzzer at a short iteration count: the loop for a single harness, and the
+# way to re-run a seed a failure reported. A failing seed replays exactly.
+# Usage: make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]
+fuzz: guard-python
+	@test -n "$(FUZZ)" || { echo "usage: make fuzz FUZZ=<$(subst $(space),|,$(FUZZERS))> [ITERATIONS=N] [SEED=S]"; exit 2; }
+	@case " $(FUZZERS) " in \
+	  *" $(FUZZ) "*) ;; \
+	  *) echo "unknown fuzzer '$(FUZZ)'; expected one of: $(FUZZERS)"; exit 2 ;; \
+	esac
+	$(UV) python tools/fuzz_$(FUZZ).py --iterations $(ITERATIONS) --seed $(SEED)
+
 # CI entry point: everything CI runs, runnable locally as one step.
 # C# build + test layers 1-4 are added here in Phase 2 (TODO.md).
-ci: lint check test-tools
+ci: lint check exercise test-tools
 
 # Verify an evidence directory's hash chain (append-only segments).
 # Usage: make verify-evidence DIR=/path/to/evidence
@@ -68,7 +89,8 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
-	@echo "  make ci              everything CI runs locally in one step (lint + check + test-tools)"
+	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace)"
+	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "Python floor: .python-version (uv installs exactly it; local builds enforce it)."
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."

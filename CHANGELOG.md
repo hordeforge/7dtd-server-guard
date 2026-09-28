@@ -10,6 +10,23 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+### Added
+
+- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace> [ITERATIONS=N] [SEED=S]`
+  runs one fuzzer at a short iteration count, with a usage error naming the valid
+  harnesses. Every harness already took `--iterations` and `--seed`.
+- `CONTRIBUTING.md` states the runnable path: prerequisites, bootstrap, the loop, the
+  single-fuzzer target, generated-file regeneration, and what a change must include.
+
+### Fixed
+
+- `fuzz_replay_trace.py` built its deep-nesting probe from a mutated trace and then
+  indexed `cases[0]["events"][0]`, so a mutant that dropped or replaced either crashed
+  the harness with a bare `TypeError`. The probe now copies the pristine sample. The
+  default seed happened to survive; `--iterations 50 --seed 1234` did not.
+- `make ci` now includes `make exercise`, so the replay contract check gates CI and not
+  only a manual run.
+
 ## [0.4.1] - 2026-09-20
 
 ### Changed

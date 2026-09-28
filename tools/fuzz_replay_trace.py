@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import pathlib
 import random
@@ -84,7 +85,10 @@ def main() -> int:
             if errs:
                 stats["rejected"] += 1
 
-        deep = mut.mutate(mut.mutate(pristine))
+        # Built from the pristine trace, not a mutant: the probe indexes cases ->
+        # events, and a mutant may have dropped or replaced either (that is the
+        # path under test above, not this one).
+        deep = copy.deepcopy(pristine)
         deep["cases"][0]["events"][0]["values"] = {"claimedDestinationQuantity": nested(64)}
         check(deep, "deep-nested value")
     except InvariantBroken as exc:
