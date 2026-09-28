@@ -92,8 +92,12 @@ A release is one commit that edits three places by hand:
 3. The tag `v<x.y.z>` on that commit.
 
 `make check` fails when the manifest version and the newest dated changelog section disagree,
-and when the dated sections are not in descending order, so the first two cannot ship out of
-sync. The tag is the third hand-edited place and nothing can check it, so tag the release
+when the dated sections are not in descending order, when a release section repeats a
+`###` change type or names one outside the Keep a Changelog set, and when a release
+carrying a `Breaking` or `Removed` entry is cut as a patch bump. The first two cannot ship
+out of sync, and the last is the policy above enforced rather than stated.
+
+The tag is the third hand-edited place and nothing can check it, so tag the release
 commit, never a later one, and never move or re-cut a published tag.
 
 ## Dependencies

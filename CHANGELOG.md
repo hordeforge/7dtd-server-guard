@@ -25,6 +25,16 @@ above reserves minor bumps for that.
 - The evidence schema's root object is now `additionalProperties: false`. A record carrying an
   unrecognized top-level key fails validation, where it passed before. No shipped sample carried
   one, and a detector emitting one needs it named in `docs/SCHEMAS.md` first.
+- A `health` record requires `configHash`, so a health record written before this release
+  no longer validates against the evidence schema. The shipped 0.4.1 sample was such a record
+  and was the gate's own fixture; it now carries the field. `make verify-evidence` and
+  `make verify-archive` are unaffected, because both verify the hash chain and neither reads
+  the schema, so an existing evidence directory still verifies. A consumer that validates
+  records against `config/schemas/evidence.v1.schema.json` (a webhook sink, an analyst's
+  script) has to tolerate, or migrate, the health snapshots written before this release. The
+  records themselves are unchanged on disk and still verify: the chain hashes the record as
+  written, and the schema is not on that path. In 0.4.1 a health record could not carry the
+  field at all, so no record in an existing directory has it.
 - A replay trace requires the `determinism` block, so a trace written before this release no
   longer validates. Regenerate traces with the current harness (including
   `tools/fixtures/traces/inventory/stack.v1.sample.json`), which writes `startUtc`,
@@ -157,6 +167,21 @@ above reserves minor bumps for that.
   archive, including that the identity map and the HMAC key live outside the evidence
   directory and are backed up separately. Archiving a pseudonym key beside the records
   it unmasks would hand one stolen copy both halves.
+- `tools/replay_contract_check.py --self-test`, run first by `make exercise`, fires every
+  contract rule from a mutation of the shipped trace and names the message each must
+  produce. The plain run only proves the shipped trace satisfies the contract, so a
+  checker that accepted every trace passed it, as did one whose budget comparison or
+  stack-invariant rule was inverted.
+- `tools/replay_contract_check.py --fix-fingerprint` reseals a trace's recorded
+  `determinism.fingerprint` from its current outcome projection, rewriting only the
+  digest. Editing a trace without resealing it failed the gate with two digests and no
+  way to compute the right one short of running the projection by hand.
+- `actions.tempBanLocal` (bool, default `false`) in config v1. The `temp-ban (local)`
+  action was in the accepted action vocabulary (D-04, POLICY.md -> Action set) and in
+  the evidence action enum, but no config key enabled it, so the documented
+  "actions as separately enabled switches" did not hold for the one action that needs
+  the strongest gate. Enabling it still requires the kick gate and per-incident operator
+  approval.
 
 ### Changed
 
@@ -210,6 +235,15 @@ above reserves minor bumps for that.
   two, so a bump that missed one shipped a tag whose metadata still named the previous
   release. `## [Unreleased]` is above the comparison on purpose: between releases it is
   expected to be ahead of the last tag.
+- `make check` also holds this file to its own format: one `###` heading per change type
+  per release, a heading from the Keep a Changelog set, and a release carrying a `Breaking`
+  or `Removed` entry not cut as a patch bump. The `Unreleased` section held two `### Added`
+  sections and two `### Fixed` sections, which render as one heading each and leave a
+  reader unable to tell which entries a release added, and the version an operator pins is
+  the only thing that says whether a release is backward compatible. Both are one section
+  each now. `tools/doccheck.py --self-test` fires the three rules from changelogs written
+  in the test and runs under `make test-tools`, so a rule that stopped firing is a failing
+  self-test rather than a green gate.
 - `CONTRIBUTING.md` states the release step: which bump the 0.x policy above implies, the
   three places a release edits, and that a published tag is not moved or re-cut.
 - `docs/SCHEMAS.md` states the two config rules the file alone cannot enforce: a
@@ -267,40 +301,6 @@ above reserves minor bumps for that.
 - The evidence audit record bounds `reason` at 512 characters.
 - `hmacKey.permissions` joins `identityMap.permissions`: the re-identification
   key file is stored at the same `0600` default as the identity map.
-
-### Fixed
-
-- `make export-evidence` is re-runnable. The archive name carries a one-second
-  stamp, so a retried export landed on the directory the first attempt had written
-  and was reported as a failure, which the backup schedule in
-  [docs/OPERATIONS.md](docs/OPERATIONS.md) alerts on: a retried backup raised the
-  alarm for a backup that was present and verified. A retry whose existing archive
-  holds exactly the segments and index it would have copied now exits 0 and writes
-  nothing. An archive holding a different evidence set under the same name is
-  still refused, because a different export must not replace an archive the
-  operator may already have copied off the server.
-- Each `make export-evidence` stages into its own directory. Two exports of the
-  same second shared one staging path, so the second deleted the first's copy in
-  progress. A staging directory left by a killed run is swept once it is older than
-  a day, so the archive root does not grow a directory per crash.
-
-### Added
-
-- `tools/replay_contract_check.py --self-test`, run first by `make exercise`, fires every
-  contract rule from a mutation of the shipped trace and names the message each must
-  produce. The plain run only proves the shipped trace satisfies the contract, so a
-  checker that accepted every trace passed it, as did one whose budget comparison or
-  stack-invariant rule was inverted.
-- `tools/replay_contract_check.py --fix-fingerprint` reseals a trace's recorded
-  `determinism.fingerprint` from its current outcome projection, rewriting only the
-  digest. Editing a trace without resealing it failed the gate with two digests and no
-  way to compute the right one short of running the projection by hand.
-- `actions.tempBanLocal` (bool, default `false`) in config v1. The `temp-ban (local)`
-  action was in the accepted action vocabulary (D-04, POLICY.md -> Action set) and in the
-  evidence action enum, but no config key enabled it, so the documented
-  "actions as separately enabled switches" did not hold for the one action that needs
-  the strongest gate. Enabling it still requires the kick gate and per-incident operator
-  approval.
 
 ### Fixed
 
@@ -499,6 +499,19 @@ above reserves minor bumps for that.
 - `config_check.py` raised a traceback naming no config file when an operator's
   hand-edited config was not UTF-8 (a legacy code page or a UTF-16 save). It reports
   the file and the reason, like the other load failures.
+- `make export-evidence` is re-runnable. The archive name carries a one-second
+  stamp, so a retried export landed on the directory the first attempt had written
+  and was reported as a failure, which the backup schedule in
+  [docs/OPERATIONS.md](docs/OPERATIONS.md) alerts on: a retried backup raised the
+  alarm for a backup that was present and verified. A retry whose existing archive
+  holds exactly the segments and index it would have copied now exits 0 and writes
+  nothing. An archive holding a different evidence set under the same name is
+  still refused, because a different export must not replace an archive the
+  operator may already have copied off the server.
+- Each `make export-evidence` stages into its own directory. Two exports of the
+  same second shared one staging path, so the second deleted the first's copy in
+  progress. A staging directory left by a killed run is swept once it is older than
+  a day, so the archive root does not grow a directory per crash.
 
 ## [0.4.1] - 2026-09-20
 

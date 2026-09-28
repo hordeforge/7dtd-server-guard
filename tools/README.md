@@ -88,7 +88,11 @@
   detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
   schema/data pairs, evidence sample chain, replay-contract vector, evidence
-  personal-data deny-list, backup/restore runbook, and folder structure.
+  personal-data deny-list, backup/restore runbook, and folder structure. The release
+  contract passes are here too: the manifest version against the newest dated changelog
+  section, the dated sections in descending order, and one `###` change type per release
+  with no breaking entry in a patch bump. `--self-test` fires the changelog rules from
+  changelogs written in the test; it runs under `make test-tools`.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`,
   `fuzz_evidence_export.py`, `fuzz_detector_spec.py`, `fuzz_config_check.py`: seeded,
   deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator in

@@ -31,7 +31,12 @@ Checks:
       a detector-supplied value bag.
   14. The backup and restore path stays wired: the archive targets exist in the Makefile,
       run under test-tools, and docs/OPERATIONS.md states RPO/RTO and a restore drill.
-  15. Every shipped fuzzer and every tool exposing `--self-test` is reachable from a
+  15. The release contract holds: pyproject.toml's `[project] version` is the newest dated
+      CHANGELOG.md section, and the dated sections descend.
+  16. CHANGELOG.md follows Keep a Changelog: one heading per change type per release, from
+      the documented set, and no release carrying a `Breaking` or `Removed` entry cut as a
+      patch bump.
+  17. Every shipped fuzzer and every tool exposing `--self-test` is reachable from a
       make target, and the FUZZERS registry matches the order `make test-tools` runs.
 
 Exit codes: 0 clean, 1 the gate found issues, 2 usage error. The one-line summary goes to
@@ -155,6 +160,21 @@ ANY_CHECKBOX_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s*\[[ xX]\]")
 # A released changelog section, dated. `## [Unreleased]` carries no version and is
 # not a release, so it cannot be compared against the manifest.
 RELEASED_SECTION_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$", re.MULTILINE)
+# The change types a release section may carry, one heading each. `Breaking` is
+# not a Keep a Changelog type, it is this project's: the 0.x policy at the head of
+# the changelog promises a reader that such a section means a minor bump, which is
+# a promise about the version number and not something the format states.
+CHANGE_TYPES = (
+    "Breaking",
+    "Added",
+    "Changed",
+    "Deprecated",
+    "Removed",
+    "Fixed",
+    "Security",
+)
+# A section carrying one of these says the release is not backward compatible.
+BREAKING_TYPES = frozenset({"Breaking", "Removed"})
 
 
 def unfenced_lines(text: str) -> Iterator[tuple[int, str]]:
@@ -396,6 +416,64 @@ def check_todo_format() -> list[str]:
     return out
 
 
+def _changelog_sections(text: str) -> list[tuple[str, list[str]]]:
+    """Every `## [...]` section of the changelog with the `###` change types it holds."""
+    starts = [(m.start(), m.group(1)) for m in re.finditer(r"^## \[([^\]]+)\]", text, re.MULTILINE)]
+    ends = [s for s, _ in starts[1:]] + [len(text)]
+    return [
+        (title, re.findall(r"^### ([A-Za-z]+)[ \t]*$", text[start:end], re.MULTILINE))
+        for (start, title), end in zip(starts, ends, strict=False)
+    ]
+
+
+def semver(version: str) -> tuple[int, int, int]:
+    """A `x.y.z` version as the tuple the release rules compare. The callers match it first."""
+    major, minor, patch = version.split(".")
+    return (int(major), int(minor), int(patch))
+
+
+def changelog_format_findings(text: str) -> list[str]:
+    """One section per change type per release, and a break that says so in the version.
+
+    Keep a Changelog gives each release one heading per change type. Two `### Added`
+    blocks under one release render as a single heading, so the second group of
+    entries reads as part of the first and a reader cannot tell which entries a
+    release added and which it carried over.
+
+    The version check is the same rule the 0.x policy at the head of the changelog
+    states: a patch bump is expected not to carry a `Breaking` or `Removed` entry.
+    Two hand-edited files carrying the bump is how a breaking change reaches a
+    patch tag unnoticed, and the tag is what an operator pins.
+    """
+    out = []
+    released: list[tuple[tuple[int, int, int], str, list[str]]] = []
+    for title, names in _changelog_sections(text):
+        for name, count in Counter(names).items():
+            if name not in CHANGE_TYPES:
+                out.append(
+                    f"CHANGELOG.md: `## [{title}]` has `### {name}`, not a Keep a Changelog type"
+                )
+            elif count > 1:
+                out.append(
+                    f"CHANGELOG.md: `## [{title}]` has {count} `### {name}` sections, not one"
+                )
+        if re.fullmatch(r"\d+\.\d+\.\d+", title):
+            released.append((semver(title), title, names))
+    for (newer_v, newer, newer_names), (older_v, older, _) in itertools.pairwise(released):
+        breaking = sorted(set(newer_names) & BREAKING_TYPES)
+        if breaking and newer_v[:2] == older_v[:2]:
+            out.append(
+                f"CHANGELOG.md: {newer} carries a {'/'.join(breaking)} entry but is a patch "
+                f"bump over {older}"
+            )
+    return out
+
+
+def check_changelog_format() -> list[str]:
+    """The shipped changelog against the release rules, the document they are written for."""
+    return changelog_format_findings((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+
+
 def check_release_version() -> list[str]:
     """Keep the manifest version and the changelog's newest release the same number.
 
@@ -420,8 +498,46 @@ def check_release_version() -> list[str]:
             f"release is {released[0]}"
         )
     for newer, older in itertools.pairwise(released):
-        if tuple(map(int, newer.split("."))) <= tuple(map(int, older.split("."))):
+        if semver(newer) <= semver(older):
             out.append(f"CHANGELOG.md: {older} is not older than the {newer} above it")
+    return out
+
+
+def self_test() -> list[str]:
+    """Fire the changelog format rules from changelogs written here, not shipped.
+
+    The shipped changelog is the only document the gate reads, and it is written
+    to pass: a rule that stopped firing would leave the tree green. Each case is a
+    document the rule has to reject, or accept, and the finding it has to name.
+    """
+    out: list[str] = []
+    cases = [
+        (
+            "two Added sections",
+            "## [Unreleased]\n\n### Added\n\n- a\n\n### Added\n\n- b\n",
+            "has 2 `### Added` sections, not one",
+        ),
+        (
+            "unknown change type",
+            "## [Unreleased]\n\n### Improvements\n\n- a\n",
+            "`### Improvements`, not a Keep a Changelog type",
+        ),
+        (
+            "breaking change in a patch release",
+            "## [0.4.2] - 2026-10-01\n\n### Breaking\n\n- a\n\n"
+            "## [0.4.1] - 2026-09-20\n\n### Changed\n\n- a\n",
+            "0.4.2 carries a Breaking entry but is a patch bump over 0.4.1",
+        ),
+    ]
+    for label, document, needle in cases:
+        found = changelog_format_findings(document)
+        if not any(needle in item for item in found):
+            out.append(f"changelog format: {label} not reported: expected {needle!r}, got {found}")
+    clean = (
+        "## [0.5.0] - 2026-10-01\n\n### Breaking\n\n- a\n\n### Added\n\n- b\n\n"
+        "## [0.4.1] - 2026-09-20\n\n### Fixed\n\n- b\n"
+    )
+    out.extend(f"changelog format: {item}" for item in changelog_format_findings(clean))
     return out
 
 
@@ -1622,7 +1738,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        errs = _harness_registry_self_test()
+        errs = [*self_test(), *_harness_registry_self_test()]
         print(f"doccheck self-test: {len(errs)} issue(s)")
         for err in errs:
             print("  " + err, file=sys.stderr)
@@ -1633,6 +1749,7 @@ def main() -> int:
         ("links", check_links),
         ("TODO checkboxes", check_todo_format),
         ("release version", check_release_version),
+        ("changelog format", check_changelog_format),
         ("detector spec", check_spec),
         ("registry sync", check_registry_sync),
         ("detector registry coverage", check_detector_ids),
