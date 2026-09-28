@@ -56,8 +56,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # A finding hands `context`, `observations`, `expected`, and `actual` to the
 # exporter, the operator, and the webhook consumer, so a key that could hold a
 # raw identity, a contact address, a network address, or a credential must be
-# rejected there. The spelling variants matter: the schema matches keys
-# case-insensitively because a detector's local naming is its own choice.
+# rejected there. The spelling variants matter: a detector's local naming is its
+# own choice, so the deny-list has to hold against the joined-lowercase spellings
+# too. A list of whole spellings is defeated by the first variant nobody wrote
+# down (`ipaddress`, `hwaddr`, `clientip` read as ordinary snake_case), and the
+# camelCase spellings below are stopped by the key charset rather than by the
+# deny-list, so both shapes are probed here to keep either one from regressing.
 PERSONAL_DATA_KEYS = (
     "steamId",
     "STEAM_ID",
@@ -71,11 +75,20 @@ PERSONAL_DATA_KEYS = (
     "ip",
     "ipAddress",
     "ip_address",
+    "ipaddress",
+    "ipaddr",
+    "clientip",
     "eacGuid",
+    "eacguid",
     "auth_ticket",
     "password",
+    "passwd",
     "macAddress",
+    "mac_address",
+    "macaddress",
     "hardware_id",
+    "hwaddr",
+    "email",
 )
 # The open bags of a `finding` record, and how to inject a key into each.
 EVIDENCE_BAGS = ("context", "expected", "actual", "observations")
@@ -244,6 +257,43 @@ def check_personal_data_denylist() -> int:
     return checks
 
 
+def check_evidence_bags_beyond_finding() -> None:
+    """The bags outside a `finding` hold the same rule: ids are ids, keys are denied.
+
+    A list declared as an array of free-form strings carries no shape at all, so
+    a raw name rides in an `evidenceIds` entry exactly as it would in a value
+    bag, and an array with no `items` schema accepts any element. The
+    reconciliation record's `deltaItems` and the id lists are the only places
+    this is reachable outside the `finding` bags.
+    """
+    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
+    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text(encoding="utf-8")
+    records = {
+        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
+    }
+    cases = [
+        ("finding.causeEventIds", {**records["finding"], "causeEventIds": ["a-player-name"]}),
+        ("finding.causeEventIds", {**records["finding"], "causeEventIds": [1234]}),
+        ("cause.causeEventIds", {**records["cause"], "causeEventIds": ["STEAM_0:1:2"]}),
+        ("audit.evidenceIds", {**records["audit"], "evidenceIds": ["ip=203.0.113.7"]}),
+        (
+            "reconciliation.deltaItems",
+            {**records["reconciliation"], "deltaItems": [{"ipaddress": "203.0.113.7"}]},
+        ),
+        (
+            "reconciliation.deltaItems",
+            {**records["reconciliation"], "deltaItems": [{"note": "resourceWood"}]},
+        ),
+    ]
+    for what, instance in cases[:-1]:
+        if not dc._schema_validate(instance, schema):
+            raise InvariantBroken(f"{what} accepted a value that is not an id: {instance}")
+    # The last case is the positive control: without it the negative cases would
+    # also pass against a schema that rejected every delta item.
+    if dc._schema_validate(cases[-1][1], schema):
+        raise InvariantBroken(f"{cases[-1][0]}: a well-formed delta item was rejected")
+
+
 def check_non_finite_numbers() -> None:
     """Bounded and unbounded numeric fields must reject NaN and the infinities.
 
@@ -355,6 +405,7 @@ def main() -> int:
         check_non_finite_numbers()
         check_threshold_gate()
         check_string_length_units()
+        check_evidence_bags_beyond_finding()
     except InvariantBroken as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
@@ -364,7 +415,8 @@ def main() -> int:
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
         f"deep_probe=ok datetime_probe=ok "
-        f"non_finite_probe=ok threshold_gate_probe=ok length_units_probe=ok"
+        f"non_finite_probe=ok threshold_gate_probe=ok length_units_probe=ok "
+        f"id_array_probe=ok"
     )
     return 0
 

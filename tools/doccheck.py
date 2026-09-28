@@ -961,8 +961,18 @@ def check_config_schemas() -> list[str]:
     return out
 
 
-def _open_object_schemas(node: Json, path: str = "$") -> list[tuple[str, Json]]:
-    """Every subschema of `node` that accepts properties beyond a declared set."""
+def _open_value_bags(node: Json, path: str = "$") -> list[tuple[str, Json]]:
+    """Every subschema of `node` that accepts values beyond a declared set.
+
+    Two shapes qualify. An object that does not close itself with
+    `additionalProperties: false` takes keys of the author's choosing. An array
+    with no `items` at all takes values of any shape, and is the hole an
+    object-only walk misses: a bare `"type": "array"` carries no key names at
+    all, so no `propertyNames` deny-list can be hung on it, and whatever a
+    detector puts in each element reaches the exporter unchecked. An array
+    whose `items` is an object is covered by the object rule through the
+    recursion below; an `items` of any other type is already closed.
+    """
     out: list[tuple[str, Json]] = []
     if not isinstance(node, dict):
         return out
@@ -970,26 +980,30 @@ def _open_object_schemas(node: Json, path: str = "$") -> list[tuple[str, Json]]:
     types = node_type if isinstance(node_type, list) else [node_type]
     if "object" in types and node.get("additionalProperties") is not False:
         out.append((path, node))
+    if "array" in types and "items" not in node:
+        out.append((path, node))
     for key in ("properties", "patternProperties"):
         for name, sub in (node.get(key) or {}).items():
-            out += _open_object_schemas(sub, f"{path}.{key}.{name}")
+            out += _open_value_bags(sub, f"{path}.{key}.{name}")
     for i, sub in enumerate(node.get("oneOf") or []):
-        out += _open_object_schemas(sub, f"{path}.oneOf[{i}]")
-    return out + _open_object_schemas(node.get("items"), f"{path}.items")
+        out += _open_value_bags(sub, f"{path}.oneOf[{i}]")
+    return out + _open_value_bags(node.get("items"), f"{path}.items")
 
 
 def check_evidence_personal_data() -> list[str]:
     """Every open value bag in the evidence schema carries the one deny-list.
 
     Detectors write their observed and expected values into `context`,
-    `observations`, `expected`, and `actual`; those bags are the one place a
-    detector could hand a raw platform ID, a player name, an address, or a
-    credential to the exporter, the operator, and the webhook consumer. The
-    deny-list is the machine form of the SCHEMAS.md rule that no schema ever
-    carries one. The list is declared once, in `definitions`, and every bag must
-    $ref it: a second hand-written copy is where a newly denied key would be
-    added to one bag and forgotten in another, and a bag that dropped the ref
-    would still pass a presence-only check.
+    `observations`, `expected`, `actual`, and `replayedFrom`; those bags are the
+    one place a detector could hand a raw platform ID, a player name, an
+    address, or a credential to the exporter, the operator, and the webhook
+    consumer. The deny-list is the machine form of the SCHEMAS.md rule that no
+    schema ever carries one. The list is declared once, in `definitions`, and
+    every bag must $ref it: a second hand-written copy is where a newly denied
+    key would be added to one bag and forgotten in another, and a bag that
+    dropped the ref would still pass a presence-only check. An array with no
+    `items` is reported too: it holds no key names, so it can carry a value of
+    any shape with nothing to validate it against.
     """
     schema = json.loads(EVIDENCE_SCHEMA.read_text(encoding="utf-8"))
     deny = (schema.get("definitions") or {}).get(PERSONAL_DATA_DENY_LIST)
@@ -998,9 +1012,10 @@ def check_evidence_personal_data() -> list[str]:
             f"evidence schema: definitions/{PERSONAL_DATA_DENY_LIST} is missing or has no pattern"
         ]
     out = []
-    for path, sub in _open_object_schemas(schema):
+    for path, sub in _open_value_bags(schema):
         if "propertyNames" not in sub:
-            out.append(f"evidence schema {path}: open object has no propertyNames deny-list")
+            kind = "array" if sub.get("type") == "array" else "object"
+            out.append(f"evidence schema {path}: open {kind} has no propertyNames deny-list")
         elif sub["propertyNames"] != {"$ref": DENY_LIST_REF}:
             out.append(
                 f"evidence schema {path}: propertyNames is not the shared "

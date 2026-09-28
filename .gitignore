@@ -11,6 +11,12 @@ config/server-guard.local.json
 evidence/
 *.dll
 *.key
+# The guard's runtime tree, at the paths config/server-guard.example.json
+# defaults to: the evidence store, the pseudonym identity map, and the HMAC
+# key. The identity map is the half that unmasks every pseudonym in the
+# evidence beside it, so a checkout that runs the mod in place must not be
+# able to commit either.
+ServerGuard/
 __pycache__/
 *.lock
 !uv.lock

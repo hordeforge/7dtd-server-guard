@@ -16,12 +16,14 @@ Rules that apply to every schema in this document:
 - No schema ever contains a raw platform identity, IP address, auth ticket, password, or
   full packet body. Identities are HMAC pseudonyms (see [PRIVACY.md](../PRIVACY.md)).
   Every open value bag in the evidence schema (`context`, `observations`, `expected`,
-  `actual`, `replayedFrom`) additionally carries a `propertyNames` deny-list, so a
-  detector that writes a raw name, address, or credential into its own values is
-  rejected at validation rather than at export. The list is declared once, in the
-  schema's `definitions`, and every bag `$ref`s it, so a newly denied key is added in
-  one place. `make check` fails when an open object drops the ref or inlines its own
-  copy.
+  `actual`, `replayedFrom`, `deltaItems` elements) additionally carries a
+  `propertyNames` deny-list, so a detector that writes a raw name, address, or
+  credential into its own values is rejected at validation rather than at export. The
+  list is declared once, in the schema's `definitions`, and every bag `$ref`s it, so a
+  newly denied key is added in one place; it denies a stem anywhere in the key, not a
+  fixed spelling, because an enumerated spelling is bypassed by the first variant
+  nobody wrote down. `make check` fails when an open bag drops the ref, inlines its own
+  copy, or is an array with no element schema at all.
 - Paths in the config table (`evidence.dir`, `identityMap.path`, `hmacKey.path`) are the
   one place this schema names the filesystem. Nothing in the table sets a data root: the
   host does, and the loader resolves a relative path against the mod's data root beside
@@ -236,7 +238,9 @@ detector names a value after the quantity it measured (`dx`, `bound`, `vehicle`)
 record's own `pseudonym` names the player. A detector whose input is a platform ID
 (`protocol.duplicate_session`, spec input `platform_id`) compares HMAC pseudonyms, not raw
 IDs, and names the value for what it counted. Keys that could hold a raw identity, a player
-name, a contact or network address, or a credential are rejected at validation.
+name, a contact or network address, or a credential are rejected at validation. The
+`causeEventIds` and `evidenceIds` lists hold event ids and nothing else: every element
+is a UUID, so a name cannot ride in a list whose declared type is an id.
 
 Purge semantics: replacing a record with a `tombstone` keeps `chainPrev`/hash continuity so
 the chain still verifies. Purge of a `finding` also purges its referenced `cause` records in

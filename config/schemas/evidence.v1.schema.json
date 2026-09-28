@@ -6,10 +6,15 @@
   "type": "object",
   "additionalProperties": false,
   "definitions": {
-    "personalDataDenyList": {
-      "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through.",
+    "eventId": {
+      "description": "The one shape an evidence event id has. Every array that names other records (`causeEventIds`, `evidenceIds`) $refs it, so a free-form string cannot ride along in a list whose declared type is an id: an element is an id or it is a rejected record, not a player name pasted into an id field.",
       "type": "string",
-      "pattern": "^(?!(?i:steamid|steam_id|platform_id|platformid|player_name|playername|username|user_name|client_name|client_id|clientid|eac_guid|eacguid|auth_ticket|password|ip|ip_address|client_ip|remote_ip|mac_address|hardware_id|hw_id)$)[a-z_]+$"
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "personalDataDenyList": {
+      "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through. The list holds stems matched anywhere in the key, not whole spellings: an enumerated-spelling list is bypassed by the first variant nobody wrote down (`ipaddress`, `hwaddr`, `clientip` all read as ordinary-looking snake_case and carry exactly what `ip_address` was denied for). Case is covered by the `[a-z_]` charset the key must already match, so the stems are lowercase.",
+      "type": "string",
+      "pattern": "^(?!.*(?:steam|platform|player|user|account|client|eac|guid|ticket|auth|passwd|password|pass|secret|cred|email|mail|phone|addr|ip|mac|hw|hardware))[a-z_]+$"
     }
   },
   "oneOf": [
@@ -165,7 +170,7 @@
         "causeEventIds": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/definitions/eventId"
           }
         },
         "action": {
@@ -256,7 +261,7 @@
         "causeEventIds": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/definitions/eventId"
           }
         }
       }
@@ -309,7 +314,14 @@
         },
         "deltaItems": {
           "type": "array",
-          "maxItems": 64
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "maxProperties": 8,
+            "propertyNames": {
+              "$ref": "#/definitions/personalDataDenyList"
+            }
+          }
         },
         "marker": {
           "type": "string"
@@ -477,7 +489,7 @@
         "evidenceIds": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/definitions/eventId"
           }
         }
       }
