@@ -182,6 +182,18 @@
         }
       }
     },
+    "backup": {
+      "description": "Where the off-server copies live. The evidence directory, the identity map, and the HMAC key all sit on the server's local disk, so a lost disk takes all three unless the map and the key were copied somewhere the disk does not reach. No default: the copy store is a deployment fact, and a guessed path would name a directory that was never written.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keyCopyDir": {
+          "description": "Directory holding the off-server copy of identityMap.path and hmacKey.path, under the same file names. Relative paths resolve against the runtime root, the same rule identityMap.path uses. The restore drill reads it and fails when a copy is missing, differs from the live file, or is more permissive than the config declares.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "queues": {
       "type": "object",
       "additionalProperties": false,
