@@ -208,12 +208,31 @@ above reserves minor bumps for that.
   stayed green on it; `--locked` refuses to run until `uv lock` regenerates the lock.
   `make setup` and every target that runs a tool go through it, so the lock is checked
   once per gate.
+- The evidence schema now denies personal data by value as well as by key. The
+  `personalDataDenyList` property-name deny-list closed the key a detector writes and said
+  nothing about the value under a key the schema already permits, which is where an
+  interpolated identifier lands: `context.note`, `suppressedReason`, `audit.reason`, and
+  `marker` are all allowed keys, and all four are fields a writer fills by interpolating
+  what the game or an operator handed it. A second shared definition,
+  `personalDataValueDenyList`, now rides on every open value bag as its `additionalProperties`
+  and on every bounded free-text field in `allOf`. It denies both spellings of a Steam id,
+  the 64-bit and Xbox forms of the same account, a dotted-quad network address, a MAC
+  address, and a contact address. `make check` fails when an open value bag or a
+  `maxLength` field drops the ref, and `make fuzz FUZZ=schema_validate` pins both the
+  rejections and the values that must still pass, including a 19-digit nanosecond instant.
+  A record written before this release whose free text carried one of those values no
+  longer validates; nothing in the shipped sample did.
+- The restore drill (`make drill-restore ... CONFIG=<file>`) reads the mode of the identity
+  map and the HMAC key and fails when either grants anything the config's `permissions`
+  does not, so an identity map that is present, current, and world-readable is reported
+  rather than passed. A mode tighter than declared is not a finding, and a config declaring
+  `0640` accepts a group-readable file.
 - `ruff.toml` selects two more rule groups. `ISC` rejects implicit string concatenation
   inside a collection, where two adjacent literals read as one element but are in fact two,
   and `+` concatenation that the formatter would otherwise rewrite. `PGH` rejects a bare
   `# noqa` and a `# type: ignore` with no error code, so a suppression must name the rule
   it silences instead of the whole line. Every existing suppression already named its rule,
-  so the tree passes both groups unchanged apart from five message literals that now carry
+  so the tree passes both groups unchanged apart from the message literals that now carry
   their concatenation parentheses.
 - The restore drill (`make drill-restore ... CONFIG=<file>`) confirms the config is
   the one the restored evidence was written under: every record carries the

@@ -243,7 +243,10 @@ reported instead of paired with findings that were never produced under it. It t
 resolves `identityMap.path` and `hmacKey.path` (a relative one against the config
 file's own directory, or against `--runtime-root`) and fails when either
 is missing, zero bytes, older than the 7-day copy cycle, or stamped with an mtime
-later than the current time, so a drill cannot pass on
+later than the current time. It also reads each file's mode and fails when it grants
+anything the config's `permissions` does not, so an identity map that is present,
+current, and readable by anyone else is reported rather than passed: a mode tighter
+than declared is not a finding. A drill cannot pass on
 an archive that restores records nobody can attribute. The config is hand-edited on
 the Windows host that runs the server, so both separators are read as separators:
 `keys\hmac.key` and `keys/hmac.key` are the same file here. A drive-qualified path

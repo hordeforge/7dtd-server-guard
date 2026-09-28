@@ -24,6 +24,14 @@ server build, session epoch, a **pseudonymous** player identifier (keyed HMAC), 
 the detector and version, observed values, expected bounds, contributing event IDs, the action
 taken, and a review disposition.
 
+Every value a detector or an operator writes into a record is checked as well as every key.
+The evidence schema denies a key that could name an identity, and it denies a *value* that
+carries one: a platform account id in either of its spellings, the 64-bit and Xbox forms of the
+same account, a network address, a hardware address, or a contact address is rejected at
+validation in the value bags and in the free-text fields alike, so one is not stored even
+under a key the schema allows. A display name carries no shape and is not what this check
+looks for; the pseudonymous `pseudonym` field is the record's only reference to a player.
+
 ## What is NOT recorded by default
 
 - Authentication tickets, passwords, or encryption material.

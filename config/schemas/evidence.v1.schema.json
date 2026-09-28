@@ -21,6 +21,16 @@
       "description": "Property-name deny-list for every open value bag in this schema. Declared once here so a new sensitive key is added in one place: a second hand-written copy is where a raw identity, address, or credential would slip through. The list holds stems matched anywhere in the key, not whole spellings: an enumerated-spelling list is bypassed by the first variant nobody wrote down (`ipaddress`, `hwaddr`, `clientip` all read as ordinary-looking snake_case and carry exactly what `ip_address` was denied for). Case is covered by the `[a-z_]` charset the key must already match, so the stems are lowercase. A platform id denied for the platform it names is denied for every platform: `steam` covered the SteamID, and `xuid` is the same account under the name the engine's own API uses, so one of the two spellings would otherwise have got through. `name`, `nick`, `handle`, `alias`, `ident`, and `login` deny the display-name family, which is the spelling a detector author reaches for first and which no field-name derivation denies.",
       "type": "string",
       "pattern": "^(?!.*(?:steam|xuid|platform|player|user|account|client|eac|guid|ticket|auth|passwd|password|pass|secret|cred|email|mail|phone|addr|ip|mac|hw|hardware|name|nick|handle|alias|ident|login))[a-z_]+$"
+    },
+    "personalDataValueDenyList": {
+      "description": "Value-shape deny-list for every value a detector or an operator writes into an evidence record, applied to the open value bags and to the bounded free-text fields. The property-name deny-list above closes the key a detector writes; it does not close the value under a key the schema already permits, and a value is exactly where a platform id lands when the key is neutral: `context.note` holds a name, `suppressedReason` holds the id the detector was handed, `audit.reason` holds the name the operator is writing a disposition about. Each shape here is one this project can name as identifying a person: the two spellings of a Steam id, the 64-bit and Xbox forms of the same account, a dotted-quad network address, a MAC address, and a contact address. A display name has no shape, so this is not a name filter and does not pretend to be one; it stops the identifiers a machine can read off the wire. The four dotted decimal groups are read as an address, which also rejects a four-part dotted version string, traded deliberately: a value that reads as an address is rejected at validation, where the cost is a rejected record the writer can see, rather than stored for the retention window. `type` admits the non-string values a bag legitimately holds, and `pattern` applies to strings alone, so a measurement, a boolean, and a null pass on their own type and only a string is inspected.",
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "pattern": "^(?!.*(?:\\bSTEAM_[01]:[0-9]+:[0-9]+\\b|\\b7656119[0-9]{10}\\b|\\b253[0-9]{14,17}\\b|\\b[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\\b|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+))([\\s\\S]*)$"
     }
   },
   "oneOf": [
@@ -140,13 +150,21 @@
             "string",
             "null"
           ],
-          "maxLength": 64
+          "maxLength": 64,
+          "allOf": [
+            {
+              "$ref": "#/definitions/personalDataValueDenyList"
+            }
+          ]
         },
         "context": {
           "type": "object",
           "maxProperties": 8,
           "propertyNames": {
             "$ref": "#/definitions/personalDataDenyList"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/personalDataValueDenyList"
           }
         },
         "observations": {
@@ -157,6 +175,9 @@
             "maxProperties": 4,
             "propertyNames": {
               "$ref": "#/definitions/personalDataDenyList"
+            },
+            "additionalProperties": {
+              "$ref": "#/definitions/personalDataValueDenyList"
             }
           }
         },
@@ -165,6 +186,9 @@
           "maxProperties": 8,
           "propertyNames": {
             "$ref": "#/definitions/personalDataDenyList"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/personalDataValueDenyList"
           }
         },
         "actual": {
@@ -172,6 +196,9 @@
           "maxProperties": 8,
           "propertyNames": {
             "$ref": "#/definitions/personalDataDenyList"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/personalDataValueDenyList"
           }
         },
         "causeEventIds": {
@@ -243,7 +270,12 @@
         },
         "modIdentity": {
           "type": "string",
-          "maxLength": 128
+          "maxLength": 128,
+          "allOf": [
+            {
+              "$ref": "#/definitions/personalDataValueDenyList"
+            }
+          ]
         },
         "itemId": {
           "description": "Mod item name, bounded: a mod author names an item with a display string as readily as an id, and an unbounded field would keep it for the full retention window.",
@@ -251,7 +283,12 @@
             "string",
             "null"
           ],
-          "maxLength": 128
+          "maxLength": 128,
+          "allOf": [
+            {
+              "$ref": "#/definitions/personalDataValueDenyList"
+            }
+          ]
         },
         "delta": {
           "type": [
@@ -318,6 +355,9 @@
           ],
           "propertyNames": {
             "$ref": "#/definitions/personalDataDenyList"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/personalDataValueDenyList"
           }
         },
         "deltaItems": {
@@ -328,13 +368,21 @@
             "maxProperties": 8,
             "propertyNames": {
               "$ref": "#/definitions/personalDataDenyList"
+            },
+            "additionalProperties": {
+              "$ref": "#/definitions/personalDataValueDenyList"
             }
           }
         },
         "marker": {
           "description": "Reconciliation marker (a segment label the writer builds), bounded like every other free-text field: the marker names the segment it reconciles, not the player it reconciles for.",
           "type": "string",
-          "maxLength": 128
+          "maxLength": 128,
+          "allOf": [
+            {
+              "$ref": "#/definitions/personalDataValueDenyList"
+            }
+          ]
         }
       }
     },
@@ -476,7 +524,12 @@
         },
         "actor": {
           "type": "string",
-          "maxLength": 128
+          "maxLength": 128,
+          "allOf": [
+            {
+              "$ref": "#/definitions/personalDataValueDenyList"
+            }
+          ]
         },
         "action": {
           "enum": [
@@ -491,7 +544,12 @@
         "reason": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 512
+          "maxLength": 512,
+          "allOf": [
+            {
+              "$ref": "#/definitions/personalDataValueDenyList"
+            }
+          ]
         },
         "evidenceIds": {
           "type": "array",

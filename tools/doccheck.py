@@ -279,6 +279,10 @@ EVIDENCE_SCHEMA = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
 # The one property-name deny-list every open evidence value bag $refs.
 PERSONAL_DATA_DENY_LIST = "personalDataDenyList"
 DENY_LIST_REF = f"#/definitions/{PERSONAL_DATA_DENY_LIST}"
+# The value-shape deny-list every open value bag and every bounded free-text
+# field $refs. A key the schema permits is not a value the schema permits.
+PERSONAL_DATA_VALUE_DENY_LIST = "personalDataValueDenyList"
+VALUE_DENY_LIST_REF = f"#/definitions/{PERSONAL_DATA_VALUE_DENY_LIST}"
 
 
 def detector_ids_in(text: str) -> set[str]:
@@ -1238,6 +1242,8 @@ def _schema_validate(
     errs += _scalar_errors(instance, schema, path)
     if "oneOf" in schema:
         return errs + _one_of_errors(instance, schema["oneOf"], path, depth, root)
+    for sub in schema.get("allOf") or []:
+        errs += _schema_validate(instance, sub, path, depth + 1, root)
     if isinstance(instance, dict):
         errs += _object_errors(instance, schema, path, depth, root)
     if isinstance(instance, list):
@@ -1429,13 +1435,24 @@ def check_evidence_personal_data() -> list[str]:
     dropped the ref would still pass a presence-only check. An array with no
     `items` is reported too: it holds no key names, so it can carry a value of
     any shape with nothing to validate it against.
+
+    The name list closes the key, so a second pass closes the value. A permitted
+    key with a neutral name (`note`, `reason`, `marker`) is where a platform id
+    or an address lands the moment a detector interpolates what the game handed
+    it, and a name list cannot see it, so every bag must also carry the shared
+    value deny-list as its `additionalProperties`. The bounded free-text fields
+    are checked the same way and for the same reason: `maxLength` is this
+    schema's marker for a field a writer fills by hand, and every one of them
+    (`suppressedReason`, `modIdentity`, `itemId`, `marker`, `actor`, `reason`)
+    takes free text. Gating on that marker rather than on a name list means a
+    free-text field added later is covered without being enumerated here.
     """
     schema = json.loads(EVIDENCE_SCHEMA.read_text(encoding="utf-8"))
-    deny = (schema.get("definitions") or {}).get(PERSONAL_DATA_DENY_LIST)
-    if not isinstance(deny, dict) or "pattern" not in deny:
-        return [
-            f"evidence schema: definitions/{PERSONAL_DATA_DENY_LIST} is missing or has no pattern"
-        ]
+    definitions = schema.get("definitions") or {}
+    for name in (PERSONAL_DATA_DENY_LIST, PERSONAL_DATA_VALUE_DENY_LIST):
+        sub = definitions.get(name)
+        if not isinstance(sub, dict) or "pattern" not in sub:
+            return [f"evidence schema: definitions/{name} is missing or has no pattern"]
     out = []
     for path, sub in _open_value_bags(schema):
         if "propertyNames" not in sub:
@@ -1446,7 +1463,60 @@ def check_evidence_personal_data() -> list[str]:
                 f"evidence schema {path}: propertyNames is not the shared "
                 f"deny-list ref {DENY_LIST_REF}"
             )
+        if sub.get("additionalProperties") != {"$ref": VALUE_DENY_LIST_REF}:
+            out.append(
+                f"evidence schema {path}: open value bag is not the shared "
+                f"value deny-list ref {VALUE_DENY_LIST_REF}"
+            )
+    for path, sub in _free_text_fields(schema):
+        if {"$ref": VALUE_DENY_LIST_REF} not in (sub.get("allOf") or []):
+            out.append(
+                f"evidence schema {path}: bounded free-text field carries no "
+                f"value deny-list ref {VALUE_DENY_LIST_REF}"
+            )
     return out
+
+
+def _free_text_fields(
+    node: Json, path: str = "$", root: Json | None = None, seen: frozenset[str] = frozenset()
+) -> list[tuple[str, Json]]:
+    """Every subschema bounding a string by `maxLength`, wherever the schema reaches it.
+
+    A `maxLength` subschema is a field a writer fills by hand: the schema bounds
+    it because it cannot know what the game or an operator will interpolate.
+    The walk mirrors `_open_value_bags` so a field moved into `definitions` and
+    $ref'd, or reached through `items`, `additionalProperties`, `allOf`, or
+    `oneOf`, is still found; a gate that only read the top-level `properties`
+    would report a clean tree for a free-text field in any of the others.
+    """
+    if not isinstance(node, dict):
+        return []
+    if root is None:
+        root = node
+    if isinstance(node.get("$ref"), str):
+        ref = node["$ref"]
+        if ref in seen:
+            return []
+        resolved = _resolve_local_ref(node, root)
+        if resolved is node:
+            return []
+        return _free_text_fields(resolved, path, root, seen | {ref})
+    out: list[tuple[str, Json]] = []
+    if "maxLength" in node:
+        out.append((path, node))
+    for key in ("properties", "patternProperties"):
+        for name, sub in (node.get(key) or {}).items():
+            out += _free_text_fields(sub, f"{path}.{key}.{name}", root, seen)
+    for name, sub in (node.get("definitions") or {}).items():
+        out += _free_text_fields(sub, f"{path}.definitions.{name}", root, seen)
+    for i, sub in enumerate(node.get("oneOf") or []):
+        out += _free_text_fields(sub, f"{path}.oneOf[{i}]", root, seen)
+    for i, sub in enumerate(node.get("allOf") or []):
+        out += _free_text_fields(sub, f"{path}.allOf[{i}]", root, seen)
+    extra = node.get("additionalProperties")
+    if isinstance(extra, dict):
+        out += _free_text_fields(extra, f"{path}.additionalProperties", root, seen)
+    return out + _free_text_fields(node.get("items"), f"{path}.items", root, seen)
 
 
 def check_folder_structure() -> list[str]:

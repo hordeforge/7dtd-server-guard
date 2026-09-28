@@ -44,9 +44,11 @@ import contextlib
 import datetime as dt
 import io
 import json
+import os
 import pathlib
 import re
 import shutil
+import stat
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -72,6 +74,9 @@ KEY_MAX_AGE_HOURS = 24 * KEY_COPY_CYCLE_DAYS
 # separator in it is whichever one that editor used. A drive-qualified path
 # names a location on the server host that no other machine can open.
 WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:[\\/]")
+# The mode the config schema defaults each restricted file to, and the one the
+# drill compares the file's actual mode against.
+DEFAULT_SECRET_MODE = 0o600
 # The instant the self-tests export at, matching the archive stamp they name. The
 # export reads the wall clock to decide what a dead run's staging directory is,
 # so a self-test that left that to the host read the clock on every run and
@@ -306,6 +311,45 @@ def _resolve(value: object, runtime_root: pathlib.Path) -> pathlib.Path | None:
     return runtime_root / candidate
 
 
+def _configured_mode(block: Any) -> int:
+    """The `permissions` a config declares for a restricted file, or None.
+
+    The schema writes it as an octal string (`"0600"`), not an integer, so it is
+    parsed rather than read. A value that is not four octal digits is reported
+    by the config check against the same file; here it falls back to the schema
+    default so a malformed mode is not mistaken for a permissive one.
+    """
+    if not isinstance(block, dict):
+        return DEFAULT_SECRET_MODE
+    raw = block.get("permissions")
+    if isinstance(raw, str) and re.fullmatch(r"0[0-7]{3}", raw):
+        return int(raw, 8)
+    return DEFAULT_SECRET_MODE
+
+
+def _mode_errors(section: str, path: pathlib.Path, block: Any, info: os.stat_result) -> list[str]:
+    """A restricted file may not be more permissive than its config declares.
+
+    The comparison is one-directional on purpose. A file at `0400` is less
+    readable than the `0600` the config names, which is tighter than promised
+    and not a finding; a file at `0644` grants the world read and group write
+    on a file that resolves pseudonyms to platform accounts, and the drill names
+    the mode it found so the operator can see what to correct.
+    """
+    wanted = _configured_mode(block)
+    found = stat.S_IMODE(info.st_mode)
+    extra = found & ~wanted
+    if not extra:
+        return []
+    return [
+        (
+            f"{section}: {path} is mode {found:04o}, which grants "
+            f"{extra:04o} beyond the {wanted:04o} the config declares; a file that "
+            f"resolves a pseudonym to a platform account is not readable by anyone else"
+        )
+    ]
+
+
 def secrets_errors(
     config: Record, runtime_root: pathlib.Path, max_age_hours: float, now: dt.datetime
 ) -> list[str]:
@@ -314,7 +358,15 @@ def secrets_errors(
     cannot resolve a pseudonym at all, and without the map a key epoch resolves
     to nothing. `now` must be aware: it is aged against an mtime, which is an
     absolute epoch, so a naive value would read the file as older or younger
-    than it is by whatever offset the host's `TZ` carries that day."""
+    than it is by whatever offset the host's `TZ` carries that day.
+
+    The mode is checked for the same reason the age is. These are the two files
+    that turn a pseudonym back into a person: the map holds the mapping, the key
+    makes every pseudonym resolvable while it exists, and PRIVACY.md promises
+    both are stored `0600`. A file that is present, current, and world-readable
+    passes a presence check and fails the promise, and the exposure is silent,
+    so the drill reads the mode off the file and compares it to the one the
+    config declares."""
     errs: list[str] = []
     for section in ("identityMap", "hmacKey"):
         block = config.get(section)
@@ -333,11 +385,13 @@ def secrets_errors(
         if not path.is_file():
             errs.append(f"{section}: {path} is missing; a restore cannot resolve pseudonyms")
             continue
-        size = path.stat().st_size
+        info = path.stat()
+        size = info.st_size
         if size == 0:
             errs.append(f"{section}: {path} is zero bytes; an empty key is not a key")
             continue
-        age_hours = (ee.as_utc(now, "now").timestamp() - path.stat().st_mtime) / 3600
+        errs += _mode_errors(section, path, block, info)
+        age_hours = (ee.as_utc(now, "now").timestamp() - info.st_mtime) / 3600
         if age_hours < 0:
             # An mtime later than now means the clock stepped, or the file came
             # back from a copy with its timestamps preserved. A negative age is
@@ -596,6 +650,8 @@ def _self_test_config() -> list[str]:
 
         (runtime / "identity-map.json").write_text("{}\n", encoding="utf-8")
         (runtime / "keys" / "hmac.key").write_text("k\n", encoding="utf-8")
+        for secret in (runtime / "identity-map.json", runtime / "keys" / "hmac.key"):
+            secret.chmod(DEFAULT_SECRET_MODE)
         if found := drill(
             DrillRequest(
                 archive=archive,
@@ -641,8 +697,34 @@ def _self_test_secrets() -> list[str]:
         ]
         (scratch / "identity-map.json").write_text("{}\n", encoding="utf-8")
         (scratch / "hmac.key").write_text("k\n", encoding="utf-8")
+        # Both are written at the mode the config declares, or the run below
+        # would be testing the umask of whoever runs the suite rather than the
+        # mode check this suite is for.
+        for name in ("identity-map.json", "hmac.key"):
+            (scratch / name).chmod(DEFAULT_SECRET_MODE)
         if found := secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now()):
             errs.append(f"self-test: a present key and map were reported missing: {found}")
+        # A world-readable identity map passes every presence and age check and
+        # resolves a pseudonym to a platform account for anyone who can read it.
+        (scratch / "identity-map.json").chmod(0o644)
+        if not any("0644" in e for e in secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now())):
+            errs.append("self-test: a world-readable identity map was not reported")
+        (scratch / "identity-map.json").chmod(0o400)
+        if found := secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now()):
+            errs.append(f"self-test: a mode tighter than configured was reported: {found}")
+        (scratch / "identity-map.json").chmod(DEFAULT_SECRET_MODE)
+        # The declared mode is the bound, so a config asking for group-read
+        # accepts a group-readable file and only a wider one is a finding.
+        shared: Record = {
+            "identityMap": {"path": "identity-map.json", "permissions": "0640"},
+            "hmacKey": {"path": "hmac.key"},
+        }
+        (scratch / "identity-map.json").chmod(0o640)
+        if found := secrets_errors(shared, scratch, KEY_MAX_AGE_HOURS, _now()):
+            errs.append(
+                f"self-test: a group-readable map under a 0640 config was reported: {found}"
+            )
+        (scratch / "identity-map.json").chmod(DEFAULT_SECRET_MODE)
         # An age far past the cycle is a scheduled copy that did not run, which
         # is the same failure as a missing archive and the drill has to name it.
         stale = secrets_errors(
@@ -669,6 +751,10 @@ def _self_test_secrets() -> list[str]:
         # can see is reported missing.
         (scratch / "keys").mkdir(exist_ok=True)
         (scratch / "keys" / "hmac.key").write_text("k\n", encoding="utf-8")
+        # At the declared mode, for the reason the case above states: this one is
+        # about the separator, and a umask-default key would be reported for its
+        # mode before the path was ever resolved.
+        (scratch / "keys" / "hmac.key").chmod(DEFAULT_SECRET_MODE)
         backslashed: Record = {
             "identityMap": {"path": "identity-map.json"},
             "hmacKey": {"path": "keys\\hmac.key"},

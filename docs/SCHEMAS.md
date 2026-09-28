@@ -28,6 +28,20 @@ Rules that apply to every schema in this document:
   fixed spelling, because an enumerated spelling is bypassed by the first variant
   nobody wrote down. `make check` fails when an open bag drops the ref, inlines its own
   copy, or is an array with no element schema at all.
+- A permitted key is not a permitted value, so the value is checked too. The name list
+  closes the key a detector writes and says nothing about `note`, `reason`, or `marker`,
+  which the schema permits and which is exactly where an interpolated platform id lands.
+  Every open value bag therefore carries a second shared definition,
+  `personalDataValueDenyList`, as its `additionalProperties`, and every bounded
+  free-text field (`suppressedReason`, `modIdentity`, `itemId`, `marker`, `actor`,
+  `reason`) carries it in `allOf`. It denies the values this project can name as
+  identifying a person: both spellings of a Steam id, the 64-bit and Xbox forms of the
+  same account, a dotted-quad network address, a MAC address, and a contact address. A
+  display name has no shape, so this is not a name filter. The dotted-decimal rule also
+  rejects a four-part dotted version string, which is traded deliberately: a value that
+  reads as an address is rejected at validation, where the writer sees it, rather than
+  stored for the retention window. `make check` fails when an open bag or a
+  `maxLength` field drops the ref.
 - Paths in the config table (`evidence.dir`, `identityMap.path`, `hmacKey.path`) are the
   one place this schema names the filesystem. Nothing in the table sets a data root: the
   host does, and the loader resolves a relative path against the mod's data root beside
@@ -265,8 +279,9 @@ copying this example into a record needs values that validate.
 ```
 
 Boundedness: `observations` is capped at 32 entries and each entry at 4 keys (the schema
-bounds the key count and the deny-listed names, not the value types, so a value that fits
-is a detector's choice to keep flat);
+bounds the key count and the deny-listed names, and every value against the shared
+value deny-list, so a value that carries an identifier is rejected whether or not it
+fits);
 `context`, `expected`, and `actual` at 8 keys each; `causeEventIds` at 32 records and
 `evidenceIds` at 64. Anything larger is truncated with a `truncated: true` marker so a
 hostile request cannot inflate evidence size.
@@ -276,7 +291,9 @@ Free text is bounded too, on every string field a writer fills by hand:
 `reason` at 512. These are the fields a writer completes by interpolating whatever the game
 handed it, and an unbounded string there is the one place a name, a display string, or a
 quoted line would sit in a record for its whole retention window. A value that does not fit
-is a writer bug, caught at validation rather than stored.
+is a writer bug, caught at validation rather than stored. Each of the six also carries
+the value deny-list, so a platform id or an address interpolated into any of them is
+rejected as well.
 
 A reference to another record is an `eventId`, so it is validated as one: `eventId`,
 `replaces`, `causeEventIds`, and `evidenceIds` all take the single `evidenceEventId`

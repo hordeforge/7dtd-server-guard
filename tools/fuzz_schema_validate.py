@@ -536,6 +536,88 @@ def check_bool_is_not_a_number() -> None:
             raise InvariantBrokenError(f"{instance!r} against {schema}: boolean matched a number")
 
 
+def check_personal_data_values() -> int:
+    """A permitted key is not a permitted value: the bags and free text close both.
+
+    The property-name deny-list stops a detector writing `playerName`, and says
+    nothing about `note`, `reason`, or `marker`, which the schema permits and
+    which is exactly where an interpolated platform id lands. Each case below
+    puts one identifying value under a key the schema allows and requires the
+    record to be rejected; the positive controls are the other half, because a
+    deny-list broad enough to reject every string is an outage, not a control,
+    and only a measurement, a version, a mod name, and a segment label surviving
+    shows the list is a list and not a rejection of all free text.
+    """
+    schema = evidence_schema()
+    records = sample_records()
+    finding = records["finding"]
+    cause = records["cause"]
+    recon = records["reconciliation"]
+    audit = records["audit"]
+    leaks = [
+        (
+            "finding.context, a SteamID2 under a neutral key",
+            {**finding, "context": {"note": "STEAM_0:1:4242424242"}},
+        ),
+        ("finding.context, a SteamID64", {**finding, "context": {"note": "76561198000000000"}}),
+        ("finding.context, an XUID", {**finding, "context": {"note": "25354123456789012"}}),
+        ("finding.context, a network address", {**finding, "context": {"origin": "203.0.113.7"}}),
+        ("finding.context, a MAC address", {**finding, "context": {"note": "02:1b:44:11:3a:b7"}}),
+        (
+            "finding.context, a contact address",
+            {**finding, "context": {"note": "a.player@example.com"}},
+        ),
+        ("finding.actual", {**finding, "actual": {"peer": "STEAM_1:0:98765432"}}),
+        ("finding.expected", {**finding, "expected": {"peer": "STEAM_0:1:1"}}),
+        ("finding.observations", {**finding, "observations": [{"peer": "STEAM_0:1:2"}]}),
+        ("finding.suppressedReason", {**finding, "suppressedReason": "matched STEAM_0:1:5555"}),
+        ("cause.modIdentity", {**cause, "modIdentity": "STEAM_0:1:3"}),
+        ("cause.itemId", {**cause, "itemId": "203.0.113.9"}),
+        ("reconciliation.marker", {**recon, "marker": "peer 76561198000000000"}),
+        ("reconciliation.replayedFrom", {**recon, "replayedFrom": {"src": "10.0.0.5"}}),
+        ("reconciliation.deltaItems", {**recon, "deltaItems": [{"src": "STEAM_0:1:8"}]}),
+        ("audit.reason", {**audit, "reason": "cleared for 76561198000000000"}),
+        ("audit.actor", {**audit, "actor": "op@203.0.113.7"}),
+    ]
+    accepted = [
+        ("the shipped records", [finding, cause, recon, audit, records["health"]]),
+        (
+            "the sample's own context",
+            [{**finding, "context": {"vehicle": "none", "stance": "crouch", "admin": False}}],
+        ),
+        (
+            "measurements, which are numbers and never inspected",
+            [{**finding, "context": {"dx": 4.1, "budget": 2.0, "n": 0}}],
+        ),
+        ("a detector version", [{**finding, "detectorVersion": "0.1.0"}]),
+        (
+            "a mod identity and an item id",
+            [{**cause, "modIdentity": "SomeMod", "itemId": "resourceWood"}],
+        ),
+        ("a segment marker", [{**recon, "marker": "reconcile-7"}]),
+        (
+            "an operator's own words",
+            [{**audit, "actor": "operator", "reason": "legal-context false positive under review"}],
+        ),
+        (
+            "a nanosecond instant, digits and all",
+            [{**finding, "context": {"t": "1758000000000000000"}}],
+        ),
+    ]
+    checks = 0
+    for what, instance in leaks:
+        if not dc._schema_validate(instance, schema):
+            raise InvariantBrokenError(f"{what} was accepted: {instance}")
+        checks += 1
+    for what, instances in accepted:
+        for instance in instances:
+            errs = dc._schema_validate(instance, schema)
+            if errs:
+                raise InvariantBrokenError(f"the value deny-list rejected {what}: {errs}")
+        checks += 1
+    return checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -572,6 +654,7 @@ def main() -> int:
         check_string_length_units()
         check_bool_is_not_a_number()
         check_evidence_bags_beyond_finding()
+        value_deny_checks = check_personal_data_values()
         reference_checks = check_record_references()
         open_bag_checks = check_open_bag_walk()
     except InvariantBrokenError as exc:
@@ -582,6 +665,7 @@ def main() -> int:
         f"fuzz-schema-validate: ok seed={args.seed} iterations={args.iterations} "
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
+        f"value_denylist_checks={value_deny_checks} "
         f"id_array_probe=ok reference_checks={reference_checks} deep_probe=ok "
         f"open_bag_checks={open_bag_checks} "
         f"datetime_probe=ok non_finite_probe=ok threshold_gate_probe=ok "
