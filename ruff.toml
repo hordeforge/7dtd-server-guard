@@ -24,4 +24,6 @@ select = [
     "PERF",# performance lints
     "RET", # return simplification
     "RSE", # unnecessary parens on raise
+    "SIM", # flake8-simplify: control flow and comprehension clarity
+    "S",   # flake8-bandit: suspicious constructs
 ]

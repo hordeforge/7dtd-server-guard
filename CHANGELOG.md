@@ -82,6 +82,11 @@ above reserves minor bumps for that.
 
 ### Changed
 
+- `ruff.toml` selects the `SIM` and `S` rule groups, so `make lint` now covers
+  control-flow simplification and the suspicious-construct checks (bandit's
+  subprocess and weak-PRNG rules included). The five seeded fuzzer `random.Random`
+  sites and the one `subprocess.run` in `tools/doccheck.py` carry a scoped
+  `# noqa` naming the rule and the reason.
 - The Python toolchain pin is the whole version, not the minor: `.python-version` names
   `3.12.12`, `tools/guard_python.py` fails on any other interpreter instead of accepting
   an older patch, and CI pins the uv release it installs. CI also fixes `LC_ALL`, `TZ`,

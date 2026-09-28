@@ -293,9 +293,11 @@ def _range_default_errors(did: str, t: Json, ttype: str) -> list[str]:
     out: list[str] = []
     key = t.get("key")
     default = t.get("default")
-    if len(rng) != RANGE_BOUNDS or not all(_is_finite_number(b) for b in rng):
-        out.append(f"{did}: threshold {key} bad range {rng}")
-    elif not rng[0] <= rng[1]:
+    if (
+        len(rng) != RANGE_BOUNDS
+        or not all(_is_finite_number(b) for b in rng)
+        or not rng[0] <= rng[1]
+    ):
         out.append(f"{did}: threshold {key} bad range {rng}")
     elif ttype == "int" and not all(_is_int_value(b) for b in rng):
         out.append(f"{did}: threshold {key} int type with fractional range")
@@ -396,12 +398,12 @@ def _detector_errors(d: Json) -> list[str]:
     out.extend(_fixture_errors(did, d.get("fixtures", [])))
     # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
     decision_client = [
-        i.get("name")
+        name
         for i in inputs
         if isinstance(i, dict)
         and i.get("role") == "decision"
         and i.get("authority") == "client-declared"
-        and isinstance(i.get("name"), str)
+        and isinstance(name := i.get("name"), str)
     ]
     if d.get("ceiling") == "Hard" and decision_client and not d.get("hard_condition"):
         out.append(
@@ -451,7 +453,7 @@ def _run_tool(script: str, *args: str, on_failure: str) -> list[str]:
     POSIX would otherwise decode that as ASCII and raise out of the gate.
     """
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - script names are literals, shell is off
             [sys.executable, str(ROOT / "tools" / script), *args],
             capture_output=True,
             encoding="utf-8",

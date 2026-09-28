@@ -202,7 +202,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_fuzz_args(ap, default_iterations=2000)
     args = fuzz_args(ap)
-    rng = random.Random(args.seed)
+    rng = random.Random(args.seed)  # noqa: S311 - seeded corpus fuzzing, not a secret
     mut = Mutator(rng, max_depth=1)  # record-level surgery, values replaced whole
     seeds = load_seeds()
     stats = {"t1_records": 0, "t1_rejected": 0, "t2_runs": 0, "clean_chain_ok": False}

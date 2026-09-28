@@ -259,7 +259,7 @@ def main() -> int:
     ap.add_argument("--iterations", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0x5EED)
     args = ap.parse_args()
-    rng = random.Random(args.seed)
+    rng = random.Random(args.seed)  # noqa: S311 - seeded corpus fuzzing, not a secret
     mut = Mutator(rng, max_depth=3)
     stats = {"verify_runs": 0, "rejected": 0, "accepted": 0}
 
