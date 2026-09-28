@@ -15,10 +15,14 @@ Rules that apply to every schema in this document:
   against a bounded charset: `[a-z0-9._-]`, max 64 chars.
 - No schema ever contains a raw platform identity, IP address, auth ticket, password, or
   full packet body. Identities are HMAC pseudonyms (see [PRIVACY.md](../PRIVACY.md)).
-- The file paths below are relative to the mod's data root, which the loader derives from
-  the server's `UserDataFolder`-adjacent `ServerGuard/` tree. The data root is not a config
-  key, so a config can only name paths inside that tree; the exact default location is
-  confirmed in Phase 2.
+  Every open value bag in the evidence schema (`context`, `observations`, `expected`,
+  `actual`, `replayedFrom`) additionally carries a `propertyNames` deny-list, so a
+  detector that writes a raw name, address, or credential into its own values is
+  rejected at validation rather than at export. `make check` fails when an open object
+  drops that deny-list.
+- The file paths below are relative to the mod's data root, which the operator sets in the
+  config. Defaults live under the server's `UserDataFolder`-adjacent `ServerGuard/` tree;
+  the exact default location is confirmed in Phase 2.
 
 ## Config schema (config v1)
 
@@ -58,6 +62,7 @@ against it, and the strict loader in Phase 2 is generated from the same schema.
 | `identityMap.path` | string | `ServerGuard/identity-map.json` | restricted perms, non-empty | Pseudonym -> platform identity, operator-only |
 | `identityMap.permissions` | string | `0600` | POSIX octal | Enforced at startup on POSIX hosts |
 | `hmacKey.path` | string | `ServerGuard/hmac.key` | restricted perms, non-empty | Pseudonym key; destroyed when evidence under it expires |
+| `hmacKey.permissions` | string | `0600` | POSIX octal | Enforced at startup on POSIX hosts, as for the identity map: platform IDs are enumerable, so this file is the re-identification key |
 | `hmacKey.rotationDays` | int | 90 | 1..365 | Starts a new pseudonym epoch |
 | `queues.actionQueueMax` | int | 4096 | 64..65536 | Main-thread action queue bound |
 | `queues.evidenceQueueMax` | int | 8192 | 64..65536 | Writer queue bound; drop soft first |
@@ -191,6 +196,13 @@ A `finding` example:
 Boundedness: `observations` is capped at 32 entries and each entry at 4 scalar fields;
 `context` at 8 string keys. Anything larger is truncated with a `truncated: true` marker so
 a hostile request cannot inflate evidence size.
+
+Value-bag keys are lowercase `snake_case` and carry the `propertyNames` deny-list, so a
+detector names a value after the quantity it measured (`dx`, `bound`, `vehicle`) and the
+record's own `pseudonym` names the player. A detector whose input is a platform ID
+(`protocol.duplicate_session`, spec input `platform_id`) compares HMAC pseudonyms, not raw
+IDs, and names the value for what it counted. Keys that could hold a raw identity, a player
+name, a contact or network address, or a credential are rejected at validation.
 
 Purge semantics: replacing a record with a `tombstone` keeps `chainPrev`/hash continuity so
 the chain still verifies. Purge of a `finding` also purges its referenced `cause` records in

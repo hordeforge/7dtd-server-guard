@@ -45,7 +45,7 @@ review or appeal.
 | Evidence JSONL segments | 30 days | Append-only, hash-chained, rotated by size and day. |
 | Sampled position history (review replay) | 7 days | Pseudonymous, bounded per player. |
 | Pseudonym → identity map | Lifetime of the ban/appeal window, then purged | Restricted file permissions. |
-| Pseudonym HMAC key | Destroyed when the evidence written under it expires | Platform IDs are enumerable, so a purged identity map de-identifies only once its key is destroyed. Key rotation starts a new pseudonym epoch. |
+| Pseudonym HMAC key | Destroyed when the evidence written under it expires | Platform IDs are enumerable, so a purged identity map de-identifies only once its key is destroyed. Key rotation starts a new pseudonym epoch. Stored at `0600`, the same restriction as the identity map. |
 | Confirmed false-positive fixtures | Indefinite (de-identified) | Kept as regression tests, no player identity. |
 | Suppressed / raw tuning findings | 30 days | Used only for threshold tuning. |
 | Operator audit log (overrides, unbans, purges) | 1 year | Actor, timestamp, reason; no gameplay data. |
@@ -88,7 +88,9 @@ Before opening a server with Server Guard:
 - Replace the retention owner and contact with your own.
 - Confirm the retention schedule matches your rules; defaults apply otherwise.
 - Enable the alert webhook only if you want it; payloads carry evidence IDs, never identity.
-- Restrict the identity-map file and evidence directory permissions on your host.
+- Restrict the identity-map file, the HMAC key file, and the evidence directory permissions
+  on your host. The key file is what turns a pseudonym back into a platform ID, so it is
+  restricted on the same terms as the identity map (`0600` by default).
 - Decide how access, erasure, and objection requests are handled (see the EU/EEA section;
   erasure is not limited to the appeal flow).
 - Record purge and unban actions in the audit log; if you export evidence, keep those exports

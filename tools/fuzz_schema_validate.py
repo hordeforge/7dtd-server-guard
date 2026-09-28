@@ -18,6 +18,7 @@ Invariants asserted per iteration:
   - Sensitivity pair assertion: deleting a required key from a pristine valid
     instance must produce at least one error.
   - Pristine shipped pairs validate clean.
+  - The evidence schema refuses personal-data keys in its open value bags.
 
 Deterministic (seeded PRNG), stdlib only, no external fuzzer required.
 
@@ -43,6 +44,33 @@ from fuzz_common import InvariantBroken, Mutator, nested
 Json = Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# A finding hands `context`, `observations`, `expected`, and `actual` to the
+# exporter, the operator, and the webhook consumer, so a key that could hold a
+# raw identity, a contact address, a network address, or a credential must be
+# rejected there. The spelling variants matter: the schema matches keys
+# case-insensitively because a detector's local naming is its own choice.
+PERSONAL_DATA_KEYS = (
+    "steamId",
+    "STEAM_ID",
+    "steam_id",
+    "platformId",
+    "platform_id",
+    "playerName",
+    "player_name",
+    "username",
+    "client_id",
+    "ip",
+    "ipAddress",
+    "ip_address",
+    "eacGuid",
+    "auth_ticket",
+    "password",
+    "macAddress",
+    "hardware_id",
+)
+# The open bags of a `finding` record, and how to inject a key into each.
+EVIDENCE_BAGS = ("context", "expected", "actual", "observations")
 
 
 def load_pairs() -> list[tuple[str, Json, list[Json]]]:
@@ -166,6 +194,45 @@ def check_datetime_format() -> None:
                 raise InvariantBroken(f"{rec_type}.{field}={value!r} accepted: {why}")
 
 
+def _with_key(record: Json, bag: str, key: str) -> Json:
+    """A copy of `record` carrying `key` inside the open bag `bag`."""
+    bad = json.loads(json.dumps(record))
+    if bag == "observations":
+        bad["observations"][0][key] = "x"
+    else:
+        bad[bag][key] = "x"
+    return bad
+
+
+def check_personal_data_denylist() -> int:
+    """Every personal-data spelling must be rejected in every open evidence bag.
+
+    doccheck.py keeps every open object carrying the deny-list; this pins that
+    the deny-list it carries actually fires, in each bag a finding writes to.
+    """
+    schema_path = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    sample = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
+    findings = [
+        json.loads(ln)
+        for ln in sample.read_text(encoding="utf-8").splitlines()
+        if ln.strip() and json.loads(ln)["type"] == "finding"
+    ]
+    if not findings:
+        raise InvariantBroken("no finding record in the shipped evidence sample")
+    record = findings[0]
+    checks = 0
+    for key in PERSONAL_DATA_KEYS:
+        for bag in EVIDENCE_BAGS:
+            if not dc._schema_validate(_with_key(record, bag, key), schema):
+                raise InvariantBroken(f"{bag}.{key} accepted by the evidence schema")
+            checks += 1
+    # The deny-list must not reject the keys the sample itself writes.
+    if dc._schema_validate(record, schema):
+        raise InvariantBroken("shipped finding record rejected by its own schema")
+    return checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--iterations", type=int, default=1500)
@@ -176,6 +243,7 @@ def main() -> int:
 
     try:
         pairs = load_pairs()
+        denylist_checks = check_personal_data_denylist()
         stats = {"runs": 0, "sensitivity": 0, "rejected": 0}
         for _ in range(args.iterations):
             name, schema, instances = rng.choice(pairs)
@@ -202,7 +270,8 @@ def main() -> int:
     print(
         f"fuzz-schema-validate: ok seed={args.seed} iterations={args.iterations} "
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
-        f"sensitivity_checks={stats['sensitivity']} deep_probe=ok datetime_probe=ok"
+        f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
+        f"deep_probe=ok datetime_probe=ok"
     )
     return 0
 

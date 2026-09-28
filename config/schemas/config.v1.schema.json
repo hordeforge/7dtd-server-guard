@@ -161,6 +161,11 @@
           "minLength": 1,
           "default": "ServerGuard/hmac.key"
         },
+        "permissions": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$",
+          "default": "0600"
+        },
         "rotationDays": {
           "type": "integer",
           "minimum": 1,

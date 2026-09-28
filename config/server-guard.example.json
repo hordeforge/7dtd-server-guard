@@ -82,6 +82,7 @@
   },
   "hmacKey": {
     "path": "ServerGuard/hmac.key",
+    "permissions": "0600",
     "rotationDays": 90
   },
   "queues": {

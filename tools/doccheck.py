@@ -24,6 +24,9 @@ Checks:
   11. The design-time replay contract vector passes its semantic checks.
   12. Documented folder structure holds: required docs exist and every planned directory
       under src/, tests/, tools/, config/ carries a README.
+  13. Every open object in the evidence schema carries the property-name deny-list,
+      so no raw identity, contact, network address, or credential can ride along in
+      a detector-supplied value bag.
 
 Exit code 0 when clean; 1 otherwise. Prints a summary and any failures.
 """
@@ -150,6 +153,8 @@ SCHEMA_DATA_PAIRS = [
         ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json",
     ),
 ]
+
+EVIDENCE_SCHEMA = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
 
 
 def detector_ids_in(text: str) -> set[str]:
@@ -531,6 +536,13 @@ def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: in
         errs.append(f"{path}: {len(instance)} properties > maxProperties {schema['maxProperties']}")
     if "minProperties" in schema and len(instance) < schema["minProperties"]:
         errs.append(f"{path}: {len(instance)} properties < minProperties {schema['minProperties']}")
+    names = schema.get("propertyNames")
+    if names is not None:
+        errs.extend(
+            f"{path}: key {k!r} rejected by propertyNames"
+            for k in instance
+            if _schema_validate(k, names, f"{path}.{k}", depth + 1)
+        )
     props = schema.get("properties", {})
     pats = schema.get("patternProperties", {})
     for k, v in instance.items():
@@ -645,6 +657,41 @@ def check_config_schemas() -> list[str]:
     return out
 
 
+def _open_object_schemas(node: Json, path: str = "$") -> list[tuple[str, Json]]:
+    """Every subschema of `node` that accepts properties beyond a declared set."""
+    out: list[tuple[str, Json]] = []
+    if not isinstance(node, dict):
+        return out
+    node_type = node.get("type")
+    types = node_type if isinstance(node_type, list) else [node_type]
+    if "object" in types and node.get("additionalProperties") is not False:
+        out.append((path, node))
+    for key in ("properties", "patternProperties"):
+        for name, sub in (node.get(key) or {}).items():
+            out += _open_object_schemas(sub, f"{path}.{key}.{name}")
+    for i, sub in enumerate(node.get("oneOf") or []):
+        out += _open_object_schemas(sub, f"{path}.oneOf[{i}]")
+    return out + _open_object_schemas(node.get("items"), f"{path}.items")
+
+
+def check_evidence_personal_data() -> list[str]:
+    """Every open value bag in the evidence schema carries the deny-list.
+
+    Detectors write their observed and expected values into `context`,
+    `observations`, `expected`, and `actual`; those bags are the one place a
+    detector could hand a raw platform ID, a player name, an address, or a
+    credential to the exporter, the operator, and the webhook consumer. The
+    deny-list is the machine form of the SCHEMAS.md rule that no schema ever
+    carries one.
+    """
+    schema = json.loads(EVIDENCE_SCHEMA.read_text(encoding="utf-8"))
+    return [
+        f"evidence schema {path}: open object has no propertyNames deny-list"
+        for path, sub in _open_object_schemas(schema)
+        if "propertyNames" not in sub
+    ]
+
+
 def check_folder_structure() -> list[str]:
     """The documented layout (docs/INDEX.md -> Repo layout) must hold: every directory
     under src/, tests/, tools/, config/ carries a README (empty dirs document their
@@ -756,6 +803,7 @@ def main() -> int:
         "config example vs schema": check_config_example_keys(),
         "config schema vs docs": check_config_contract(),
         "config JSON schemas": check_config_schemas(),
+        "evidence personal data": check_evidence_personal_data(),
         "evidence sample chain": check_evidence_sample_chain(),
         "replay contract": check_replay_contract(),
         "folder structure": check_folder_structure(),

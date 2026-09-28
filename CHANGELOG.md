@@ -23,6 +23,11 @@ this file and are described only by their git tags.
   projection (run header, clock origin, per-case findings, actions, and work units)
   so a diverging replay fails on one digest. `tools/replay_contract_check.py`
   verifies both and rejects a case whose `tick` steps backwards.
+- The evidence schema's open value bags (`context`, `observations`, `expected`,
+  `actual`, `replayedFrom`) carry a `propertyNames` deny-list, so a detector
+  cannot write a raw platform ID, player name, address, or credential into a
+  record that operators and webhook consumers read. `doccheck.py` fails when an
+  open object drops it, and the schema fuzzer pins that it rejects.
 
 ### Changed
 
@@ -31,6 +36,9 @@ this file and are described only by their git tags.
   (measured 217MB to 42MB peak RSS on a 25MB segment, flat from 25MB to 101MB segments).
 - `tools/render_detectors.py` parses `tools/detector_spec.yaml` once per process; the
   doccheck gate parsed it three times at ~90ms each.
+- The evidence audit record bounds `reason` at 512 characters.
+- `hmacKey.permissions` joins `identityMap.permissions`: the re-identification
+  key file is stored at the same `0600` default as the identity map.
 
 ### Fixed
 

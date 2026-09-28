@@ -15,7 +15,8 @@
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
   format, detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
-  schema/data pairs, evidence sample chain, replay-contract vector, and folder structure.
+  schema/data pairs, evidence sample chain, replay-contract vector, evidence
+  personal-data deny-list, and folder structure.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`: seeded,
   deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator
   in doccheck.py, and the replay-trace contract checker (`make test-tools`, or
