@@ -175,3 +175,11 @@ Two rules keep an archive portable, and both are pinned by the self-tests under
   onto it, so a name differing only in case is reported on a case-sensitive host
   and a case-insensitive one alike instead of verifying clean on one and failing on
   the other.
+
+The operator's config crosses the same boundary in the other direction: it is
+hand-edited on the Windows host that runs the server and read by `config_check.py`
+and by the drill, wherever either runs. So a configured path is read with either
+separator, and a config saved as UTF-8 with a byte-order mark, which is what a
+Windows editor's "UTF-8 with BOM" leaves in front of otherwise valid bytes, is read
+as the same config. A drive-qualified path names the server host and is reported
+rather than resolved, because no other host can open it.

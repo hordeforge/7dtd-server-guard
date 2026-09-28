@@ -243,7 +243,11 @@ resolves `identityMap.path` and `hmacKey.path` (a relative one against the confi
 file's own directory, or against `--runtime-root`) and fails when either
 is missing, zero bytes, older than the 7-day copy cycle, or stamped with an mtime
 later than the current time, so a drill cannot pass on
-an archive that restores records nobody can attribute. Without `CONFIG` the verdict
+an archive that restores records nobody can attribute. The config is hand-edited on
+the Windows host that runs the server, so both separators are read as separators:
+`keys\hmac.key` and `keys/hmac.key` are the same file here. A drive-qualified path
+names the server host, which a drill run elsewhere cannot open, and is reported
+rather than resolved against the runtime root. Without `CONFIG` the verdict
 says so, so the drill record does not imply a cross-check that never ran. `WORK` must
 be empty or absent;
 a directory that still holds files is refused rather than merged into, because a

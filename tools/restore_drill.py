@@ -45,6 +45,7 @@ import datetime as dt
 import io
 import json
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
@@ -64,6 +65,11 @@ Record = dict[str, Any]
 # missing evidence archive and is only visible if something looks.
 KEY_COPY_CYCLE_DAYS = 7
 KEY_MAX_AGE_HOURS = 24 * KEY_COPY_CYCLE_DAYS
+# A configured path is written by hand on the host that runs the server, a
+# Windows host, and read here on whatever machine runs the drill, so the
+# separator in it is whichever one that editor used. A drive-qualified path
+# names a location on the server host that no other machine can open.
+WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:[\\/]")
 # The instant the self-tests export at, matching the archive stamp they name. The
 # export reads the wall clock to decide what a dead run's staging directory is,
 # so a self-test that left that to the host read the clock on every run and
@@ -272,12 +278,30 @@ def config_match_errors(config: Record, hashes: set[str], config_path: pathlib.P
     ]
 
 
-def _resolve(value: object, runtime_root: pathlib.Path) -> pathlib.Path:
-    """A configured path, absolute as written and relative to the runtime root.
-    The resolved path is named in every finding, so an operator reading a failure
-    can see whether the file is missing or merely looked for in the wrong place."""
-    candidate = pathlib.Path(str(value))
-    return candidate if candidate.is_absolute() else runtime_root / candidate
+def _resolve(value: object, runtime_root: pathlib.Path) -> pathlib.Path | None:
+    """A configured path, absolute as written and relative to the runtime root,
+    or None when it names a location only the server host can open.
+
+    The separator is read as either one, because the config is hand-edited on
+    the Windows host that runs the server and read here on the host that runs
+    the drill: `keys\\hmac.key` is a nested path to that editor and a single
+    filename with a backslash in it to this process, which then reports a file
+    missing that the operator can see.
+
+    A path this host reads as absolute is used as written, drive letter and all.
+    One it does not, but that carries a drive letter, is absolute on the server
+    host and unreachable from here: it is reported rather than joined onto the
+    runtime root, because that would name a path which never existed anywhere.
+
+    The resolved path is named in every finding, so an operator reading a
+    failure can see whether the file is missing or merely looked for in the
+    wrong place."""
+    candidate = pathlib.Path(str(value).replace("\\", "/"))
+    if candidate.is_absolute():
+        return candidate
+    if WINDOWS_ABSOLUTE.match(str(value)):
+        return None
+    return runtime_root / candidate
 
 
 def secrets_errors(
@@ -297,6 +321,13 @@ def secrets_errors(
             errs.append(f"config: {section}.path is not set; {section} cannot be restored")
             continue
         path = _resolve(path_value, runtime_root)
+        if path is None:
+            errs.append(
+                f"config: {section}.path is a server-host path ({path_value}); this host "
+                f"cannot open it, so the drill cannot confirm the copy. Point the config at "
+                f"a path relative to the runtime root, or run the drill on that host."
+            )
+            continue
         if not path.is_file():
             errs.append(f"{section}: {path} is missing; a restore cannot resolve pseudonyms")
             continue
@@ -618,6 +649,32 @@ def _self_test_secrets() -> list[str]:
         )
         if not any("in the future" in e for e in ahead):
             errs.append(f"self-test: a key stamped in the future was not reported: {ahead}")
+        # The config is hand-edited on the Windows host that runs the server, so
+        # its paths carry that separator. Read literally, `keys\hmac.key` is one
+        # filename here and a nested path to that editor, and a key the operator
+        # can see is reported missing.
+        (scratch / "keys").mkdir(exist_ok=True)
+        (scratch / "keys" / "hmac.key").write_text("k\n", encoding="utf-8")
+        backslashed: Record = {
+            "identityMap": {"path": "identity-map.json"},
+            "hmacKey": {"path": "keys\\hmac.key"},
+        }
+        if found := secrets_errors(backslashed, scratch, KEY_MAX_AGE_HOURS, _now()):
+            errs.append(f"self-test: a Windows-separated key path was reported: {found}")
+        # A drive-qualified path is absolute on the host that wrote it. On the
+        # host that owns the drive it opens there, and a key that is not there is
+        # reported missing; on any other host it cannot be opened, and it must be
+        # reported rather than joined onto the runtime root into a path that
+        # never existed. Both shapes agree on one thing: the finding names the
+        # section and no path under this scratch directory.
+        foreign = secrets_errors(
+            {"hmacKey": {"path": r"C:\ServerGuard\hmac.key"}},
+            scratch,
+            KEY_MAX_AGE_HOURS,
+            _now(),
+        )
+        if not any("hmacKey" in e for e in foreign) or any(str(scratch) in e for e in foreign):
+            errs.append(f"self-test: a drive-qualified key path was resolved wrongly: {foreign}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return errs

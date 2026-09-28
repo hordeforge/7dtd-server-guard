@@ -332,6 +332,17 @@ above reserves minor bumps for that.
   runs after it (`check`, `exercise`, `test-tools`, `sbom`) never executed. The two
   messages are now parenthesized, which is what the rule asks for; the text is
   unchanged.
+- The restore drill resolves a configured `identityMap.path` or `hmacKey.path` with
+  either separator. The config is hand-edited on the Windows host that runs the
+  server, so `keys\hmac.key` is a nested path to that editor and a single filename
+  to the drill: a key the operator can see was reported missing on every host but
+  Windows. A drive-qualified path is reported as one this host cannot open, instead
+  of being joined onto the runtime root into a path that never existed anywhere.
+- `config_check.py` reads a config saved as UTF-8 with a byte-order mark, which is
+  what a Windows editor's "UTF-8 with BOM" save leaves in front of otherwise valid
+  bytes. The leading U+FEFF is not JSON, so the file was refused as malformed
+  rather than validated as the config it is. Bytes that are not UTF-8 at all are
+  still refused by name, as before.
 - `config_check.py` exited 2 on a config file that could not be read, where
   `tools/README.md` -> Command-line contract and its own docstring make a path that
   does not exist a check failure (1). A deploy script branching on the code read a

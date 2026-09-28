@@ -34,7 +34,10 @@ Rules that apply to every schema in this document:
   the server executable, using an absolute path as given. A path that escapes that root
   through `..`, or an empty one, is rejected at load; the identity map and the HMAC key
   are created with the `permissions` the table names. The default `ServerGuard/` tree
-  below the data root is confirmed in Phase 2.
+  below the data root is confirmed in Phase 2. The file is hand-edited on the Windows
+  host that runs the server and read by the operator tooling wherever it runs, so a
+  configured path is read with either separator: `keys\hmac.key` and `keys/hmac.key`
+  name the same file. A path is saved as UTF-8, with or without a byte-order mark.
 
 ## Config schema (config v1)
 

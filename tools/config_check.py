@@ -291,7 +291,12 @@ def check(config: Json, env: dict[str, str] | None = None, check_env: bool = Tru
 def load(path: pathlib.Path) -> tuple[Json | None, str | None]:
     """A config file and its parse error, or (None, message) when it cannot be read."""
     try:
-        return json.loads(path.read_text(encoding="utf-8")), None
+        # utf-8-sig, not utf-8: a Windows editor that writes "UTF-8 with BOM"
+        # produces bytes that are valid UTF-8 and a valid config, and a leading
+        # U+FEFF is not JSON, so the plain decode refuses a file with nothing
+        # wrong with it. The signature is stripped where it is read, so every
+        # consumer sees the same bytes the shipped example has.
+        return json.loads(path.read_text(encoding="utf-8-sig")), None
     except OSError as exc:
         return None, f"cannot read {path}: {exc}"
     except UnicodeDecodeError as exc:
@@ -484,6 +489,14 @@ def _load_self_test(failures: list[str]) -> None:
             failures.append(f"non-UTF-8 config was not refused by name: {error!r}")
         if (config, error) != load(latin1):
             failures.append("loading the same file twice gave two different results")
+        # The same bytes with a UTF-8 BOM, which is what a Windows editor's
+        # "UTF-8 with BOM" save leaves in front of an otherwise valid config.
+        bom = scratch / "server-guard.bom.json"
+        bom.write_bytes(b"\xef\xbb\xbf" + EXAMPLE_PATH.read_bytes())
+        loaded, error = load(bom)
+        expected, _ = load(EXAMPLE_PATH)
+        if error is not None or loaded != expected:
+            failures.append(f"a UTF-8 BOM config was not read as the same config: {error!r}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
