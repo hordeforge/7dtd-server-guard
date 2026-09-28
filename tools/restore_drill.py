@@ -96,9 +96,7 @@ def _schema_secret_modes() -> dict[str, int]:
     """
     schema = json.loads(cc.SCHEMA_PATH.read_text(encoding="utf-8"))
     modes = {
-        section: int(
-            schema["properties"][section]["properties"]["permissions"]["default"], 8
-        )
+        section: int(schema["properties"][section]["properties"]["permissions"]["default"], 8)
         for section in SECRET_SECTIONS
     }
     for section, mode in modes.items():
@@ -414,7 +412,13 @@ def _configured_mode(section: str, block: Any) -> int:
     return fallback
 
 
-def _mode_errors(section: str, path: pathlib.Path, block: Any, info: os.stat_result) -> list[str]:
+def _mode_errors(
+    section: str,
+    path: pathlib.Path,
+    block: Any,
+    info: os.stat_result,
+    label: str | None = None,
+) -> list[str]:
     """A restricted file may not be more permissive than its config declares.
 
     The comparison is one-directional on purpose. A file at `0400` is less
@@ -422,7 +426,12 @@ def _mode_errors(section: str, path: pathlib.Path, block: Any, info: os.stat_res
     and not a finding; a file at `0644` grants the world read and group write
     on a file that resolves pseudonyms to platform accounts, and the drill names
     the mode it found so the operator can see what to correct.
+
+    `section` is the config section whose declared mode and schema default apply,
+    which is the section a copy of the file belongs to as well. `label` is what
+    the finding calls the file, for the copy that lives under another store.
     """
+    name = section if label is None else label
     wanted = _configured_mode(section, block)
     found = stat.S_IMODE(info.st_mode)
     extra = found & ~wanted
@@ -430,7 +439,7 @@ def _mode_errors(section: str, path: pathlib.Path, block: Any, info: os.stat_res
         return []
     return [
         (
-            f"{section}: {path} is mode {found:04o}, which grants "
+            f"{name}: {path} is mode {found:04o}, which grants "
             f"{extra:04o} beyond the {wanted:04o} the config declares; a file that "
             f"resolves a pseudonym to a platform account is not readable by anyone else"
         )
@@ -556,14 +565,18 @@ def _key_copy_errors(
         info = copied.stat() if present else None
     except OSError as exc:
         return [
-            f"{section}: off-server copy {copied} cannot be opened "
-            f"({exc.strerror or exc}); the drill cannot confirm the copy"
+            (
+                f"{section}: off-server copy {copied} cannot be opened "
+                f"({exc.strerror or exc}); the drill cannot confirm the copy"
+            )
         ]
     if not present or info is None:
         return [
-            f"{section}: no off-server copy at {copied}; a lost disk takes {path} with it, "
-            f"and a {section} that is gone leaves restored evidence permanently "
-            f"unattributable"
+            (
+                f"{section}: no off-server copy at {copied}; a lost disk takes {path} with it, "
+                f"and a {section} that is gone leaves restored evidence permanently "
+                f"unattributable"
+            )
         ]
     try:
         same = ee.file_digest(copied)[0] == ee.file_digest(path)[0]
@@ -574,7 +587,7 @@ def _key_copy_errors(
             f"{section}: the off-server copy at {copied} differs from {path}; it is a copy "
             "of a different file, and restoring it resolves a different key epoch"
         )
-    errs += _mode_errors(f"{section} off-server copy", copied, block, info)
+    errs += _mode_errors(section, copied, block, info, label=f"{section} off-server copy")
     return errs
 
 
@@ -1065,9 +1078,10 @@ def _self_test_key_copies(scratch: pathlib.Path) -> list[str]:
     # re-identification key to everyone who can reach the store, which is a
     # wider blast radius than the live file ever had.
     (copies / "hmac.key").chmod(0o644)
-    if not any("off-server copy" in e and "0644" in e for e in secrets_errors(
-        config, scratch, KEY_MAX_AGE_HOURS, _now()
-    )):
+    if not any(
+        "off-server copy" in e and "0644" in e
+        for e in secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now())
+    ):
         errs.append("self-test: a world-readable off-server key copy was not reported")
     (copies / "hmac.key").chmod(min(SCHEMA_SECRET_MODES.values()))
     return errs

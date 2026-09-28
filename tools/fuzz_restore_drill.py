@@ -107,12 +107,19 @@ RUNS = SCRATCH / "fuzz-restore-drill"
 HARNESS_NOW = dt.datetime(2026, 7, 21, 0, 0, tzinfo=dt.UTC)
 HARNESS_STAMP = "20260721T000000Z"
 
+# The store the off-server copies live under, relative to the runtime root. The
+# drill fails a config that names none, and the copies it names are what the
+# harness writes in build_runtime.
+COPY_DIR = "copies"
+
 # The config a healthy drill is handed: a relative identity map and key under the
-# runtime root, which is the layout the drill resolves against.
+# runtime root, which is the layout the drill resolves against, plus the store
+# holding the copies that survive the disk the live files are on.
 DEPLOYED: Json = {
     "schemaVersion": 1,
     "identityMap": {"path": "identity-map.json"},
     "hmacKey": {"path": "keys/hmac.key"},
+    "backup": {"keyCopyDir": COPY_DIR},
 }
 
 # Strings a hand-edited config carries in a path field: the Windows separator the
@@ -191,15 +198,26 @@ def build_archive(
 
 def build_runtime(scratch: pathlib.Path) -> pathlib.Path:
     """A runtime root holding the two artifacts no archive carries, both fresh at
-    HARNESS_NOW, so a healthy drill has nothing to report about them."""
+    HARNESS_NOW and both copied into the off-server store the config names, so a
+    healthy drill has nothing to report about them."""
     runtime = scratch / "runtime"
     (runtime / "keys").mkdir(parents=True, exist_ok=True)
     paths = [runtime / "identity-map.json", runtime / "keys" / "hmac.key"]
     paths[0].write_text("{}\n", encoding="utf-8")
     paths[1].write_text("k\n", encoding="utf-8")
+    store = runtime / COPY_DIR
+    store.mkdir()
     stamp = HARNESS_NOW.timestamp()
+    # The mode the schema defaults a secret file to: the drill reports anything
+    # wider, and the umask of whoever runs the harness must not decide whether
+    # the healthy case below is healthy.
+    mode = min(rd.SCHEMA_SECRET_MODES.values())
     for path in paths:
+        path.chmod(mode)
         os.utime(path, (stamp, stamp))
+        copied = store / path.name
+        shutil.copy2(path, copied)
+        copied.chmod(mode)
     return runtime
 
 
