@@ -8,7 +8,7 @@
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
 # short-run loop cannot reproduce a seed the full run reported.
-FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_spec
+FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_spec config_check
 
 # Tools carrying negative self-tests, addressable by `make self-test TOOL=<name>`.
 # This list is the registry: `make test-tools` runs every entry, so adding a
@@ -78,7 +78,8 @@ exercise: guard-python
 # Tests for the shipped Python tooling: evidence hash-chain and archive
 # self-tests plus seeded structure-aware fuzzers over the evidence parser, the
 # archive verifier and exporter, the JSON Schema validator, the replay-trace
-# contract checker, and the detector spec consumers.
+# contract checker, the detector spec consumers, and the operator config
+# validator.
 test-tools: guard-python
 	@set -e; for tool in $(SELF_TESTS); do \
 	  echo "$(UV) python tools/$$tool.py --self-test"; \
@@ -89,6 +90,7 @@ test-tools: guard-python
 	$(UV) python tools/fuzz_replay_trace.py
 	$(UV) python tools/fuzz_evidence_export.py
 	$(UV) python tools/fuzz_detector_spec.py
+	$(UV) python tools/fuzz_config_check.py
 
 # One tool's negative self-tests: the loop while editing that tool, since
 # `make fuzz FUZZ=<name>` covers only its fuzzer, not its self-tests.
@@ -193,7 +195,7 @@ help:
 	@echo "  make exercise        run the replay contract self-tests and validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
 	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, restore_drill, backup_status, config_check)"
-	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec)"
+	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec, config_check)"
 	@echo "  make sbom [OUT=<file>]  render the CycloneDX 1.6 inventory from uv.lock"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make guard-python    interpreter pin gate every other target depends on"

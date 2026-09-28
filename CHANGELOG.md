@@ -104,13 +104,24 @@ above reserves minor bumps for that.
   one command with one exit code, the same verification `make export-evidence` runs.
   `make check` now requires the target, the drill, and the runbook lines that name
   both, so the recovery contract and the commands that execute it cannot drift apart.
+- `tools/fuzz_config_check.py`: a seeded, structure-aware fuzzer over
+  `tools/config_check.py`, the only gate an operator's hand-edited config file
+  passes before it starts a server. It mutates the shipped example on its schema
+  pass, mutates it again in a shape that survives the schema pass so the registry,
+  manifest, and secret-env passes are reached, and corrupts the config file's
+  bytes. It asserts that `check` and each cross-file consumer never raise and are
+  deterministic, that `load` returns a config or a reported error whatever the
+  bytes are, and that the config hash is 64 lowercase hex characters and stable
+  under key order. Pair assertions pin the enabled-sink verdicts, the unlisted
+  detector count, and a file round trip that must not change the hash. Run by
+  `make test-tools` and `make fuzz FUZZ=config_check`.
 - The archive manifest carries `manifestSha256`, a digest over its own remaining
   fields, and `manifestVersion` is 2. The per-file SHA-256s proved the archived
   bytes; the self-digest proves the attestation describing them, so a manifest
   edited in place no longer verifies clean. A version 1 manifest has no
   self-digest and is reported as an unsupported version by
   `make verify-archive`.
-- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec|evidence_export>
+- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec|evidence_export|config_check>
   [ITERATIONS=N] [SEED=S]`
   runs one fuzzer at a short iteration count, with a usage error naming the valid
   harnesses. Every harness already took `--iterations` and `--seed`.
@@ -249,6 +260,10 @@ above reserves minor bumps for that.
 - D-05 credited "Layer 4 property tests" with the chain, truncation, and tombstone
   invariants. Layer 4 is the offline replay layer; the property tests are Layer 2. The
   entry now names the Layer 4 `review-surface` fixture family that actually covers them.
+- `config_check.py` raised a traceback on a config file that is not UTF-8 (a UTF-16
+  or Latin-1 save, the shape a Windows editor produces), where every other
+  unreadable file was reported as a message. It now names the file and the decode
+  error, and exits 2 as a usage error.
 - The shipped inventory replay fixture carried a `determinism.fingerprint` that matched
   no outcome projection, so `make check` and `make exercise` failed on a clean tree from
   the commit that added the field. The fixture now carries the digest its own content

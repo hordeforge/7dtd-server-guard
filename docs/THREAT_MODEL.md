@@ -37,7 +37,7 @@ webhook, and no IPC in the tree.
 | `tools/render_detectors.py:197` (`--check`, `--manifest`) | `tools/detector_spec.yaml`, parsed with the safe loader | `tools/render_detectors.py:78` | `tools/render_detectors.py:209`, `:220` |
 |  `tools/replay_contract_check.py:581` (`--self-test`, `--fix-fingerprint`; paths are fixed constants) | A committed sample trace | `tools/replay_contract_check.py:31`, `:32`, `:597` | none |
 | `tools/guard_python.py` (no flags) | `.python-version` | `tools/guard_python.py:15` | none |
-| `tools/fuzz_evidence_check.py`, `tools/fuzz_evidence_export.py`, `tools/fuzz_schema_validate.py`, `tools/fuzz_replay_trace.py` (`--iterations`, `--seed`) | Seeds, then self-generated mutations | see each harness | `.scratch` only (`tools/fuzz_evidence_check.py:197`) |
+| `tools/fuzz_evidence_check.py`, `tools/fuzz_evidence_export.py`, `tools/fuzz_schema_validate.py`, `tools/fuzz_replay_trace.py`, `tools/fuzz_detector_spec.py`, `tools/fuzz_config_check.py` (`--iterations`, `--seed`) | Seeds, then self-generated mutations | see each harness | `.scratch` only (`tools/fuzz_evidence_check.py:197`, `tools/fuzz_config_check.py:427`) |
 | `.github/workflows/ci.yml` | The repository and the pull-request diff | `runs on: [push, pull_request]`, `.github/workflows/ci.yml:2` | none |
 
 ### Surface deliberately absent

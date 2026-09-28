@@ -92,8 +92,10 @@ bug to fix in the same change.
     │                            (make test-tools)
     ├── fuzz_detector_spec.py    seeded fuzzer over the detector spec consumers
     │                            (make test-tools)
+    ├── fuzz_config_check.py     seeded fuzzer over the operator config validator and
+    │                            its file entry point (make test-tools)
     ├── fuzz_common.py           mutation engine and shared --iterations/--seed flags for
-    │                            the five fuzzers
+    │                            the six fuzzers
     ├── guard_python.py          enforces the .python-version pin before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
     │                            inventory design vector now; the rest fill in at Phase 4)
