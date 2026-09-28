@@ -18,7 +18,7 @@ calibration.
 | 1 | Unit | Ledgers, bounded windows, score decay, token buckets, pseudonymization, redaction, hash chaining, config validation, response policy | Ledgers, `InvariantEngine`, `BehaviorEngine`, `EvidenceStore`, `ResponseCoordinator`, config | 2, 3, 7, 9 |
 | 2 | Property | Item conservation, transaction idempotency, score monotonicity, bounded memory, time rollback, numeric overflow, NaN/infinity, event reordering | Ledgers, evidence chain, token buckets | 3, 4, 5, 6, 7 |
 | 3 | Metadata contract | Exact type, full method signature, parameter role, return type, metadata token against the installed assembly; fail-open resolution and runtime fault guard | `HookRegistry`, build fingerprint, hook manifest | 1, 2 |
-| 4 | Offline replay | Deterministic replay of versioned synthetic traces; expected findings per trace | Detector set, evidence pipeline | 5, 6, 7, 8 |
+| 4 | Offline replay | Deterministic replay of versioned synthetic traces; expected findings per trace; recomputed outcome fingerprint matches the trace's declared one | Detector set, evidence pipeline | 5, 6, 7, 8 |
 | 5 | Integration | Stock clients and `7dtd-loadgen` on a live server; observe first, then one corrective invariant per run; co-patching | Full pipeline | 4, 5, 6, 7, 8, 10 |
 | 6 | Performance A/B | Overhead vs baseline with `7dtd-server-apm` under identical scenarios | Hot path, evidence writer, queues | 2, 10 |
 | 7 | Human soak and review | Labeled long-run findings; label feedback into the regression corpus | Evidence, review tooling | 5, 9, 10 |

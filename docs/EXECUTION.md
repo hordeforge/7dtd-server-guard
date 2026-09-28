@@ -126,6 +126,9 @@ Acceptance criteria:
 - admin or mod item origin does not exempt an impossible stack shape;
 - observe mode produces no gameplay action under any failure;
 - the fixture declares and stays within a deterministic work budget;
+- the replay reads no wall clock: `utc` and `monotonicMs` come from the trace's
+  `determinism` origin, and the recomputed outcome fingerprint matches the one the trace
+  declares;
 - emitted evidence validates against evidence v1 and contains no raw identity.
 
 The checked sample at `tools/fixtures/traces/inventory/stack.v1.sample.json` exercises the

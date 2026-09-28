@@ -3,12 +3,22 @@
   "title": "Server Guard replay contract v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "traceId", "detectorId", "seed", "build", "mode", "workBudget", "cases"],
+  "required": ["schemaVersion", "traceId", "detectorId", "seed", "build", "mode", "determinism", "workBudget", "cases"],
   "properties": {
     "schemaVersion": {"const": 1},
     "traceId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
     "detectorId": {"type": "string", "pattern": "^[a-z]+\\.[a-z_]+$"},
     "seed": {"type": "integer", "minimum": 0},
+    "determinism": {
+      "description": "The virtual clock origin the harness replays against, plus the fingerprint of the expected outcome projection. A replay that filled utc/monotonicMs from the host clock, or that produced a different result set, fails the fingerprint.",
+      "type": "object", "additionalProperties": false,
+      "required": ["startUtc", "startMonotonicMs", "fingerprint"],
+      "properties": {
+        "startUtc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+        "startMonotonicMs": {"type": "integer", "minimum": 0},
+        "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
     "build": {
       "type": "object", "additionalProperties": false,
       "required": ["gameVersion", "hookManifestHash"],

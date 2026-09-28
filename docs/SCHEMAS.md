@@ -82,6 +82,19 @@ records. The machine contract is `config/schemas/replay-trace.v1.schema.json`. A
 its detector, seed, build and hook-manifest identity, observe-only mode, bounded work, cases,
 ordered synthetic events, authoritative decision state, and expected findings/actions.
 
+The required `determinism` block is what makes a replay reproducible instead of merely
+repeatable. `startUtc` and `startMonotonicMs` are the virtual clock origin: the harness
+derives every event's `tick`, and every evidence record's `utc` and `monotonicMs`, from them
+plus the trace's own tick values. No wall clock is read during replay, on any host and at any
+date. `fingerprint` is the SHA-256, over the canonical serialization pinned by
+`tools/evidence_check.py`, of the outcome projection: the run header (`build`, `detectorId`,
+`mode`, `seed`, `workBudget`), the clock origin, and, per case in file order, the case name,
+class, expected findings, expected actions, and work-unit charge. The harness recomputes the
+projection from what its detectors actually produced and fails the replay when the digests
+differ, so a divergent run is reported as one field rather than a hand-read record diff.
+A case whose `tick` decreases as `sequence` increases is rejected: it makes the run's result
+depend on delivery order, which is exactly what replay must not.
+
 Design-time samples may use `UNVERIFIED` as the hook-manifest hash only before Phase 1 emits
 the pinned manifest. The Phase 4 harness skips `UNVERIFIED` and mismatched hashes rather than
 replaying them as build evidence. Shipped regression fixtures require a 64-character lowercase

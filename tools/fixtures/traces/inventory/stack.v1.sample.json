@@ -5,6 +5,11 @@
   "seed": 74071,
   "build": {"gameVersion": "V3.2.0-b9", "hookManifestHash": "UNVERIFIED"},
   "mode": "observe",
+  "determinism": {
+    "startUtc": "2026-07-21T12:00:00.000Z",
+    "startMonotonicMs": 0,
+    "fingerprint": "119397e32e59338180c22720d93eb739f3cef6875b6288144028aea4df06e344"
+  },
   "workBudget": {"maxEvents": 4, "maxStateEntries": 8, "maxWorkUnits": 32},
   "cases": [
     {

@@ -72,11 +72,30 @@ def main() -> int:
     try:
         if check(pristine, "pristine sample"):
             raise InvariantBroken("pristine shipped sample reported errors")
-        for drop in ("detectorId", "cases", "workBudget"):
+        for drop in ("detectorId", "cases", "workBudget", "determinism", "seed"):
             bad = dict(pristine)
             del bad[drop]
             if not check(bad, f"sample without {drop}"):
                 raise InvariantBroken(f"dropping {drop} was accepted")
+
+        tampered = json.loads(json.dumps(pristine))
+        tampered["determinism"]["fingerprint"] = "0" * 64
+        if not check(tampered, "sample with a tampered fingerprint"):
+            raise InvariantBroken("a fingerprint that does not match the projection was accepted")
+
+        skewed = json.loads(json.dumps(pristine))
+        skewed["determinism"]["startUtc"] = "not-an-instant"
+        if not check(skewed, "sample with an unparseable clock origin"):
+            raise InvariantBroken("an unparseable determinism.startUtc was accepted")
+
+        backwards = json.loads(json.dumps(pristine))
+        first = backwards["cases"][0]["events"][0]
+        backwards["cases"][0]["events"].append(dict(first, sequence=2, tick=first["tick"] - 1))
+        # Re-seal so the tick rule is the only thing left to catch.
+        backwards["determinism"]["fingerprint"] = rcc.outcome_fingerprint(backwards)
+        backwards_errs = check(backwards, "case whose tick steps backwards")
+        if not any("tick must not decrease" in e for e in backwards_errs):
+            raise InvariantBroken("a backwards tick was accepted")
 
         stats = {"rejected": 0}
         for _ in range(args.iterations):

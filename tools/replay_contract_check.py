@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import pathlib
+import re
 import sys
 from typing import Any, TypeGuard
+
+from evidence_check import record_hash
 
 try:
     import yaml
@@ -17,9 +21,96 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACE = ROOT / "tools/fixtures/traces/inventory/stack.v1.sample.json"
 SPEC = ROOT / "tools/detector_spec.yaml"
 
+UTC_INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
 
 def _is_int(v: object) -> TypeGuard[int]:
     return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _expect(case: dict[str, Any]) -> dict[str, Any]:
+    """The case expectation block, or empty when a mutant removed or replaced it."""
+    expect = case.get("expect")
+    return expect if isinstance(expect, dict) else {}
+
+
+def outcome_fingerprint(trace: dict[str, Any]) -> str:
+    """SHA-256 over the canonical replay outcome projection (docs/SCHEMAS.md).
+
+    The projection pins what a replay must reproduce: the run header the trace
+    declares, the virtual clock origin, and, per case in file order, the class,
+    expected findings and actions, and the work-unit charge. The Phase 4 harness
+    recomputes it from what its detectors actually produced and compares, so a
+    diverging replay is one digest apart rather than a hand-read diff.
+    """
+    determinism = trace.get("determinism")
+    origin = determinism if isinstance(determinism, dict) else {}
+    projection = {
+        "build": trace.get("build"),
+        "cases": [
+            {
+                "actions": _expect(case).get("actions"),
+                "class": case.get("class"),
+                "findingDetectorIds": _expect(case).get("findingDetectorIds"),
+                "maxWorkUnits": _expect(case).get("maxWorkUnits"),
+                "name": case.get("name"),
+            }
+            for case in trace["cases"]
+        ],
+        "detectorId": trace.get("detectorId"),
+        "mode": trace.get("mode"),
+        "seed": trace.get("seed"),
+        "startMonotonicMs": origin.get("startMonotonicMs"),
+        "startUtc": origin.get("startUtc"),
+        "workBudget": trace.get("workBudget"),
+    }
+    return record_hash(projection)
+
+
+def _determinism_errors(trace: dict[str, Any]) -> list[str]:
+    """The trace must declare the virtual clock it replays against.
+
+    Without an origin the harness has nothing to fill the evidence stream's
+    required `utc` and `monotonicMs` from except the host wall clock, and the
+    replay stops being reproducible on another machine.
+    """
+    determinism = trace.get("determinism")
+    if not isinstance(determinism, dict):
+        return [
+            "trace: missing or non-object determinism block "
+            "(virtual clock origin and replay fingerprint)"
+        ]
+    errors: list[str] = []
+
+    start_utc = determinism.get("startUtc")
+    if not isinstance(start_utc, str) or not UTC_INSTANT.match(start_utc):
+        errors.append(
+            "trace: determinism.startUtc must be an ISO-8601 UTC instant with milliseconds"
+        )
+    else:
+        try:
+            datetime.datetime.fromisoformat(start_utc)
+        except ValueError:
+            errors.append(f"trace: determinism.startUtc {start_utc!r} is not a valid instant")
+
+    start_ms = determinism.get("startMonotonicMs")
+    if not _is_int(start_ms) or start_ms < 0:
+        errors.append("trace: determinism.startMonotonicMs must be a non-negative integer")
+
+    fingerprint = determinism.get("fingerprint")
+    if not isinstance(fingerprint, str) or not SHA256_HEX.match(fingerprint):
+        errors.append(
+            "trace: determinism.fingerprint must be a 64-character lowercase SHA-256 hex digest"
+        )
+    elif not errors:
+        expected = outcome_fingerprint(trace)
+        if fingerprint != expected:
+            errors.append(
+                f"trace: determinism.fingerprint {fingerprint[:16]}... does not match the "
+                f"replay outcome projection {expected[:16]}..."
+            )
+    return errors
 
 
 def _case_errors(case: dict[str, Any], detector_id: str) -> tuple[list[str], int, int]:
@@ -44,6 +135,14 @@ def _case_errors(case: dict[str, Any], detector_id: str) -> tuple[list[str], int
     if not _is_int(max_work):
         errors.append(f"{name}: maxWorkUnits must be an integer")
         max_work = 0
+
+    # A case that steps time backwards makes the run order-dependent, so the same
+    # seed on the same trace stops reproducing the same result.
+    ticks = [event.get("tick") for event in events]
+    if not all(_is_int(t) for t in ticks):
+        errors.append(f"{name}: tick must be an integer")
+    elif ticks != sorted(ticks):
+        errors.append(f"{name}: tick must not decrease as sequence increases")
 
     findings = expect.get("findingDetectorIds")
     if not isinstance(findings, list):
@@ -122,6 +221,9 @@ def contract_errors(trace: object, detector_ids: set[str]) -> list[str]:
     classes = {c for c in (case.get("class") for case in cases) if isinstance(c, str)}
     if classes != {"normal", "violation"}:
         errors.append("sample must exercise normal and violation classes")
+    seed = trace.get("seed")
+    if not _is_int(seed) or seed < 0:
+        errors.append("trace: seed must be a non-negative integer")
     total_events = 0
     total_work = 0
     for case in cases:
@@ -129,6 +231,7 @@ def contract_errors(trace: object, detector_ids: set[str]) -> list[str]:
         errors += case_errors
         total_events += events
         total_work += work
+    errors += _determinism_errors(trace)
     return errors + _budget_errors(trace.get("workBudget"), total_events, total_work)
 
 

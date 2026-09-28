@@ -17,6 +17,12 @@ this file and are described only by their git tags.
   harnesses. Every harness already took `--iterations` and `--seed`.
 - `CONTRIBUTING.md` states the runnable path: prerequisites, bootstrap, the loop, the
   single-fuzzer target, generated-file regeneration, and what a change must include.
+- Replay traces carry a required `determinism` block: `startUtc` and
+  `startMonotonicMs` are the virtual clock origin a replay derives event times and
+  evidence `utc`/`monotonicMs` from, and `fingerprint` pins the expected outcome
+  projection (run header, clock origin, per-case findings, actions, and work units)
+  so a diverging replay fails on one digest. `tools/replay_contract_check.py`
+  verifies both and rejects a case whose `tick` steps backwards.
 
 ### Fixed
 
