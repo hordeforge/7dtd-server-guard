@@ -118,7 +118,7 @@ def check_load_records(tmp: pathlib.Path, lines: list[bytes]) -> int:
         return 0
     except Exception as exc:
         raise InvariantBroken(f"load_records raised {type(exc).__name__}: {exc}") from exc
-    for _, rec in records:
+    for _line_no, rec, _raw in records:
         canon = ec.canonical(rec)
         if json.loads(canon) != rec:
             raise InvariantBroken(f"canonical round-trip failed: {rec!r}")

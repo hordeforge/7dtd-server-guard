@@ -134,7 +134,13 @@ then reach a reader as a comparison that never fires. Genesis:
 the first record of the very first segment has `chainPrev` equal to 64 zeros. A chain
 detects tampering of any record except the last one; tampering the last record is only
 detected when the next record is appended, because an append-only chain has no later
-record to cross-check. `utc` and `savedAt` are RFC 3339 date-times carrying an explicit
+record to cross-check. The stream is at-least-once: a writer that retries after a crash, or
+a hook that fires twice for one event, appends the same `eventId` twice, and the chain of
+the repeat is intact because it links to whatever record preceded it. A repeated
+`eventId` is therefore a chain error in its own right, reported by the verifier, and the
+writer must not append an `eventId` it has already written. The verifier keeps the last
+65536 `eventId`s while it walks, so a repeat inside that window is reported and one older
+than the window is not. `utc` and `savedAt` are RFC 3339 date-times carrying an explicit
 offset (serialized as `Z`); the schema declares `format: date-time` and the gate rejects a
 value without an offset, which names no instant and would be read in the reader's own local
 zone. Duration fields (`monotonicMs`, `latencyMs`, `uptimeS`) come from the server monotonic

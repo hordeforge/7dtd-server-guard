@@ -6,10 +6,13 @@
 - `render_detectors.py`: renders docs/DETECTORS.md tables and
   config/detector-config-manifest.json from the spec (`make detectors`).
 - `evidence_check.py`: verifies evidence hash chains (canonical serialization, genesis,
-  intra-segment continuity, cross-segment links, tamper/truncation) with negative
-  self-tests; the doccheck gate runs it on the sample, and `make verify-evidence DIR=...`
+  intra-segment continuity, cross-segment links, tamper/truncation, a record appended
+  twice) with negative self-tests; the doccheck gate runs it on the sample, and
+  `make verify-evidence DIR=...`
   targets operator evidence dirs. A tampered last record is not detectable until the next
   record is appended, which is inherent to an append-only chain and is stated in SCHEMAS.md.
+  A repeated `eventId` is reported from a bounded window of recent ids, so a retry or a
+  crash-replayed append is visible instead of reading as two findings for one event.
 - `evidence_export.py`: archives an evidence directory and proves the archive is
   restorable. The chain is verified before the copy and the copies are re-verified
   against a per-file SHA-256 manifest; a chain error, a zero-byte segment, or a copy

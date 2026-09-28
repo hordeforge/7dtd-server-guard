@@ -155,7 +155,9 @@ stolen archive containing both would turn every pseudonym in it into a named pla
    without the key, and a map restored under a different key epoch resolves to the
    wrong players.
 5. `make verify-evidence DIR=<evidence-dir>`. A broken link names the first record that
-   does not chain; stop and use the next archive rather than editing records.
+   does not chain; stop and use the next archive rather than editing records. A repeated
+   `eventId` names a record the writer appended twice; the archive still holds the event,
+   so restore it and let the writer's duplicate suppression be the fix.
 6. Start the server and confirm the health report and the oldest finding resolve.
 7. Keep the moved-aside directory until the restored chain verifies and the operator
    has confirmed the appeals record reads correctly.

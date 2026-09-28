@@ -29,6 +29,7 @@ import pathlib
 import re
 import sys
 import tempfile
+from collections import deque
 from collections.abc import Iterable, Iterator
 from typing import Any, NamedTuple
 
@@ -59,6 +60,43 @@ SAMPLE = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
 # temp dir: /tmp is tmpfs on this host, so the file would be charged to RAM.
 SCRATCH = ROOT / ".scratch"
 SEGMENT_DIGITS = re.compile(r"(\d+)")
+# How many recently walked eventIds the duplicate-append check remembers. A
+# repeated record is written by a retry or a crash-restart replay, so the second
+# copy lands within the retry horizon, not months later; the window is that
+# horizon's memory cost and nothing more. A repeat older than the window is not
+# reported, which is why the window is stated rather than implied.
+DUPLICATE_WINDOW_RECORDS = 65536
+
+
+class RecentEventIds:
+    """The eventIds of the last `capacity` records walked, for repeat detection.
+
+    The evidence stream is append-only and at-least-once: a writer that retries
+    after a crash, or a hook that fires twice for one event, appends the same
+    eventId a second time. The chain still verifies, because the repeat links to
+    whatever record preceded it, so an operator reading the stream sees one event
+    as two findings and two actions. This is the only place that can see it.
+
+    The window is bounded so the verifier keeps the memory property documented in
+    SCHEMAS.md; a repeat further back than the window is not detected.
+    """
+
+    def __init__(self, capacity: int = DUPLICATE_WINDOW_RECORDS) -> None:
+        self._order: deque[str] = deque()
+        self._ids: set[str] = set()
+        self._capacity = capacity
+
+    def seen_before(self, event_id: str) -> bool:
+        """Whether event_id is already in the window, keeping the window's newest
+        `capacity` ids."""
+        if event_id in self._ids:
+            return True
+        self._ids.add(event_id)
+        self._order.append(event_id)
+        if len(self._order) > self._capacity:
+            self._ids.discard(self._order.popleft())
+        return False
+
 
 # Segment index file name inside --dir when --index is not given.
 DEFAULT_INDEX = "segment-index.json"
@@ -105,6 +143,8 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
             raise ValueError(f"{name}:{line_no}: missing field {field!r}")
     if not isinstance(rec["chainPrev"], str):
         raise ValueError(f"{name}:{line_no}: chainPrev must be a string")
+    if not isinstance(rec["eventId"], str):
+        raise ValueError(f"{name}:{line_no}: eventId must be a string")
     if rec["schemaVersion"] != 1:
         raise ValueError(f"{name}:{line_no}: unsupported schemaVersion {rec['schemaVersion']}")
     return rec
@@ -140,10 +180,15 @@ def load_records(path: pathlib.Path) -> list[ParsedLine]:
     return list(iter_records(path))
 
 
-def verify_chain(records: Iterable[ParsedLine], first_of_stream: bool) -> SegmentChain:
-    """Verify chainPrev continuity within one segment.
+def verify_chain(
+    records: Iterable[ParsedLine], first_of_stream: bool, seen: RecentEventIds
+) -> SegmentChain:
+    """Verify chainPrev continuity within one segment, and that no event is
+    appended twice.
 
     first_of_stream: True for the very first segment (genesis applies to its first record).
+    seen: the caller's cross-segment eventId window, so a repeat is caught whether
+    it lands in one segment or two.
     Consumes the iterable once, so a segment can be streamed from disk.
     """
     errs: list[str] = []
@@ -152,6 +197,11 @@ def verify_chain(records: Iterable[ParsedLine], first_of_stream: bool) -> Segmen
     count = 0
     for line_no, rec, _raw in records:
         count += 1
+        if seen.seen_before(rec["eventId"]):
+            errs.append(
+                f"line {line_no}: eventId {rec['eventId']} was already appended earlier in the "
+                f"stream; the same event was written twice (a retry or a replayed append)"
+            )
         if first_prev is None:
             first_prev = rec["chainPrev"]
         if count == 1 and not first_of_stream:
@@ -215,6 +265,9 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
         return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
     index, errs = load_index(evidence_dir / index_name)
 
+    # The eventId window spans segments, so a repeat is caught whether it lands in
+    # one segment or two.
+    seen = RecentEventIds()
     # Last record hash of the segment before the current one, and the name of a
     # segment that yielded no usable records. A segment that failed to load or is
     # empty carries no hash to link to, so the next segment's link is unverifiable
@@ -223,7 +276,9 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
     prev_unlinked: str | None = None
     for si, seg in enumerate(segments):
         try:
-            chain: SegmentChain | None = verify_chain(iter_records(seg), first_of_stream=si == 0)
+            chain: SegmentChain | None = verify_chain(
+                iter_records(seg), first_of_stream=si == 0, seen=seen
+            )
         except ValueError as exc:
             errs.append(str(exc))
             chain = None
@@ -256,15 +311,15 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
 
 def verify_sample() -> list[str]:
     try:
-        chain = verify_chain(iter_records(SAMPLE), first_of_stream=True)
+        chain = verify_chain(iter_records(SAMPLE), first_of_stream=True, seen=RecentEventIds())
     except ValueError as exc:
         return [str(exc)]
     return [f"sample: {e}" for e in chain.errors]
 
 
 def self_test() -> list[str]:
-    """Negative tests: tamper, bad genesis, non-finite numbers, and the damaged-directory
-    reports."""
+    """Negative tests: tamper, bad genesis, a re-appended event, non-finite numbers,
+    and the damaged-directory reports."""
     errs = []
     base = [
         {"schemaVersion": 1, "type": "health", "eventId": "a", "chainPrev": GENESIS, "x": 1},
@@ -282,7 +337,7 @@ def self_test() -> list[str]:
     bad = [dict(recs[0]), dict(recs[1])]
     bad[0]["x"] = 999
     from_tuples = [(i + 1, r, json.dumps(r)) for i, r in enumerate(bad)]
-    found = verify_chain(from_tuples, first_of_stream=True).errors
+    found = verify_chain(from_tuples, first_of_stream=True, seen=RecentEventIds()).errors
     if not found:
         errs.append("self-test: tamper was not detected")
     # A non-first segment's first record chains across the segment boundary (the
@@ -292,7 +347,9 @@ def self_test() -> list[str]:
     tail = [dict(recs[0]), dict(recs[1])]
     tail[0]["x"] = 999
     tail_errors = verify_chain(
-        [(i + 1, r, json.dumps(r)) for i, r in enumerate(tail)], first_of_stream=False
+        [(i + 1, r, json.dumps(r)) for i, r in enumerate(tail)],
+        first_of_stream=False,
+        seen=RecentEventIds(),
     ).errors
     if len(tail_errors) != 1:
         errs.append(
@@ -300,10 +357,12 @@ def self_test() -> list[str]:
             f"{tail_errors}"
         )
 
+    errs += _duplicate_append_test(recs)
+
     # non-first-segment links are checked by the caller (verify_dir); the skip branch
     # must leave the boundary record unchecked internally while still reporting the
     # link the caller needs: its chainPrev as first_prev, its own hash as last_hash.
-    boundary = verify_chain([(1, dict(recs[0]), "")], first_of_stream=False)
+    boundary = verify_chain([(1, dict(recs[0]), "")], first_of_stream=False, seen=RecentEventIds())
     if boundary.errors:
         errs.append(f"self-test: a non-first segment's first record was checked: {boundary.errors}")
     if (boundary.record_count, boundary.first_prev, boundary.last_hash) != (
@@ -350,6 +409,44 @@ def self_test() -> list[str]:
     errs += _dir_self_test(recs)
     errs += _sample_chain_test()
     errs += _verify_dir_tests()
+    return errs
+
+
+def _duplicate_append_test(recs: list[Record]) -> list[str]:
+    """A re-appended event must be reported as the second append, not as two findings."""
+    errs: list[str] = []
+    # A re-appended event: the same eventId written a second time, chained correctly
+    # so only the repeat identifies it. This is what a retried or crash-replayed
+    # append leaves in the stream, and an operator would read it as two findings and
+    # two actions for one event.
+    repeat = dict(recs[1])
+    repeat["chainPrev"] = record_hash(recs[1])
+    twice = [dict(recs[0]), dict(recs[1]), repeat]
+    repeat_errors = verify_chain(
+        [(i + 1, r, json.dumps(r)) for i, r in enumerate(twice)],
+        first_of_stream=True,
+        seen=RecentEventIds(),
+    ).errors
+    if not any("already appended" in e for e in repeat_errors):
+        errs.append(f"self-test: a re-appended event was not reported: {repeat_errors}")
+    # One run must not condemn the next: the same records verify clean in a fresh
+    # window, so a repeat is reported as the second append and not as two findings.
+    clean_errors = verify_chain(
+        [(i + 1, r, json.dumps(r)) for i, r in enumerate(twice[:2])],
+        first_of_stream=True,
+        seen=RecentEventIds(),
+    ).errors
+    if clean_errors:
+        errs.append(f"self-test: a single run of each record was reported: {clean_errors}")
+    # A repeat older than the window is not detectable; the window must not grow past
+    # its bound, and an id evicted from it must stop being reported.
+    narrow = RecentEventIds(capacity=1)
+    narrow.seen_before("a")
+    if not narrow.seen_before("a"):
+        errs.append("self-test: the duplicate window missed a repeat inside its bound")
+    narrow.seen_before("b")
+    if narrow.seen_before("a"):
+        errs.append("self-test: the duplicate window did not evict the oldest eventId")
     return errs
 
 
