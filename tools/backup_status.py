@@ -130,8 +130,10 @@ class BackupStatus:
 
 def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
     """Verify newest first and stop at the first archive that verifies. Returns
-    the status; it never writes to the root."""
-    moment = now or _now()
+    the status; it never writes to the root. `now` must be aware: it is compared
+    against `createdUtc`, which is a UTC instant, and a naive one would report an
+    age measured against the reader's own zone."""
+    moment = ee.as_utc(now, "now") if now is not None else _now()
     found = archive_dirs(root)
     if not found:
         return BackupStatus(None, None, [], [], 0, [])

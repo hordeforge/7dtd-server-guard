@@ -96,14 +96,32 @@ STALE_STAGING_AGE_SECONDS = 24 * 60 * 60
 SELF_TEST_NOW = dt.datetime.strptime(SELF_TEST_STAMP, STAMP_FORMAT).replace(tzinfo=dt.UTC)
 
 
+def as_utc(moment: dt.datetime, what: str) -> dt.datetime:
+    """`moment` as an aware UTC instant, refusing a naive one.
+
+    A naive datetime is server-local wall time, and every stamp here carries a
+    `Z`: formatting one as UTC persists an instant that is wrong by the host's
+    offset, an offset that is not even the same in winter and in summer in a DST
+    zone. `.timestamp()` on one is the same defect seen from the other side, a
+    cutoff that moves with the host's `TZ`. The archive name, the manifest's
+    `createdUtc`, and the staging sweep all read the clock through here, so they
+    cannot disagree about which instant it was.
+    """
+    if moment.tzinfo is None or moment.tzinfo.utcoffset(moment) is None:
+        raise ValueError(f"{what} must be an aware datetime; a naive one is local wall time")
+    return moment.astimezone(dt.UTC)
+
+
 def utc_stamp(now: dt.datetime | None = None) -> str:
     """The archive-name stamp for `now`, or the wall clock's second when omitted.
 
     An explicit instant is how a caller names a second it means rather than
     depending on where the clock is, which is what a replay of a run or a
-    self-test that must land on the same name twice needs.
+    self-test that must land on the same name twice needs. An instant from
+    another zone is converted, so the `Z` in the name is the one the string
+    claims to be.
     """
-    return (now or dt.datetime.now(dt.UTC)).strftime(STAMP_FORMAT)
+    return as_utc(now or dt.datetime.now(dt.UTC), "now").strftime(STAMP_FORMAT)
 
 
 def file_digest(path: pathlib.Path) -> tuple[str, int]:
@@ -320,9 +338,12 @@ def _sweep_stale_staging(
     killed run would stay in the archive root forever.
 
     `now` is the instant the age is measured against, passed in by the caller so
-    a replay of a run sweeps the same directories it swept the first time.
+    a replay of a run sweeps the same directories it swept the first time. It
+    must be aware: an mtime is an absolute epoch, so a naive cutoff would be
+    read against the host's `TZ` and the same replay would sweep a different set
+    of directories on a server set to a local zone.
     """
-    cutoff = now.timestamp() - STALE_STAGING_AGE_SECONDS
+    cutoff = as_utc(now, "now").timestamp() - STALE_STAGING_AGE_SECONDS
     for path in out_root.glob(f"{STAGING_PREFIX}*"):
         if path == keep or not path.is_dir():
             continue
@@ -380,7 +401,8 @@ def export(
     leftovers against, which the export reads off the clock twice otherwise:
     once to name this archive and once to decide what a dead run left behind. A
     caller replaying a run passes the instant it is replaying, and the export
-    names the same archive and sweeps the same directories.
+    names the same archive and sweeps the same directories. It must be aware:
+    `as_utc` refuses a naive one rather than reading it as server-local time.
     """
     members, errs = preflight(source, index_name)
     if errs:
@@ -389,7 +411,7 @@ def export(
     # One instant and one stamp, each named once: the stamp is the archive
     # directory's name and the manifest's createdUtc, and deriving it twice let
     # the two drift apart.
-    moment = now or dt.datetime.now(dt.UTC)
+    moment = as_utc(now, "now") if now is not None else dt.datetime.now(dt.UTC)
     label = stamp if stamp is not None else utc_stamp(moment)
     dest = out_root / f"{ARCHIVE_DIR_PREFIX}{label}"
     out_root.mkdir(parents=True, exist_ok=True)
@@ -1003,6 +1025,63 @@ def _self_test_rename_race(source: pathlib.Path) -> list[str]:
     return errs
 
 
+def _self_test_clock_zone(source: pathlib.Path) -> list[str]:
+    """The stamp and the sweep read UTC, whichever zone the caller speaks from.
+
+    A caller that hands over a local instant (a server configured for local time
+    rather than UTC, or any code holding `datetime.now()`) gets a name and a
+    `createdUtc` that are wrong by its offset, and a sweep that deletes by the
+    host's `TZ`. The two instants below are 02:00 in Europe/Warsaw in January
+    and in July, which is +01:00 and +02:00 in the zone database; a conversion
+    that added one fixed offset instead of converting passes one and fails the
+    other. The offsets are written out rather than read from the host's zone
+    data, so the case runs the same on a host that ships no tzdata.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-zone"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        for wall, want in (
+            ("2026-01-15T02:00:00+01:00", "20260115T010000Z"),
+            ("2026-07-15T02:00:00+02:00", "20260715T000000Z"),
+        ):
+            moment = dt.datetime.fromisoformat(wall)
+            got = utc_stamp(moment)
+            if got != want:
+                errs.append(f"self-test: a {wall} instant stamped {got}, not {want}")
+            out_root = scratch / want
+            out_root.mkdir(parents=True, exist_ok=True)
+            if export_errs := export(source, out_root, DEFAULT_INDEX_NAME, now=moment):
+                errs.append(f"self-test: export at {wall} reported {export_errs}")
+            names = sorted(p.name for p in out_root.iterdir() if p.is_dir())
+            if names != [f"{ARCHIVE_DIR_PREFIX}{want}"]:
+                errs.append(f"self-test: an export at {wall} named the archive {names}")
+            if not names:
+                continue
+            manifest = json.loads((out_root / names[0] / MANIFEST_NAME).read_text(encoding="utf-8"))
+            if manifest.get("createdUtc") != want:
+                errs.append(
+                    f"self-test: createdUtc {manifest.get('createdUtc')!r} is not the UTC instant"
+                )
+        # A naive instant is the host's wall time, and a `Z` on it would persist
+        # that wall time as UTC. It is refused rather than guessed at. The value
+        # comes from the parser so it is naive by construction, which is the point
+        # of the case and what DTZ001 would otherwise forbid writing.
+        naive = dt.datetime.fromisoformat("2026-07-21T00:00:00")
+        for label, call in (
+            ("utc_stamp", lambda: utc_stamp(naive)),
+            ("export", lambda: export(source, scratch / "naive", DEFAULT_INDEX_NAME, now=naive)),
+        ):
+            try:
+                call()
+            except ValueError:
+                continue
+            errs.append(f"self-test: {label} accepted a naive datetime as UTC")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     """Exercise the paths that decide whether a backup is trustworthy."""
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test"
@@ -1015,6 +1094,7 @@ def self_test() -> list[str]:
         errs += _self_test_refusal(scratch, source, out_root)
         errs += _self_test_stale_staging(source)
         errs += _self_test_rename_race(source)
+        errs += _self_test_clock_zone(source)
         errs += _self_test_member_names()
         errs += _self_test_manifest_bytes()
         errs += _self_test_record_count()

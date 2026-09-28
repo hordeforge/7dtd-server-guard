@@ -282,7 +282,9 @@ def secrets_errors(
     """The identity map and HMAC key, which no archive contains. A missing one
     is reported as a failure, not a note: without the key a restored chain
     cannot resolve a pseudonym at all, and without the map a key epoch resolves
-    to nothing."""
+    to nothing. `now` must be aware: it is aged against an mtime, which is an
+    absolute epoch, so a naive value would read the file as older or younger
+    than it is by whatever offset the host's `TZ` carries that day."""
     errs: list[str] = []
     for section in ("identityMap", "hmacKey"):
         block = config.get(section)
@@ -298,7 +300,7 @@ def secrets_errors(
         if size == 0:
             errs.append(f"{section}: {path} is zero bytes; an empty key is not a key")
             continue
-        age_hours = (now.timestamp() - path.stat().st_mtime) / 3600
+        age_hours = (ee.as_utc(now, "now").timestamp() - path.stat().st_mtime) / 3600
         if age_hours < 0:
             # An mtime later than now means the clock stepped, or the file came
             # back from a copy with its timestamps preserved. A negative age is

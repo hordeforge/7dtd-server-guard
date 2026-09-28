@@ -24,7 +24,9 @@
   the same seed names the same archive and sweeps the same dead run's staging
   directories it did the first time. Two exports naming one archive at once are
   decided by the same rule, so the one that loses the race exits 0 on identical
-  evidence.
+  evidence. `now` must be an aware datetime: an instant from another zone is
+  converted to UTC before it names the archive or ages the staging directories, and
+  a naive one (server-local wall time) is refused rather than stamped as UTC.
   `make export-evidence DIR=... OUT=...`
   archives, the identical `make backup DIR=... OUT=...` is the same command under the name
   the scheduler calls, and `make verify-archive ARCHIVE=...` re-verifies an existing archive
@@ -59,7 +61,10 @@
   three-hour-old archive and a ten-day-old one is fresh with nine days of evidence
   unarchived. The window defaults to 24 hours and cannot be set above it: a
   ceiling longer than a day would report a green root while a whole backup day was
-  missing. It writes nothing. Self-tests run under `make test-tools`.
+  missing. An archive whose `createdUtc` is ahead of the clock the check runs on is
+  reported as well: a negative age reads as fresh to every window comparison, so the
+  RPO is unproven until the host clocks agree. It writes nothing. Self-tests run
+  under `make test-tools`.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
 - `config_check.py`: validates an operator's own config file the way the strict Phase 2

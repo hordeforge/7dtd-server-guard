@@ -143,10 +143,12 @@ window apart. That last one is a run that never landed: a root holding a
 three-hour-old archive and a ten-day-old one is fresh, and the nine days between
 them are unarchived with no failing exit code to show for it. Age comes from the
 archive manifest's `createdUtc`, not the directory timestamp, which copying off the
-server resets. A `createdUtc` later than the current time is reported too: the
-archive verifies, but it is dated to an instant that has not happened, so it cannot
-open the window. Run it on the same schedule as the export, against the archive root
-the operator actually keeps off the server.
+server resets. A `createdUtc` later than the clock the check runs on is reported
+too: the archive verifies, but it is dated to an instant that has not happened, so
+its age is negative and no window comparison can read it as anything but fresh. It
+cannot open the window, and the RPO is unproven until the exporting host's clock
+and the checking host's agree. Run it on the same schedule as the export, against
+the archive root the operator actually keeps off the server.
 
 ### What gets archived, and what does not
 
