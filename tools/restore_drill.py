@@ -55,6 +55,7 @@ from dataclasses import dataclass
 from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import cli_harness
 import config_check as cc
 import evidence_check as ec
 import evidence_export as ee
@@ -786,7 +787,7 @@ def _main_contract_self_test() -> list[str]:
     A scheduled drill branches on these: 0 restored, 1 the drill found a problem
     (an archive that does not exist included), 2 for a usage error.
     """
-    cases: list[tuple[str, list[str], int]] = [
+    cases: list[cli_harness.Case] = [
         ("bare run", [], USAGE_ERROR),
         ("--archive without --work", ["--archive", "/nonexistent"], USAGE_ERROR),
         (
@@ -797,7 +798,6 @@ def _main_contract_self_test() -> list[str]:
         ("missing archive", ["--archive", "/nonexistent", "--work", "/nonexistent"], 1),
     ]
     return main_contract_errors(cases, script="restore_drill.py", run=main, usage_error=USAGE_ERROR)
-
 
 def _self_test_unencodable_report() -> list[str]:
     """A record whose text no stream can encode is reported, not crashed on.
