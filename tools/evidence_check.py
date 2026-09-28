@@ -594,31 +594,8 @@ def self_test() -> list[str]:
         rec = dict(template)
         rec["chainPrev"] = GENESIS if i == 0 else record_hash(recs[-1])
         recs.append(rec)
-    # tamper: change an earlier record without fixing downstream hashes. Tampering the
-    # last record alone is NOT detectable until the next append; that is inherent to an
-    # append-only chain and is documented in SCHEMAS.md.
-    bad = [dict(recs[0]), dict(recs[1])]
-    bad[0]["x"] = 999
-    from_tuples = [(i + 1, r, json.dumps(r)) for i, r in enumerate(bad)]
-    found = verify_chain(from_tuples, first_of_stream=True, seen=RecentEventIds()).errors
-    if not found:
-        errs.append("self-test: tamper was not detected")
-    # A non-first segment's first record chains across the segment boundary (the
-    # caller checks that link), but every record after it must still chain
-    # within the segment: dropping that check would let a tampered middle record
-    # pass unnoticed, so pin it here.
-    tail = [dict(recs[0]), dict(recs[1])]
-    tail[0]["x"] = 999
-    tail_errors = verify_chain(
-        [(i + 1, r, json.dumps(r)) for i, r in enumerate(tail)],
-        first_of_stream=False,
-        seen=RecentEventIds(),
-    ).errors
-    if len(tail_errors) != 1:
-        errs.append(
-            "self-test: tampered record inside a non-first segment went unchecked: "
-            f"{tail_errors}"
-        )
+    # tamper: change an earlier record without fixing downstream hashes.
+    errs += _tamper_test(recs)
 
     errs += _duplicate_append_test(recs)
 
@@ -680,6 +657,43 @@ def self_test() -> list[str]:
     return errs
 
 
+def _tamper_test(recs: list[Record]) -> list[str]:
+    """An edited record the chain has to catch, at both ends of a segment.
+
+    Tampering the last record alone is NOT detectable until the next append; that
+    is inherent to an append-only chain and is documented in SCHEMAS.md, so the
+    check is on an earlier record whose downstream hashes no longer match.
+
+    A non-first segment's first record chains across the segment boundary (the
+    caller checks that link), but every record after it must still chain within
+    the segment: dropping that check would let a tampered middle record pass
+    unnoticed, so it is pinned here.
+    """
+    errs: list[str] = []
+    bad = [dict(recs[0]), dict(recs[1])]
+    bad[0]["x"] = 999
+    found = verify_chain(
+        [(i + 1, r, json.dumps(r)) for i, r in enumerate(bad)],
+        first_of_stream=True,
+        seen=RecentEventIds(),
+    ).errors
+    if not found:
+        errs.append("self-test: tamper was not detected")
+    tail = [dict(recs[0]), dict(recs[1])]
+    tail[0]["x"] = 999
+    tail_errors = verify_chain(
+        [(i + 1, r, json.dumps(r)) for i, r in enumerate(tail)],
+        first_of_stream=False,
+        seen=RecentEventIds(),
+    ).errors
+    if len(tail_errors) != 1:
+        errs.append(
+            "self-test: tampered record inside a non-first segment went unchecked: "
+            f"{tail_errors}"
+        )
+    return errs
+
+
 def _main_contract_self_test() -> list[str]:
     """Pin the exit codes and stream split documented in tools/README.md.
 
@@ -696,7 +710,9 @@ def _main_contract_self_test() -> list[str]:
         ("sample chain", ["--sample"], 0),
         ("missing directory", ["--dir", str(SCRATCH / "no-such-evidence-dir")], 1),
     ]
-    return main_contract_errors(cases, script="evidence_check.py", run=main, usage_error=USAGE_ERROR)
+    return main_contract_errors(
+        cases, script="evidence_check.py", run=main, usage_error=USAGE_ERROR
+    )
 
 
 def _untrusted_text_test() -> list[str]:

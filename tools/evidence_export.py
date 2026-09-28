@@ -1275,7 +1275,11 @@ def _self_test_main_contract(scratch: pathlib.Path) -> list[str]:
         ("--index with no --dir", ["--index", "other-index.json"], USAGE_ERROR),
         ("--dir with no --out", ["--dir", str(source)], USAGE_ERROR),
         ("missing archive", ["--archive", str(scratch / "no-such-archive")], 1),
-        ("missing evidence dir", ["--dir", str(scratch / "no-such-dir"), "--out", str(out_root)], 1),
+        (
+            "missing evidence dir",
+            ["--dir", str(scratch / "no-such-dir"), "--out", str(out_root)],
+            1,
+        ),
         ("archive", ["--dir", str(source), "--out", str(out_root)], 0),
     ]
     errs = main_contract_errors(
@@ -1285,7 +1289,10 @@ def _self_test_main_contract(scratch: pathlib.Path) -> list[str]:
     # so the 0 above is pinned against the directory it actually wrote.
     archives = [p for p in sorted(out_root.iterdir()) if p.is_dir()]
     if len(archives) != 1:
-        return errs + [f"the self-test's own export wrote {len(archives)} archive(s), not one"]
+        return [
+            *errs,
+            f"the self-test's own export wrote {len(archives)} archive(s), not one",
+        ]
     errs += main_contract_errors(
         [("verify the archive just written", ["--archive", str(archives[0])], 0)],
         script="evidence_export.py",

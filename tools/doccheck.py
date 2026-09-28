@@ -631,7 +631,9 @@ def self_test() -> list[str]:
     )
     out.extend(f"upgrade guide: {item}" for item in covered)
     no_break = "## [0.4.2] - 2026-10-01\n\n### Fixed\n\n- a\n\n## [0.4.1] - 2026-09-20\n\n"
-    out.extend(f"upgrade guide: {item}" for item in upgrade_guide_findings(no_break, "# Upgrading\n"))
+    out.extend(
+        f"upgrade guide: {item}" for item in upgrade_guide_findings(no_break, "# Upgrading\n")
+    )
     return out
 
 

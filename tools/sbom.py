@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import hashlib
 import io
 import json
@@ -482,15 +483,14 @@ def _self_test_main_contract() -> list[str]:
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
-    global LOCK_PATH
-    saved = LOCK_PATH
-    try:
-        LOCK_PATH = ROOT / "no-such-lock-for-the-self-test.toml"
-        errs += main_contract_errors(
-            [("missing lock", [], 1)], script="sbom.py", run=main, usage_error=USAGE_ERROR
-        )
-    finally:
-        LOCK_PATH = saved
+    # The lockfile is a parameter, not a module constant, only so this case can
+    # hand in a path that is not there; every real run leaves it at LOCK_PATH.
+    errs += main_contract_errors(
+        [("missing lock", [], 1)],
+        script="sbom.py",
+        run=functools.partial(main, lock_path=ROOT / "no-such-lock-for-the-self-test.toml"),
+        usage_error=USAGE_ERROR,
+    )
     return errs
 
 
@@ -509,7 +509,13 @@ def _run_main(argv: list[str]) -> tuple[str, int]:
     return out.getvalue(), code
 
 
-def main() -> int:
+def main(lock_path: pathlib.Path | None = None) -> int:
+    """Render the inventory, write it where asked, and return the exit code.
+
+    `lock_path` overrides the repository's own `uv.lock`, which is what every
+    real run uses and what the self-test moves aside to pin the missing-lock
+    failure.
+    """
     report_text.safe_report_streams()
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -531,7 +537,7 @@ def main() -> int:
 
     try:
         name, version = _project_identity()
-        text = render(load(LOCK_PATH), name, version)
+        text = render(load(lock_path or LOCK_PATH), name, version)
     except ValueError as exc:
         print(f"sbom: no bill of materials was written: {exc}")
         print(f"sbom: {exc}", file=sys.stderr)
