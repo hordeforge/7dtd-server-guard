@@ -9,8 +9,8 @@
 ![top language](https://img.shields.io/github/languages/top/hordeforge/7dtd-server-guard)
 
 Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die dedicated servers.
-The locally installed server is V3.2.0 (b9) Mono; the build the mod pins and hooks against is
-V3.1.0 (b14) ([docs/POLICY.md](docs/POLICY.md) -> Supported build).
+The mod pins and hooks against 7 Days to Die **V3.2.0 (b9)**, the build the project runs; other
+builds load observe-only ([docs/POLICY.md](docs/POLICY.md) -> Supported build).
 
 ## Scope
 
@@ -123,7 +123,6 @@ The detector spec, data schemas, and methodology are the design contract; see
 [docs/INDEX.md](docs/INDEX.md) for who owns what.
 
 ## Project status
-
 
 Research and design contract only. Phase 0 policy review is the blocking gate; the review
 checklist is in [TODO.md](TODO.md). Run `make check` for the docs quality gate. No

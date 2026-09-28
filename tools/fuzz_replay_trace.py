@@ -79,17 +79,17 @@ def main() -> int:
             if not check(bad, f"sample without {drop}"):
                 raise InvariantBroken(f"dropping {drop} was accepted")
 
-        tampered = json.loads(json.dumps(pristine))
+        tampered = copy.deepcopy(pristine)
         tampered["determinism"]["fingerprint"] = "0" * 64
         if not check(tampered, "sample with a tampered fingerprint"):
             raise InvariantBroken("a fingerprint that does not match the projection was accepted")
 
-        skewed = json.loads(json.dumps(pristine))
+        skewed = copy.deepcopy(pristine)
         skewed["determinism"]["startUtc"] = "not-an-instant"
         if not check(skewed, "sample with an unparseable clock origin"):
             raise InvariantBroken("an unparseable determinism.startUtc was accepted")
 
-        backwards = json.loads(json.dumps(pristine))
+        backwards = copy.deepcopy(pristine)
         first = backwards["cases"][0]["events"][0]
         backwards["cases"][0]["events"].append(dict(first, sequence=2, tick=first["tick"] - 1))
         # Re-seal so the tick rule is the only thing left to catch.

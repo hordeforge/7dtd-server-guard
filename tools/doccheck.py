@@ -757,13 +757,9 @@ def check_config_example_keys() -> list[str]:
     return [
         f"config key '{path}' not declared in SCHEMAS.md config table"
         for path in _flatten(example)
-        if path != "schemaVersion" and not _matches_schema(path, patterns)
+        if not _matches_schema(path, patterns)
     ]
 
-
-# The only schema key the example may omit: it is required by the schema itself, so it is
-# present in the example by construction.
-UNCONDITIONAL_KEYS = frozenset({"schemaVersion"})
 
 # depth cap for the config-schema walk; the shipped config schema nests four levels.
 MAX_CONFIG_DEPTH = 20
@@ -808,7 +804,7 @@ def check_config_contract() -> list[str]:
     for path, sub in _config_schema_leaves(schema):
         if not _matches_schema(path, patterns):
             out.append(f"config schema key '{path}' not declared in SCHEMAS.md config table")
-        if "default" not in sub and path not in UNCONDITIONAL_KEYS and path not in example_keys:
+        if "default" not in sub and path not in example_keys:
             out.append(f"config schema key '{path}' has no default and is missing from the example")
     return out
 
