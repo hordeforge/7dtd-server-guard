@@ -8,7 +8,9 @@
 ![languages](https://img.shields.io/github/languages/count/hordeforge/7dtd-server-guard)
 ![top language](https://img.shields.io/github/languages/top/hordeforge/7dtd-server-guard)
 
-Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die dedicated servers. The target is the locally installed dedicated V3.2.0 (b9) Mono server.
+Server-side behavioral anti-cheat and exploit mitigation for 7 Days to Die dedicated servers.
+The locally installed server is V3.2.0 (b9) Mono; the build the mod pins and hooks against is
+V3.1.0 (b14) ([docs/POLICY.md](docs/POLICY.md) -> Supported build).
 
 ## Scope
 

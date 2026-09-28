@@ -127,12 +127,16 @@ client and coordinated load.
 
 Initial cost classes are deliberately coarse and stay configurable until profiled:
 
-| Class | Typical work | Initial relative weight |
-|---|---|---:|
-| Tiny | keep-alive, acknowledgement, basic metrics | 1 |
-| Play | movement, rotation, damage request, item reload | 2 |
-| State | block, inventory, tile-entity, wire mutation | 5 |
-| Expensive | chunk, map, POI, inventory snapshot, dynamic mesh | 20 |
+| Class | Config key | Typical work | Initial relative weight |
+|---|---|---|---:|
+| Tiny | `tiny` | keep-alive, acknowledgement, basic metrics | 1 |
+| Play | `play` | movement, rotation, damage request, item reload | 2 |
+| State | `state` | block, inventory, tile-entity, wire mutation | 5 |
+| Expensive | `expensive` | chunk, map, POI, inventory snapshot, dynamic mesh | 20 |
+
+The config keys are `availability.cost.<key>` (SCHEMAS.md -> Config schema); their defaults
+and accepted ranges are declared per detector in `config/detector-config-manifest.json`, so
+reweighting a class is a spec edit, not a code edit.
 
 ```text
 balance = min(burst, balance + refill_per_second * dt) - measured_cost_class

@@ -18,8 +18,10 @@ instructions for a shipped product.
 
 1. Post the monitoring notice ([PRIVACY.md](../PRIVACY.md)) in the server rules/MOTD/Discord
    and substitute the operator's own contact.
-2. Run `make check` on the shipped release artifacts and verify the config hash and hook
-   manifest match the release notes.
+2. Verify the config hash and hook manifest hash against the release notes. No command
+   does this yet: `make check` is a repository docs and schema gate, and the release-artifact
+   verifier is a Phase 9 requirement (this runbook is a requirements document, see the
+   preamble). Until it exists, compare the values the health report prints by hand.
 3. Start in observe mode. Confirm the health report shows every detector `active` and the
    hook manifest resolved fully on the pinned build.
 4. For each detector to raise: run its legal-context matrix (TEST_PLAN.md Layer 5), review

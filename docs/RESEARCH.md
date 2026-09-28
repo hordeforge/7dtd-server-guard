@@ -1,7 +1,9 @@
 # Research and constraints
 
-Research date: 2026-07-21. Local target: 7 Days to Die dedicated V3.2.0 (b9), Unity Mono
-(the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research` narratives under Local
+Research date: 2026-07-21. Locally installed dedicated server: V3.2.0 (b9), Unity Mono. The
+build the mod pins and hooks against is still V3.1.0 (b14)
+([POLICY.md](POLICY.md) -> Supported build, D-01), so the V3.2.0 delta is open work, not a
+supported target. The `7dtd-engine-research` narratives under Local
 evidence now include **V3.1.0** regenerable dumps (`il/netpackages-v3.1.0/`,
 `il/dedi-complete-v3.1.0/`, `il/deep-v3.1.0/`, `il/loop-complete-v3.1.0/`); older narrative
 text was produced against V3.0.1 (b4). Phase 1 still re-verifies every surface against the
@@ -118,7 +120,7 @@ inventory against the pinned build, unless noted otherwise.
 
 ## Local evidence
 
-- `../../7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
+- `../../7dtd-engine-research/il/netpackages-v3.1.0/INDEX.md`: V3.1.0 netpackage census (193 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
 - `../../7dtd-engine-research/docs/loop/managers.md`: `ModEvents` inventory.
 - `../../7dtd-engine-research/docs/inventories/netpackages.md`: network package inventory and complexity.
 - `../../7dtd-engine-research/docs/network/protocol-frames.md`: decoded movement and damage frame structure.

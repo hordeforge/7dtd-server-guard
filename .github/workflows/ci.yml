@@ -16,10 +16,11 @@ jobs:
     # tar) must not drift under a moving tag.
     runs-on: ubuntu-24.04
     steps:
-      # actions/checkout v4.2.2. SHA-pinned per dependabot.yml: these actions
-      # are the whole dependency surface, so tags must not be mutable refs.
+      # actions/checkout, SHA-pinned per dependabot.yml: these actions are the
+      # whole dependency surface, so tags must not be mutable refs. The
+      # trailing version comment on each `uses` line is the source of truth.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # astral-sh/setup-uv v5: uv installs the interpreter minor declared in
+      # astral-sh/setup-uv: uv installs the interpreter minor declared in
       # .python-version and the locked dependency set, instead of whatever the
       # runner image happens to ship.
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1

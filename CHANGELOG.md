@@ -26,6 +26,11 @@ this file and are described only by their git tags.
   default seed happened to survive; `--iterations 50 --seed 1234` did not.
 - `make ci` now includes `make exercise`, so the replay contract check gates CI and not
   only a manual run.
+- README, RESEARCH, and the 0.4.0 entry described V3.2.0 (b9) as the pinned
+  build, which contradicts the shipped `buildPin.buildId` default, the config
+  schema, and POLICY.md. The installed build and the supported pin are now
+  stated separately, and RESEARCH cites the V3.1.0 census path it actually
+  names.
 
 ## [0.4.1] - 2026-09-20
 
@@ -43,8 +48,11 @@ this file and are described only by their git tags.
 - `AGENTS.md` states what this repository owns and does not own: server-side
   behavioural validation and anti-cheat evidence here, no client scanners and
   no automatic permanent bans by default, stock RE in `7dtd-engine-research`.
-- The version pin moves to **V3.2.0 (b9)**, and the research citations point at
-  the grouped `docs/<subsystem>/` tree.
+- The research citations point at the grouped `docs/<subsystem>/` tree, and the
+  locally installed server (V3.2.0 b9) is now recorded separately from the
+  supported pin. The pin itself is still **V3.1.0 (b14)**: the example config,
+  the config schema, and POLICY.md were not moved, so any hook written now
+  targets b14 and other builds load observe-only.
 
 ## [0.3.0] - 2026-08-26
 

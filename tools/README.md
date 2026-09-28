@@ -6,12 +6,14 @@
 - `render_detectors.py`: renders docs/DETECTORS.md tables and
   config/detector-config-manifest.json from the spec (`make detectors`).
 - `evidence_check.py`: verifies evidence hash chains (canonical serialization, genesis,
-  cross-segment links, tamper/truncation) with negative self-tests; the doccheck gate runs
-  it on the sample, and `make verify-evidence DIR=...` targets operator evidence dirs.
+  intra-segment continuity, cross-segment links) with negative self-tests; the doccheck gate
+  runs it on the sample, and `make verify-evidence DIR=...` targets operator evidence dirs.
+  A tampered last record is not detectable until the next record is appended, which is
+  inherent to an append-only chain and is stated in SCHEMAS.md.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
-  format, detector-spec validity (including the D-07 ceiling rule), registry sync,
+  format, detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
   schema/data pairs, evidence sample chain, replay-contract vector, and folder structure.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`: seeded,
@@ -25,7 +27,7 @@
   `.python-version`. Runs first in `make check`, `make exercise`, `make test-tools`,
   and `make fuzz`.
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
-  (SCHEMAS.md). Planned; does not exist yet.
+  (SCHEMAS.md). Planned; only the README contract exists, no code yet.
 - `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression
   corpus (`regression/`), and seeded generators/mutation tools (`generators/`) for
   TEST_PLAN.md layers 4 and 7. The inventory stack design vector exists under `traces/`
