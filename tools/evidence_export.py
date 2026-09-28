@@ -199,13 +199,22 @@ def valid_member_name(name: object) -> bool:
     """A manifest names its files by plain file name. The name comes from an
     untrusted manifest and reaches the filesystem, so only a bounded,
     separator-free, ASCII name is accepted; anything else is reported, never
-    passed to open()."""
+    passed to open(). The bound is on bytes, not characters, and the ASCII
+    allowlist makes the two the same count: a name of multi-byte characters
+    passes a character count and still exceeds what the filesystem accepts for
+    one path component."""
     return (
         isinstance(name, str)
         and 0 < len(name) <= MAX_MEMBER_NAME_LEN
+        and name.isascii()
         and name not in (".", "..")
         and all(c in MEMBER_NAME_CHARS for c in name)
     )
+
+
+def _is_int(value: object) -> bool:
+    """True for a JSON integer. A bool is an int subclass and is not a byte count."""
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def verify(archive: pathlib.Path) -> list[str]:
@@ -250,7 +259,7 @@ def verify(archive: pathlib.Path) -> list[str]:
         f"{name}: present in the archive but not in the manifest"
         for name in sorted(present - listed)
     )
-    total = sum(int(e["bytes"]) for e in entries if isinstance(e, dict) and "bytes" in e)
+    total = sum(e["bytes"] for e in entries if isinstance(e, dict) and _is_int(e.get("bytes")))
     if total != manifest.get("totalBytes"):
         errs.append("totalBytes in the manifest does not match the sum of its file entries")
     errs += [f"chain: {e}" for e in ec.verify_dir(archive, index_name)]

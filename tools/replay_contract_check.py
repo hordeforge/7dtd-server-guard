@@ -114,12 +114,19 @@ def _determinism_errors(trace: dict[str, Any]) -> list[str]:
             "trace: determinism.fingerprint must be a 64-character lowercase SHA-256 hex digest"
         )
     elif not errors:
-        expected = outcome_fingerprint(trace)
-        if fingerprint != expected:
-            errors.append(
-                f"trace: determinism.fingerprint {fingerprint[:16]}... does not match the "
-                f"replay outcome projection {expected[:16]}..."
-            )
+        try:
+            expected = outcome_fingerprint(trace)
+        except ValueError as exc:
+            # A NaN or Infinity anywhere in the projection has no canonical
+            # JSON form, so the digest cannot be recomputed; that is a defect in
+            # the trace, not a reason to fail the run with a traceback.
+            errors.append(f"trace: outcome projection is not canonical JSON: {exc}")
+        else:
+            if fingerprint != expected:
+                errors.append(
+                    f"trace: determinism.fingerprint {fingerprint[:16]}... does not match the "
+                    f"replay outcome projection {expected[:16]}..."
+                )
     return errors
 
 

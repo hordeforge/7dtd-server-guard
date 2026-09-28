@@ -198,7 +198,7 @@ the objection). The review is the gate; nothing in later phases starts until it 
 
 - [ ] Establish clean baselines by game build, server config, mods, biome, player count, and latency (calibration methodology, [docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Calibration).
 - [ ] Use `7dtd-loadgen` for deterministic legal/adversarial scenarios and `7dtd-server-apm` for A/B cost.
-- [ ] Conduct shadow deployment, moderator labeling (labeling methodology), threshold tuning, and holdout evaluation ([docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Calibration and Labeling).
+- [ ] Conduct shadow deployment, moderator labeling (labeling methodology), threshold tuning, and holdout evaluation ([docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Calibration, [docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Labeling).
 - [ ] Publish precision, recall where labels permit, false-positive confidence interval, and blind spots.
 - [ ] Red-team malformed packets, races, evasion, identity churn, evidence injection, and resource abuse (red-team methodology, [docs/METHODOLOGY.md](docs/METHODOLOGY.md) -> Red-team).
 - [ ] Package source, DLL, config schema, checksums, install/uninstall, compatibility table, and changelog.

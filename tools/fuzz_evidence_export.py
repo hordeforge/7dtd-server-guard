@@ -89,12 +89,30 @@ def _mutate_segment_bytes(rng: random.Random, data: bytes) -> bytes:
     return data[:pos] + bytes([replacement]) + data[pos + 1 :]
 
 
-def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
-    """Run verify() on a randomly damaged archive. Returns True when the damage was
-    a kind verify() is required to catch."""
-    archive = tmp / "archive"
-    _valid_stream(archive)
+def _flip_digest_byte(rng: random.Random, data: bytes) -> bytes | None:
+    """Flip one hex digit of the manifest's first `sha256` value, or None if absent.
+
+    A flip anywhere in the manifest can land in a descriptive string (the
+    canonicalization note, the source path) and leave a manifest verify()
+    rightly accepts; inside the digest, any change disagrees with the archive
+    bytes and must be caught.
+    """
+    key = data.find(b'"sha256"')
+    if key == -1:
+        return None
+    value = data.find(b'"', key + 8)
+    if value == -1:
+        return None
+    pos = value + 1 + rng.randrange(64)
+    return data[:pos] + bytes([data[pos] ^ 0x01]) + data[pos + 1 :]
+
+
+def _damage_archive(
+    archive: pathlib.Path, rng: random.Random, mut: Mutator
+) -> tuple[bool, list[str]]:
+    """Apply random damage. Returns (verify must reject it, the damage kinds applied)."""
     must_fail = False
+    damage: list[str] = []
 
     if rng.random() < P_MUTATE_MANIFEST_VALUE:
         # Generic JSON surgery: some mutations are semantically neutral (an
@@ -103,21 +121,27 @@ def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
         _write_manifest(archive, mut.mutate(_read_manifest(archive)))
     elif rng.random() < P_MUTATE_MANIFEST_BYTES:
         path = archive / ee.MANIFEST_NAME
-        path.write_bytes(_mutate_segment_bytes(rng, path.read_bytes()))
-        must_fail = True
+        flipped = _flip_digest_byte(rng, path.read_bytes())
+        if flipped is not None:
+            path.write_bytes(flipped)
+            must_fail = True
+            damage.append("manifest-bytes")
 
     seg = archive / "evidence-2026-07-21-000000.jsonl"
     if rng.random() < P_MUTATE_SEGMENT_BYTES:
         seg.write_bytes(_mutate_segment_bytes(rng, seg.read_bytes()))
         must_fail = True
+        damage.append("segment-bytes")
 
     if rng.random() < P_DROP_LISTED_FILE:
         seg.unlink()
         must_fail = True
+        damage.append("drop-listed-file")
 
     if rng.random() < P_EXTRA_UNLISTED_FILE:
         (archive / "evidence-2026-01-01-000000.jsonl").write_text("{}\n", encoding="utf-8")
         must_fail = True
+        damage.append("extra-unlisted-file")
 
     manifest = _read_manifest(archive)
     entries = manifest.get("files") if isinstance(manifest, dict) else None
@@ -126,10 +150,27 @@ def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
         first_entry["sha256"] = "0" * 64
         _write_manifest(archive, manifest)
         must_fail = True
-    if isinstance(first_entry, dict) and rng.random() < P_EDIT_BYTES_FIELD:
-        first_entry["bytes"] = int(first_entry.get("bytes", 0)) + 1
-        _write_manifest(archive, manifest)
-        must_fail = True
+        damage.append("edit-sha-field")
+    if isinstance(first_entry, dict):
+        listed_bytes = first_entry.get("bytes")
+        if (
+            isinstance(listed_bytes, int)
+            and not isinstance(listed_bytes, bool)
+            and rng.random() < P_EDIT_BYTES_FIELD
+        ):
+            first_entry["bytes"] = listed_bytes + 1
+            _write_manifest(archive, manifest)
+            must_fail = True
+            damage.append("edit-bytes-field")
+    return must_fail, damage
+
+
+def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
+    """Run verify() on a randomly damaged archive. Returns True when the damage was
+    a kind verify() is required to catch."""
+    archive = tmp / "archive"
+    _valid_stream(archive)
+    must_fail, damage = _damage_archive(archive, rng, mut)
 
     first = ee.verify(archive)
     second = ee.verify(archive)
@@ -139,6 +180,7 @@ def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
         raise InvariantBroken("verify() returned a non-string error")
     if must_fail and not first:
         state = {
+            "damage": damage,
             "files": sorted(p.name for p in archive.iterdir()),
             "manifest": _read_manifest(archive),
         }

@@ -137,6 +137,10 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
         rec = json.loads(line, parse_constant=_reject_non_finite)
     except json.JSONDecodeError as exc:
         raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
+    except ValueError as exc:
+        # The parse_constant hook raises a bare ValueError; every error out of a
+        # segment line names file:line, so re-wrap it with that context.
+        raise ValueError(f"{name}:{line_no}: {exc}") from exc
     if not isinstance(rec, dict):
         raise ValueError(f"{name}:{line_no}: record is not an object")
     for field in ("schemaVersion", "type", "eventId", "chainPrev"):

@@ -20,8 +20,9 @@ gate.
 
 Review the following:
 
-1. Index completeness and accuracy: every file under docs/ has a row in docs/INDEX.md; each
-   row's "Owns" and "Canonical for" describe what that document contains today; the
+1. Index completeness and accuracy: every file under docs/ other than INDEX.md itself has a
+   row in docs/INDEX.md (the index does not list itself); each row's "Owns" and "Canonical
+   for" describe what that document contains today; the
    repo-layout tree in INDEX.md matches the directories and top-level files on disk (the
    gate checks directory READMEs and planned dirs, not this tree).
 2. Canonical collisions: two documents each claiming to be canonical for the same subject,
@@ -33,16 +34,25 @@ Review the following:
 4. Phase-gate honesty: a checked item in TODO.md whose named artifact is absent: cited file
    missing, cited Makefile target undefined, cited script not under tools/. Exit criteria
    that name files or targets count the same way.
-5. Tooling-reference rot: every `make <target>` named anywhere in the contract exists in the
-   Makefile with matching usage; prose describing what doccheck verifies matches its actual
-   checks; instructions in AGENTS.md remain executable as written.
+5. Tooling-reference rot: every backticked `make <target>` invocation anywhere in the contract
+   exists in the Makefile with matching usage. Match invocations, not the English verb: a
+   bare sweep for `make \w+` also returns prose ("make the pin checkable", "make automatic
+   handling"), and those are not findings. Then: prose describing what doccheck verifies
+   matches its actual checks; instructions in AGENTS.md remain executable as written.
 6. Decision-log hygiene: docs/DECISIONS.md entries use only the documented status values;
    superseded entries point at their successor; every "Document -> Section" pointer anywhere
-   in the contract resolves to a heading that exists in that document.
+   in the contract resolves to a heading in that document. Headings carry a leading number
+   and a trailing qualifier ("### 3. Calibration methodology (Phase 10)"), so a pointer
+   resolves when its target words lead the heading text, not only on an exact match; a
+   pointer naming two sections (`-> Calibration and Labeling`) is a finding, since no such
+   heading exists. Flow arrows and headings of the form "Topic -> place" are not pointers.
 7. External and sibling references: relative links into sibling repos (for example
    ../7dtd-engine-research) and remote URLs (MODDING_BEST_PRACTICES.md) that the link gate
-   deliberately skips. Verify against the local workspace when the sibling checkout exists;
-   otherwise mark the reference unverifiable here rather than guessing that the remote moved.
+   deliberately skips. `..` resolves against the checkout the agent is standing in, which is
+   not the workspace when the run happens in a git worktree; resolve it as the sibling of
+   the main checkout, `$(dirname $(git rev-parse --path-format=absolute --git-common-dir))`.
+   Verify there when the sibling checkout exists; otherwise mark the reference unverifiable
+   here rather than guessing that the remote moved.
 8. Safety-boundary echoes: the load-bearing behavioral promises (new detectors default to
    observe, no automatic permanent bans, hooks fail open on signature mismatch, no network IO
    on the game thread) appear in several documents; every copy must stay consistent with the
@@ -51,9 +61,10 @@ Review the following:
    source is still correct.
 
 If available, use: `rg` for cross-document sweeps of repeated facts and "Document ->
-Section" pointers; `uv run python` with stdlib only (json, re, pathlib) for comparisons such as
-INDEX rows versus directory listings. Never install packages. Re-run `make check` before
-finishing so your edits keep the gate green.
+Section" pointers; `uv run --frozen python` with stdlib only (json, re, pathlib) for
+comparisons such as INDEX rows versus directory listings (`--frozen` matches what `make
+check` runs and fails loudly instead of re-resolving a stale uv.lock). Never install packages.
+Re-run `make check` before finishing so your edits keep the gate green.
 
 For each finding include:
 - File and location (path:line) for both sides of the disagreement

@@ -47,7 +47,9 @@ bug to fix in the same change.
 ```text
 7dtd-server-guard/
 ├── AGENTS.md                  workspace and repo boundaries
+├── CLAUDE.md                  symlink to AGENTS.md
 ├── README.md                  public entry point
+├── CONTRIBUTING.md            local gates and workflow
 ├── TODO.md                    phase ledger
 ├── CHANGELOG.md               release notes per tag
 ├── PRIVACY.md                 player-monitoring notice and retention
