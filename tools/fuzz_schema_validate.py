@@ -179,8 +179,10 @@ def check_datetime_format() -> None:
     different deployments. An impossible calendar date is rejected by the same
     path, since `format` is asserted by the platform parser.
     """
-    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
-    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text()
+    schema = json.loads(
+        (ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text(encoding="utf-8")
+    )
+    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text(encoding="utf-8")
     records = {
         rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
     }
@@ -293,6 +295,34 @@ def check_threshold_gate() -> None:
             raise InvariantBroken(f"{why} accepted")
 
 
+def check_string_length_units() -> None:
+    """`minLength`/`maxLength` count code points, never bytes or graphemes.
+
+    The shipped limits (`note` maxLength 512, `gameVersion` maxLength 64) read
+    as a character budget, and JSON Schema defines string length in Unicode code
+    points. Counting UTF-8 bytes instead would reject a 512-character note of
+    accented text at roughly 170 characters and quietly shrink the budget the
+    schema documents; counting graphemes would let a string of combining marks
+    exceed it. The astral emoji is the case that separates all three: one code
+    point, two UTF-16 units, four UTF-8 bytes, one grapheme.
+    """
+    schema: Json = {"type": "string", "minLength": 3, "maxLength": 5}
+    cases: list[tuple[str, bool, str]] = [
+        ("\U0001f600\U0001f600\U0001f600", True, "three emoji are three code points"),
+        ("é" * 3, True, "the NFD spelling is three code points, not one"),
+        ("é" * 5, True, "the NFC spelling is five"),
+        ("é" * 6, False, "six code points exceed maxLength"),
+        ("e\u0301" * 6, False, "the NFD spelling of the same word exceeds it too"),
+        ("ab", False, "two code points are under minLength"),
+    ]
+    for value, ok, why in cases:
+        errs = dc._schema_validate(value, schema)
+        if ok and errs:
+            raise InvariantBroken(f"length limits rejected {value!r}: {why}: {errs}")
+        if not ok and not errs:
+            raise InvariantBroken(f"length limits accepted {value!r}: {why}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_fuzz_args(ap, default_iterations=1500)
@@ -324,6 +354,7 @@ def main() -> int:
         check_datetime_format()
         check_non_finite_numbers()
         check_threshold_gate()
+        check_string_length_units()
     except InvariantBroken as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
@@ -333,7 +364,7 @@ def main() -> int:
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
         f"deep_probe=ok datetime_probe=ok "
-        f"non_finite_probe=ok threshold_gate_probe=ok"
+        f"non_finite_probe=ok threshold_gate_probe=ok length_units_probe=ok"
     )
     return 0
 

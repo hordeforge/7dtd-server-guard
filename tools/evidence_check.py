@@ -27,6 +27,7 @@ import hashlib
 import json
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 from collections import deque
@@ -317,6 +318,71 @@ def verify_sample() -> list[str]:
     return [f"sample: {e}" for e in chain.errors]
 
 
+def _unicode_self_test(errs: list[str]) -> None:
+    """The chain is exact over the canonical form, whatever a record's text holds.
+
+    `canonical` escapes every non-ASCII code point, so a record naming a player
+    with an accent, carrying an astral emoji, or holding the NFD spelling of a
+    word round-trips through the segment unchanged and hashes the same. The NFD
+    and NFC spellings are different records with different hashes: the chain
+    proves what was written, so the spelling a detector picks is the spelling the
+    chain commits to, and normalizing one spelling into the other here would
+    break verification of an already-appended segment rather than protect it.
+    """
+    spellings = [
+        "Ünïcödé",
+        "\U0001f600",  # astral, four UTF-8 bytes, one code point
+        "e\u0301",  # NFD
+        "\u00e9",  # NFC of the same word
+        "\udcff",  # unpaired UTF-16 half, as a JSON escape carries it
+    ]
+    recs: list[Record] = []
+    prev = GENESIS
+    for i, text in enumerate(spellings):
+        rec: Record = {
+            "schemaVersion": 1,
+            "type": "health",
+            "eventId": f"0000000{i}-0000-4000-8000-00000000000{i}",
+            "chainPrev": prev,
+            "playerName": text,
+        }
+        prev = record_hash(rec)
+        recs.append(rec)
+    if len({record_hash(r) for r in recs}) != len(recs):
+        errs.append("self-test: distinct spellings collapsed to one record hash")
+    round_tripped = [json.loads(canonical(r)) for r in recs]
+    if round_tripped != recs:
+        errs.append("self-test: a non-ASCII record did not survive canonical serialization")
+    if verify_chain(
+        [(i + 1, r, "") for i, r in enumerate(round_tripped)],
+        first_of_stream=True,
+        seen=RecentEventIds(),
+    ).errors:
+        errs.append("self-test: a chain over non-ASCII records did not verify")
+
+    scratch = ROOT / ".scratch" / "evidence-check-self-test"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True, exist_ok=True)
+    try:
+        # A segment the server wrote with a truncated multi-byte sequence is
+        # reported as a named error, never a traceback out of the gate.
+        bad = scratch / "evidence-2026-07-21-000000.jsonl"
+        bad.write_bytes(canonical(recs[0]).encode("utf-8")[:-1] + b"\xc3\n")
+        reported = verify_dir(scratch, "segment-index.json")
+        if not any("not valid UTF-8" in e for e in reported):
+            errs.append(f"self-test: invalid UTF-8 was not reported: {reported}")
+        # A non-ASCII file name is a legal name on this filesystem and must be
+        # walked and reported by name, not dropped from the segment list.
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True, exist_ok=True)
+        named = scratch / "evidence-2026-07-21-00000é.jsonl"
+        named.write_text(canonical(recs[0]) + "\n", encoding="utf-8")
+        if reported := verify_dir(scratch, "segment-index.json"):
+            errs.append(f"self-test: a valid segment with a non-ASCII name failed: {reported}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def self_test() -> list[str]:
     """Negative tests: tamper, bad genesis, a re-appended event, non-finite numbers,
     and the damaged-directory reports."""
@@ -409,6 +475,7 @@ def self_test() -> list[str]:
     errs += _dir_self_test(recs)
     errs += _sample_chain_test()
     errs += _verify_dir_tests()
+    _unicode_self_test(errs)
     return errs
 
 

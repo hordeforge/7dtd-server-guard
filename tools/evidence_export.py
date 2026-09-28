@@ -50,7 +50,16 @@ SEGMENT_GLOB = "evidence-*.jsonl"
 DEFAULT_INDEX_NAME = "segment-index.json"
 # Longest file name accepted from a manifest, so a hostile name cannot reach the
 # filesystem as a path the OS rejects (ENAMETOOLONG) instead of being reported.
+# The limit is in bytes, which is what the filesystem counts, and the ASCII
+# allowlist below makes a character count and a byte count the same number.
 MAX_MEMBER_NAME_LEN = 128
+# The characters a manifest may name a member with. `str.isalnum()` is not this:
+# it accepts every Unicode letter, digit, and numeric form, so a fullwidth or
+# Arabic-Indic spelling of a segment name would pass a check that reads as
+# ASCII and reach the filesystem as a different file from the one the operator
+# sees. Members are written by this tool with ASCII names, so nothing legitimate
+# is lost.
+MEMBER_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 # Read/write block size for copying and hashing, so archive size does not set the
 # process's memory ceiling.
 COPY_CHUNK_BYTES = 1 << 20
@@ -189,13 +198,13 @@ def export(source: pathlib.Path, out_root: pathlib.Path, index_name: str) -> lis
 def valid_member_name(name: object) -> bool:
     """A manifest names its files by plain file name. The name comes from an
     untrusted manifest and reaches the filesystem, so only a bounded,
-    separator-free name is accepted; anything else is reported, never passed to
-    open()."""
+    separator-free, ASCII name is accepted; anything else is reported, never
+    passed to open()."""
     return (
         isinstance(name, str)
         and 0 < len(name) <= MAX_MEMBER_NAME_LEN
         and name not in (".", "..")
-        and all(c.isalnum() or c in "._-" for c in name)
+        and all(c in MEMBER_NAME_CHARS for c in name)
     )
 
 
@@ -324,6 +333,40 @@ def _self_test_corrupt_archive(archive: pathlib.Path, seg2: pathlib.Path) -> lis
     return errs
 
 
+def _self_test_member_names() -> list[str]:
+    """The member-name allowlist is ASCII, and a lookalike spelling is not a member.
+
+    A manifest is untrusted text that names files. A name spelled with characters
+    outside ASCII (fullwidth Latin, Arabic-Indic digits, a combining mark) reads to
+    an operator as a segment name it is not, so it must be reported rather than
+    resolved; the names this tool writes are ASCII and must keep passing.
+    """
+    errs: list[str] = []
+    accepted = [
+        "evidence-2026-07-21-000000.jsonl",
+        "segment-index.json",
+        "archive-manifest.json",
+    ]
+    rejected = [
+        "ｅｖｉｄｅｎｃｅ-2026-07-21.jsonl",  # noqa: RUF001 - fullwidth Latin
+        "evidence-2026-07-21-٠٠٠٠٠٠.jsonl",  # noqa: RUF001 - Arabic-Indic digits
+        "evidence-2026-07-21-00000é.jsonl",  # NFD: e + combining acute
+        "evidence-2026-07-21-000000\U0001f600.jsonl",  # astral
+        "evidence-2026-07-21-000000.jsonl ",  # trailing space
+    ]
+    errs.extend(
+        f"self-test: archive member name rejected: {name!r}"
+        for name in accepted
+        if not valid_member_name(name)
+    )
+    errs.extend(
+        f"self-test: non-ASCII archive member name accepted: {name!r}"
+        for name in rejected
+        if valid_member_name(name)
+    )
+    return errs
+
+
 def self_test() -> list[str]:
     """Exercise the paths that decide whether a backup is trustworthy."""
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test"
@@ -333,6 +376,7 @@ def self_test() -> list[str]:
     seg2 = _write_sample_stream(source)
     errs, archives = _self_test_happy_path(source, out_root)
     errs += _self_test_refusal(scratch, source, out_root)
+    errs += _self_test_member_names()
     if archives:
         errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
     shutil.rmtree(scratch, ignore_errors=True)

@@ -363,12 +363,17 @@ def _run_tool(script: str, *args: str, on_failure: str) -> list[str]:
     surface, instead of importing internals the CLI does not expose. Both streams are
     reported: a tool that prints findings and then dies on an exception writes the
     traceback to stderr, and dropping it hides the crash behind the findings.
+
+    The child's output is decoded as UTF-8 like every other text boundary here: the
+    child echoes file names and record content back, and a host whose locale is
+    POSIX would otherwise decode that as ASCII and raise out of the gate.
     """
     try:
         proc = subprocess.run(
             [sys.executable, str(ROOT / "tools" / script), *args],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=ROOT,
             check=False,
             timeout=TOOL_TIMEOUT_S,
@@ -389,7 +394,9 @@ def check_registry_sync() -> list[str]:
 
 def _manifest_errors(example: Json, out: list[str]) -> None:
     """Manifest metadata must track the spec, and both must cover the example config."""
-    manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
+    manifest = json.loads(
+        (ROOT / "config" / "detector-config-manifest.json").read_text(encoding="utf-8")
+    )
     spec_by_id = {d["id"]: d for d in render_detectors.load_spec()}
     manifest_keys: dict[str, dict[str, Json]] = {}
     manifest_ids: set[str] = set()
@@ -475,7 +482,9 @@ def check_detector_ids() -> list[str]:
 
     # Every mode key in the example config must exist in the spec, and every
     # registered detector must have one.
-    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    example = json.loads(
+        (ROOT / "config" / "server-guard.example.json").read_text(encoding="utf-8")
+    )
     example_modes = set(example.get("modes", {}).keys())
     out.extend(
         f"config example mode key not in registry: {mode_id}"
@@ -818,7 +827,9 @@ def check_folder_structure() -> list[str]:
 
 def check_config_example_keys() -> list[str]:
     patterns = _schema_key_patterns()
-    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    example = json.loads(
+        (ROOT / "config" / "server-guard.example.json").read_text(encoding="utf-8")
+    )
     return [
         f"config key '{path}' not declared in SCHEMAS.md config table"
         for path in _flatten(example)
@@ -861,8 +872,12 @@ def check_config_contract() -> list[str]:
     the example never shows (so every operator hits a required key they were never told
     about). config/README.md states both rules; this enforces them.
     """
-    schema = json.loads((ROOT / "config" / "schemas" / "config.v1.schema.json").read_text())
-    example = json.loads((ROOT / "config" / "server-guard.example.json").read_text())
+    schema = json.loads(
+        (ROOT / "config" / "schemas" / "config.v1.schema.json").read_text(encoding="utf-8")
+    )
+    example = json.loads(
+        (ROOT / "config" / "server-guard.example.json").read_text(encoding="utf-8")
+    )
     patterns = _schema_key_patterns()
     example_keys = set(_flatten(example))
     out = []
