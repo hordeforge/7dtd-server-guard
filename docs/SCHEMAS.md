@@ -127,6 +127,7 @@ where the serving environment is not the one running the check.
 | `hmacKey.path` | string | `ServerGuard/hmac.key` | restricted perms, non-empty | Pseudonym key; destroyed when evidence under it expires |
 | `hmacKey.permissions` | string | `0600` | `0[4-6]00` | Same owner-only rule as the identity map, which is weaker than a deployment should be: platform IDs are enumerable, so this file is the re-identification key. Applied at startup by the Phase 3 runtime (TODO.md); the schema refuses a looser mode today |
 | `hmacKey.rotationDays` | int | 90 | 1..365 | Starts a new pseudonym epoch |
+| `backup.keyCopyDir` | string | none | non-empty | Directory holding the off-server copy of `identityMap.path` and `hmacKey.path` under the same file names, in a different failure domain than the server disk they live on. Relative paths resolve against the runtime root, the rule `identityMap.path` uses. No default: a guessed path would name a directory nobody ever wrote to, and the restore drill would confirm a copy that was never made |
 | `queues.actionQueueMax` | int | 4096 | 64..65536 | Main-thread action queue bound |
 | `queues.evidenceQueueMax` | int | 8192 | 64..65536 | Writer queue bound; drop soft first |
 | `faultGuard.maxFaults` | int | 5 | 1..100 | Per-hook runtime faults before self-disable |

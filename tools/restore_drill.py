@@ -378,8 +378,15 @@ def secrets_errors(
     both are stored `0600`. A file that is present, current, and world-readable
     passes a presence check and fails the promise, and the exposure is silent,
     so the drill reads the mode off the file and compares it to the one the
-    config declares."""
+    config declares.
+
+    Every check above reads the live file, which is the one the disaster takes.
+    `backup.keyCopyDir` names the copies that survive a lost disk, so the drill
+    reads those too: a copy that is missing, that differs from the live file, or
+    that is more permissive than the config declares is a finding, and a config
+    that names no copy store is itself the finding."""
     errs: list[str] = []
+    copy_dir = _key_copy_dir(config, runtime_root)
     for section in ("identityMap", "hmacKey"):
         block = config.get(section)
         path_value = block.get("path") if isinstance(block, dict) else None
@@ -430,6 +437,69 @@ def secrets_errors(
                 f"{section}: {path} was last written {age_hours:.1f} h ago, past the "
                 f"{max_age_hours:.0f} h backup cycle; the scheduled copy has not run"
             )
+        if copy_dir is not None:
+            errs += _key_copy_errors(section, path, copy_dir, block)
+    if copy_dir is None:
+        errs.append(
+            "config: backup.keyCopyDir is not set, so no off-server copy of the identity map "
+            "or the HMAC key is named; both live on the server disk a lost disk takes, and the "
+            "drill can only confirm the files that disk is about to lose"
+        )
+    return errs
+
+
+def _key_copy_dir(config: Record, runtime_root: pathlib.Path) -> pathlib.Path | None:
+    """Where the off-server copies of the map and the key live.
+
+    A live file on a disk that is about to fail is not a backup of itself, and
+    the copy is the only thing a lost disk leaves behind. The config has to name
+    the store: the drill cannot infer a destination, and a guessed one would
+    confirm a copy nobody made. `None` is the finding, reported once by the
+    caller rather than per section."""
+    block = config.get("backup")
+    value = block.get("keyCopyDir") if isinstance(block, dict) else None
+    if not isinstance(value, str) or not value:
+        return None
+    return _resolve(value, runtime_root)
+
+
+def _key_copy_errors(
+    section: str, path: pathlib.Path, copy_dir: pathlib.Path, block: Any
+) -> list[str]:
+    """The off-server copy of one restricted file: present, identical, no wider
+    than the live one is allowed to be.
+
+    The copy keeps the file name, so a store holding both restricted files is one
+    directory rather than a naming scheme to get wrong. Byte identity is the
+    check that matters: a copy taken under an earlier key, or from a different
+    host, restores a chain nothing can resolve, and its presence says nothing
+    about whether it is the right bytes."""
+    errs: list[str] = []
+    copied = copy_dir / path.name
+    try:
+        present = copied.is_file()
+        info = copied.stat() if present else None
+    except OSError as exc:
+        return [
+            f"{section}: off-server copy {copied} cannot be opened "
+            f"({exc.strerror or exc}); the drill cannot confirm the copy"
+        ]
+    if not present or info is None:
+        return [
+            f"{section}: no off-server copy at {copied}; a lost disk takes {path} with it, "
+            f"and a {section} that is gone leaves restored evidence permanently "
+            f"unattributable"
+        ]
+    try:
+        same = ee.file_digest(copied)[0] == ee.file_digest(path)[0]
+    except OSError as exc:
+        return [f"{section}: the copy at {copied} cannot be read ({exc.strerror or exc})"]
+    if not same:
+        errs.append(
+            f"{section}: the off-server copy at {copied} differs from {path}; it is a copy "
+            "of a different file, and restoring it resolves a different key epoch"
+        )
+    errs += _mode_errors(f"{section} off-server copy", copied, block, info)
     return errs
 
 
@@ -689,6 +759,7 @@ def _self_test_config() -> list[str]:
             "schemaVersion": 1,
             "identityMap": {"path": "identity-map.json"},
             "hmacKey": {"path": "keys/hmac.key"},
+            "backup": {"keyCopyDir": "off-server"},
         }
         # The stream is written under this config's hash, so the drill's config
         # cross-check passes and the findings below are about the keys, which is
@@ -724,6 +795,14 @@ def _self_test_config() -> list[str]:
         (runtime / "keys" / "hmac.key").write_text("k\n", encoding="utf-8")
         for secret in (runtime / "identity-map.json", runtime / "keys" / "hmac.key"):
             secret.chmod(DEFAULT_SECRET_MODE)
+        # The off-server store holds the same two file names with the same bytes,
+        # which is the state the 7-day copy cycle is supposed to leave.
+        off_server = runtime / "off-server"
+        off_server.mkdir()
+        for secret in (runtime / "identity-map.json", runtime / "keys" / "hmac.key"):
+            copy = off_server / secret.name
+            shutil.copy2(secret, copy)
+            copy.chmod(DEFAULT_SECRET_MODE)
         if found := drill(
             DrillRequest(
                 archive=archive,
@@ -760,6 +839,7 @@ def _self_test_secrets() -> list[str]:
         config: Record = {
             "identityMap": {"path": "identity-map.json"},
             "hmacKey": {"path": "hmac.key"},
+            "backup": {"keyCopyDir": "copies"},
         }
         found = secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now())
         errs += [
@@ -774,6 +854,7 @@ def _self_test_secrets() -> list[str]:
         # mode check this suite is for.
         for name in ("identity-map.json", "hmac.key"):
             (scratch / name).chmod(DEFAULT_SECRET_MODE)
+        errs += _self_test_key_copies(scratch)
         if found := secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now()):
             errs.append(f"self-test: a present key and map were reported missing: {found}")
         # A world-readable identity map passes every presence and age check and
@@ -790,6 +871,7 @@ def _self_test_secrets() -> list[str]:
         shared: Record = {
             "identityMap": {"path": "identity-map.json", "permissions": "0640"},
             "hmacKey": {"path": "hmac.key"},
+            "backup": {"keyCopyDir": "copies"},
         }
         (scratch / "identity-map.json").chmod(0o640)
         if found := secrets_errors(shared, scratch, KEY_MAX_AGE_HOURS, _now()):
@@ -830,6 +912,7 @@ def _self_test_secrets() -> list[str]:
         backslashed: Record = {
             "identityMap": {"path": "identity-map.json"},
             "hmacKey": {"path": "keys\\hmac.key"},
+            "backup": {"keyCopyDir": "copies"},
         }
         if found := secrets_errors(backslashed, scratch, KEY_MAX_AGE_HOURS, _now()):
             errs.append(f"self-test: a Windows-separated key path was reported: {found}")
@@ -849,6 +932,67 @@ def _self_test_secrets() -> list[str]:
             errs.append(f"self-test: a drive-qualified key path was resolved wrongly: {foreign}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _self_test_key_copies(scratch: pathlib.Path) -> list[str]:
+    """The off-server copy store: named, populated, byte-identical, no wider
+    than the config allows.
+
+    Every other check in `secrets_errors` reads the live file, which is the one
+    a lost disk takes. A store that was never named, a copy that was never made,
+    a copy of a different key epoch, and a copy left world-readable are four
+    different ways for a deployment to look backed up and not be, and the first
+    three pass every other check the drill makes."""
+    errs: list[str] = []
+    config: Record = {
+        "identityMap": {"path": "identity-map.json"},
+        "hmacKey": {"path": "hmac.key"},
+        "backup": {"keyCopyDir": "copies"},
+    }
+    # A config that names no store: the drill can only see the two files the
+    # lost disk is about to take, and that is the finding.
+    unnamed = secrets_errors(
+        {"identityMap": {"path": "identity-map.json"}, "hmacKey": {"path": "hmac.key"}},
+        scratch,
+        KEY_MAX_AGE_HOURS,
+        _now(),
+    )
+    if not any("backup.keyCopyDir" in e for e in unnamed):
+        errs.append(f"self-test: a config naming no copy store passed: {unnamed}")
+    copies = scratch / "copies"
+    if copies.is_dir():
+        shutil.rmtree(copies)
+    missing = secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now())
+    if not any("no off-server copy" in e for e in missing):
+        errs.append(f"self-test: a copy store holding nothing passed: {missing}")
+
+    copies.mkdir()
+    for name in ("identity-map.json", "hmac.key"):
+        shutil.copy2(scratch / name, copies / name)
+        (copies / name).chmod(DEFAULT_SECRET_MODE)
+    if found := secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now()):
+        errs.append(f"self-test: a faithful copy store was reported: {found}")
+
+    # A copy of a different key epoch is present and current and resolves a
+    # different map, which is the failure presence and age checks cannot see.
+    (copies / "hmac.key").write_text("a different key\n", encoding="utf-8")
+    (copies / "hmac.key").chmod(DEFAULT_SECRET_MODE)
+    diverged = secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now())
+    if not any("differs from" in e and "hmacKey" in e for e in diverged):
+        errs.append(f"self-test: a copy of a different key was reported clean: {diverged}")
+    shutil.copy2(scratch / "hmac.key", copies / "hmac.key")
+    (copies / "hmac.key").chmod(DEFAULT_SECRET_MODE)
+
+    # A copy store that is more permissive than the config declares hands the
+    # re-identification key to everyone who can reach the store, which is a
+    # wider blast radius than the live file ever had.
+    (copies / "hmac.key").chmod(0o644)
+    if not any("off-server copy" in e and "0644" in e for e in secrets_errors(
+        config, scratch, KEY_MAX_AGE_HOURS, _now()
+    )):
+        errs.append("self-test: a world-readable off-server key copy was not reported")
+    (copies / "hmac.key").chmod(DEFAULT_SECRET_MODE)
     return errs
 
 

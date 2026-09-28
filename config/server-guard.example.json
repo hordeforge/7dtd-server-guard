@@ -86,6 +86,9 @@
     "permissions": "0600",
     "rotationDays": 90
   },
+  "backup": {
+    "keyCopyDir": "ServerGuard-backup/keys"
+  },
   "queues": {
     "actionQueueMax": 4096,
     "evidenceQueueMax": 8192
