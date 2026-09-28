@@ -58,12 +58,11 @@ from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import cli_harness
 import config_check as cc
 import evidence_check as ec
 import evidence_export as ee
 import report_text
-from self_test_common import main_contract_errors
+from self_test_common import Case, main_contract_errors
 
 Record = dict[str, Any]
 
@@ -899,7 +898,7 @@ def _main_contract_self_test() -> list[str]:
     A scheduled drill branches on these: 0 restored, 1 the drill found a problem
     (an archive that does not exist included), 2 for a usage error.
     """
-    cases: list[cli_harness.Case] = [
+    cases: list[Case] = [
         ("bare run", [], USAGE_ERROR),
         ("--archive without --work", ["--archive", "/nonexistent"], USAGE_ERROR),
         (

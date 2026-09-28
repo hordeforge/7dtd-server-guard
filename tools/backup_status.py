@@ -50,7 +50,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
 import evidence_export as ee
 import report_text
-from self_test_common import main_contract_errors
+from self_test_common import Case, main_contract_errors
 
 Record = dict[str, Any]
 
@@ -532,7 +532,7 @@ def _self_test_main_contract() -> list[str]:
     The scheduler branches on these: 0 the RPO is met, 1 the window is open (a
     root that does not exist included), 2 for a usage error.
     """
-    cases: list[tuple[str, list[str], int]] = [
+    cases: list[Case] = [
         ("bare run", [], USAGE_ERROR),
         (
             "--max-age-hours out of range",
