@@ -32,19 +32,26 @@ or is not renderable, 2 usage error.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import pathlib
+import shutil
 import sys
 import tomllib
 import uuid
 from typing import Any
 
 import report_text
+from self_test_common import main_contract_errors
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "uv.lock"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
+# The code main returns for a run it refuses before it starts work. argparse
+# exits 2 on its own for a bad flag, so the two agree.
+USAGE_ERROR = 2
 
 SPEC_VERSION = "1.6"
 COMPONENT_TYPE = "library"
@@ -419,6 +426,8 @@ def _self_test() -> int:
     else:
         failures.append("a dependency with no registry entry rendered instead of raising")
 
+    failures += _self_test_main_contract()
+
     if failures:
         print("sbom: self-test FAILED", file=sys.stderr)
         for item in failures:
@@ -426,6 +435,78 @@ def _self_test() -> int:
         return 1
     print("sbom: self-test passed")
     return 0
+
+
+def _self_test_main_contract() -> list[str]:
+    """Pin the exit codes, the stream split, and the two ways the document is written.
+
+    `make sbom` writes the document to a file and CI reads it back, so the stdout
+    document and the `--out` file have to be the same bytes: a difference there
+    is a green build whose committed inventory nobody regenerated. A run that
+    cannot write says so on stdout as well as stderr, because the one-line
+    verdict is what a redirected run records, and a lock that is missing is a
+    check failure (1), not a usage error, so the caller retries rather than
+    reporting a bad invocation.
+    """
+    errs: list[str] = []
+    scratch = ROOT / ".scratch" / "sbom-self-test"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True, exist_ok=True)
+    try:
+        document, code = _run_main([])
+        if code != 0:
+            errs.append(f"bare run: exit {code}, expected 0")
+        written = scratch / "nested" / "sbom.json"
+        out_errs = main_contract_errors(
+            [("--out", ["--out", str(written)], 0)],
+            script="sbom.py",
+            run=main,
+            usage_error=USAGE_ERROR,
+        )
+        errs += out_errs
+        if not written.is_file():
+            errs.append(f"--out did not write {written}")
+        elif written.read_text(encoding="utf-8") != document:
+            errs.append("the --out file is not byte-identical to the stdout document")
+        # A regular file where a parent directory belongs: the write fails after
+        # the document is rendered, which is the case whose stdout verdict was
+        # empty and left a redirected run with nothing to read.
+        blocker = scratch / "not-a-directory"
+        blocker.write_text("x", encoding="utf-8")
+        errs += main_contract_errors(
+            [("--out under a regular file", ["--out", str(blocker / "x.json")], 1)],
+            script="sbom.py",
+            run=main,
+            usage_error=USAGE_ERROR,
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    global LOCK_PATH
+    saved = LOCK_PATH
+    try:
+        LOCK_PATH = ROOT / "no-such-lock-for-the-self-test.toml"
+        errs += main_contract_errors(
+            [("missing lock", [], 1)], script="sbom.py", run=main, usage_error=USAGE_ERROR
+        )
+    finally:
+        LOCK_PATH = saved
+    return errs
+
+
+def _run_main(argv: list[str]) -> tuple[str, int]:
+    """Run main with the given arguments and return (stdout, exit code)."""
+    out = io.StringIO()
+    saved = sys.argv
+    sys.argv = ["sbom.py", *argv]
+    try:
+        with contextlib.redirect_stdout(out):
+            code = main()
+    except SystemExit as exc:
+        code = int(exc.code or 0)
+    finally:
+        sys.argv = saved
+    return out.getvalue(), code
 
 
 def main() -> int:
@@ -452,6 +533,7 @@ def main() -> int:
         name, version = _project_identity()
         text = render(load(LOCK_PATH), name, version)
     except ValueError as exc:
+        print(f"sbom: no bill of materials was written: {exc}")
         print(f"sbom: {exc}", file=sys.stderr)
         return 1
 
@@ -461,8 +543,10 @@ def main() -> int:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(text, encoding="utf-8")
         except OSError as exc:
+            print(f"sbom: no bill of materials was written to {destination}")
             print(f"sbom: cannot write {destination}: {exc}", file=sys.stderr)
             return 1
+        print(f"sbom: wrote {destination}")
     else:
         sys.stdout.write(text)
     return 0
