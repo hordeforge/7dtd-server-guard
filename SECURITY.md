@@ -32,9 +32,12 @@ Shipped today: the Python tooling under `tools/` (evidence chain verification, e
 archiving, the restore drill, the backup-age check, config validation, and SBOM rendering) and
 the CI workflow. Two areas in particular, because they are where a mistake does damage today:
 
-- Any path an operator supplies that is used to create, copy, or delete a directory tree, in
-  `tools/evidence_export.py` (`--out`, `--archive`), `tools/restore_drill.py` (`--archive`,
-  `--work`, `--config`), `tools/backup_status.py` (`--root`), and `tools/sbom.py` (`--out`).
+- Any path an operator supplies that the tooling then creates, copies into, or deletes a
+  directory tree at: `tools/evidence_export.py` (`--out`, which is created with
+  `mkdir(parents=True)` and swept of stale staging trees), `tools/restore_drill.py` (`--work`,
+  which the restore writes into), and `tools/sbom.py` (`--out`, whose parent directories are
+  created). `--archive` on the first two and `--root` on `tools/backup_status.py` are read-only
+  and are not in this class.
 - Anything that weakens or forges an evidence hash chain, or that corrupts an archive so a
   restore cannot be proven.
 
