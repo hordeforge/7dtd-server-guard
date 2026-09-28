@@ -70,15 +70,24 @@ MAX_DEFAULTS_DEPTH = 20
 SECRET_ENV_SECTIONS = (("webhook", "urlEnv"), ("dashboard", "secretEnv"))
 # The key that turns a section on in both of them.
 ENABLED_KEY = "enabled"
+# The mode a detector loads at when the file names none: the config schema's
+# `modes` pattern default, which every detector's spec default_mode also spells
+# today. doccheck holds the example to the spec's per-detector default, so a
+# detector whose spec default ever rose is caught there rather than here.
+DEFAULT_MODE = "observe"
 
 
 def effective_config(config: Json, schema: Json, depth: int = 0) -> Json:
-    """The config with every declared schema default filled in.
+    """The config with every declared default filled in.
 
-    Defaults come from the schema, not from the example file, so this is the
-    config the loader builds when a key is absent. patternProperties subtrees
-    (per-detector modes and thresholds) are left alone: their defaults are the
-    spec's, applied by the registry, not by a schema walk.
+    Defaults come from the schema and the detector registry, not from the example
+    file, so this is the config the loader builds when a key is absent, and the
+    one config_hash digests. The two sources are both required: the schema
+    declares defaults for the fixed sections, and a schema walk cannot fill the
+    patternProperties subtrees (`modes`, `thresholds`), whose entries are the
+    registry's per detector. Leaving those out made the digest here disagree
+    with the documented effective config, which SCHEMAS.md says a manifest
+    default change bumps (Config hash).
     """
     if depth > MAX_DEFAULTS_DEPTH or not isinstance(config, dict):
         return config
@@ -96,7 +105,40 @@ def effective_config(config: Json, schema: Json, depth: int = 0) -> Json:
             continue
         if sub.get("properties"):
             out[key] = effective_config(out[key], sub, depth + 1)
+    if depth == 0:
+        _apply_registry_defaults(out)
     return out
+
+
+def _apply_registry_defaults(out: dict[str, Json]) -> None:
+    """Fill the per-detector subtrees a schema walk cannot reach.
+
+    `modes` and `thresholds` are patternProperties over detector ids, so the
+    schema declares one default for every key rather than a default per
+    detector. The loader applies the registry's: each detector's spec default
+    mode, and each manifest threshold's declared default. An entry the operator
+    spelled out is never touched, and a detector the registry does not know keeps
+    whatever the file said, so an invalid key is still the check's to report.
+    """
+    modes = out.get("modes")
+    if not isinstance(modes, dict):
+        modes = {}
+        out["modes"] = modes
+    entries = _manifest_detectors()
+    for detector_id, mode in _registry_default_modes(entries).items():
+        modes.setdefault(detector_id, mode)
+    thresholds = out.get("thresholds")
+    if not isinstance(thresholds, dict):
+        thresholds = {}
+        out["thresholds"] = thresholds
+    for detector_id, keys in _manifest_thresholds(entries).items():
+        block = thresholds.get(detector_id)
+        if not isinstance(block, dict):
+            block = {}
+            thresholds[detector_id] = block
+        for key, entry in keys.items():
+            if "default" in entry:
+                block.setdefault(key, copy.deepcopy(entry["default"]))
 
 
 def config_hash(effective: Json) -> str:
@@ -107,9 +149,10 @@ def config_hash(effective: Json) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _manifest_thresholds() -> dict[str, dict[str, Json]]:
-    """Per-detector threshold entries from the generated manifest, keyed by threshold
-    key. Detectors the manifest does not carry are absent, and every threshold set
+def _manifest_detectors() -> dict[str, Json]:
+    """detector id -> its generated manifest entry.
+
+    Detectors the manifest does not carry are absent, and every config set
     naming one is reported rather than skipped."""
     path = ROOT / "config" / "detector-config-manifest.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -117,10 +160,35 @@ def _manifest_thresholds() -> dict[str, dict[str, Json]]:
     if not isinstance(entries, list):
         return {}
     return {
-        entry["detectorId"]: dc._thresholds_by_key(entry.get("thresholds"))
+        entry["detectorId"]: entry
         for entry in entries
         if isinstance(entry, dict) and isinstance(entry.get("detectorId"), str)
     }
+
+
+def _manifest_thresholds(entries: dict[str, Json] | None = None) -> dict[str, dict[str, Json]]:
+    """Per-detector threshold entries from the generated manifest, keyed by threshold
+    key. `entries` is the manifest read by the caller, when it already has one."""
+    return {
+        detector_id: dc._thresholds_by_key(entry.get("thresholds"))
+        for detector_id, entry in (_manifest_detectors() if entries is None else entries).items()
+    }
+
+
+def _registry_default_modes(entries: dict[str, Json] | None = None) -> dict[str, str]:
+    """The mode every registered detector loads at when the file names none.
+
+    The manifest carries the spec's per-detector `defaultMode`, which is the
+    loader's default; the schema's pattern default covers a registered detector
+    the manifest does not. doccheck holds the two in step, so a detector whose
+    spec default mode rises moves every config that did not name it.
+    """
+    known = _manifest_detectors() if entries is None else entries
+    modes: dict[str, str] = {}
+    for detector_id in sorted(dc.spec_ids()):
+        declared = known.get(detector_id, {}).get("defaultMode")
+        modes[detector_id] = declared if isinstance(declared, str) else DEFAULT_MODE
+    return modes
 
 
 def registry_errors(config: Json) -> list[str]:
@@ -342,6 +410,54 @@ def _effective_self_test(example: Json, failures: list[str]) -> None:
     del defaulted["console"]
     if config_hash(effective_config(defaulted, schema)) != config_hash(effective):
         failures.append("config hash differs between an absent key and its declared default")
+
+    # The per-detector subtrees are the schema walk's blind spot, and the digest
+    # has to cover them: a file that names no mode for a detector and one that
+    # names the registry's default are the same effective config, and a manifest
+    # default change has to move the hash (SCHEMAS.md -> Config schema).
+    registry = _registry_default_modes()
+    silent = copy.deepcopy(example)
+    del silent["modes"]
+    del silent["thresholds"]
+    spelled = copy.deepcopy(example)
+    spelled["modes"] = dict(registry)
+    spelled["thresholds"] = {
+        detector_id: {key: entry["default"] for key, entry in keys.items() if "default" in entry}
+        for detector_id, keys in _manifest_thresholds().items()
+    }
+    if config_hash(effective_config(silent, schema)) != config_hash(
+        effective_config(spelled, schema)
+    ):
+        failures.append(
+            "config hash differs between an absent per-detector mode and its registry default"
+        )
+    registered = dc.spec_ids()
+    if set(effective["modes"]) < registered:
+        failures.append("effective config does not carry a mode for every registered detector")
+    known = {d for d, keys in _manifest_thresholds().items() if keys}
+    if not known <= set(effective["thresholds"]):
+        failures.append(
+            "effective config does not carry a threshold block for every manifest detector"
+        )
+
+    # A value the operator set is the operator's: the registry defaults never
+    # overwrite it, so a raised mode and a retuned threshold are the ones the hash
+    # carries.
+    detector_id = min(registered)
+    raised = copy.deepcopy(example)
+    raised["modes"][detector_id] = "correct"
+    if effective_config(raised, schema)["modes"][detector_id] != "correct":
+        failures.append("effective config overwrote a mode the file spelled out")
+    retuned = copy.deepcopy(example)
+    threshold_id = min(set(retuned["thresholds"]) & known)
+    key = min(retuned["thresholds"][threshold_id])
+    declared = _manifest_thresholds()[threshold_id][key]
+    value = declared["range"][0]
+    if value == declared.get("default"):
+        value = declared["range"][1]
+    retuned["thresholds"][threshold_id][key] = value
+    if effective_config(retuned, schema)["thresholds"][threshold_id][key] != value:
+        failures.append("effective config overwrote a threshold the file spelled out")
 
 
 def _load_self_test(failures: list[str]) -> None:

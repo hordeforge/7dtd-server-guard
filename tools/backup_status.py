@@ -63,9 +63,10 @@ USAGE_ERROR = 2
 # of the newest verifying archive. An archive exactly this old is at the limit
 # and still counts; past it, the window is open.
 DEFAULT_MAX_AGE_HOURS = 24.0
-# Archive directories are named evidence-<UTC stamp>; anything else in the root
-# is not this tool's business and is left alone rather than guessed at.
-ARCHIVE_PREFIX = "evidence-"
+# Archive directories are named evidence-<UTC stamp>, the name the exporter
+# writes; anything else in the root is not this tool's business and is left alone
+# rather than guessed at.
+ARCHIVE_PREFIX = ee.ARCHIVE_DIR_PREFIX
 
 
 def _now() -> dt.datetime:

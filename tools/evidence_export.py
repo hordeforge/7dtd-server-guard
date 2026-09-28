@@ -74,7 +74,8 @@ STAGING_PREFIX = f".staging-{ARCHIVE_DIR_PREFIX}"
 # (a source path, the creation stamp, a count) is detectable. The per-file
 # SHA-256s prove the archived bytes; this proves the attestation describing them.
 MANIFEST_DIGEST_FIELD = "manifestSha256"
-SEGMENT_GLOB = "evidence-*.jsonl"
+# A segment is whatever the chain verifier calls one, spelled in one place there.
+SEGMENT_GLOB = ec.SEGMENT_GLOB
 # A raw line separator inside a record's text. `str.splitlines()` treats it as a
 # line break and the chain reader's line iteration does not, which is the whole
 # reason the record count is not computed with splitlines (see _record_count).
@@ -155,8 +156,13 @@ def _record_count(path: pathlib.Path) -> int:
 
 
 def archive_members(source: pathlib.Path, index_name: str) -> list[pathlib.Path]:
-    """The files an archive must contain: every segment, plus the index when present."""
-    members = sorted(source.glob(SEGMENT_GLOB))
+    """The files an archive must contain: every segment, plus the index when present.
+
+    Segments come in the order the chain links them, the same order
+    `verify_dir` walks them, so an archive and the walk that checks it agree on
+    what the first record of a restore is.
+    """
+    members = sorted(source.glob(SEGMENT_GLOB), key=ec.segment_sort_key)
     index = source / index_name
     if index.is_file():
         members.append(index)

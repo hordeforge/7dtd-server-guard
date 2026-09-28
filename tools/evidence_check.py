@@ -62,6 +62,10 @@ SAMPLE = ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
 # temp dir: /tmp is tmpfs on this host, so the file would be charged to RAM.
 SCRATCH = ROOT / ".scratch"
 SEGMENT_DIGITS = re.compile(r"(\d+)")
+# What names a segment of the evidence stream. The exporter, the restore drill and
+# the backup status check all decide which files are the evidence; one spelling
+# here keeps them deciding over the same set.
+SEGMENT_GLOB = "evidence-*.jsonl"
 # How many recently walked eventIds the duplicate-append check remembers. A
 # repeated record is written by a retry or a crash-restart replay, so the second
 # copy lands within the retry horizon, not months later; the window is that
@@ -361,9 +365,9 @@ def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
     # then read, or archive, a file that is not part of this evidence stream.
     if not valid_file_name(index_name):
         return [f"--index {index_name!r} is not a plain file name inside the evidence directory"]
-    segments = sorted(evidence_dir.glob("evidence-*.jsonl"), key=segment_sort_key)
+    segments = sorted(evidence_dir.glob(SEGMENT_GLOB), key=segment_sort_key)
     if not segments:
-        return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
+        return [f"no {SEGMENT_GLOB} segments found in {evidence_dir}"]
     # The index name is matched against the directory's own entries, not joined
     # onto it: on a case-insensitive host a joined name opens a differently
     # spelled file, and the cross-check below would then compare a spelling no
