@@ -38,9 +38,12 @@ Checks:
       patch bump.
   17. Every shipped fuzzer and every tool exposing `--self-test` is reachable from a
       make target, and the FUZZERS registry matches the order `make test-tools` runs.
-  16. Every third-party action a workflow runs is pinned to a 40-character commit SHA
+  18. Every third-party action a workflow runs is pinned to a 40-character commit SHA
       and carries a trailing release comment, so a dependabot bump cannot leave the
       workflow claiming a version it no longer runs.
+  19. Every declared dependency is used: each distribution in pyproject.toml is
+      imported by shipped Python or run by a make target, and every third-party
+      import resolves to a declared distribution.
 
 Exit codes: 0 clean, 1 the gate found issues, 2 usage error. The one-line summary goes to
 stdout and the
@@ -51,6 +54,7 @@ stream and the diagnostics on the other.
 from __future__ import annotations
 
 import argparse
+import ast
 import itertools
 import json
 import math
@@ -1611,6 +1615,127 @@ def check_test_harness_registry() -> list[str]:
     return _harness_registry_issues(makefile, harnesses, self_test_tools)
 
 
+# Distribution name -> import name, for a dependency whose import name is not the
+# normalized distribution name. A contributor adding one records it here: nothing in
+# the tree names the distribution otherwise, so without the entry a used dependency
+# reads as unused and the fix would be to delete live code.
+IMPORT_NAME_ALIASES = {"pyyaml": "yaml"}
+
+# Stub-only distributions carry type information for a runtime package and are never
+# imported by name; mypy resolves them from the normalized distribution name. They
+# are exempt from the import side of the check for that reason.
+STUB_DIST_PREFIX = "types-"
+STUB_DIST_SUFFIX = "-stubs"
+
+
+def _dist_name(requirement: str) -> str:
+    """The distribution name of a PEP 508 requirement, lowercased.
+
+    Everything from the first version specifier, extras marker, or URL on is
+    dropped, so `PyYAML>=6,<7` and `black==26.5.1` yield the bare name.
+    """
+    return re.split(r"[\s\[<>=!~;,@()]", requirement, maxsplit=1)[0].strip().lower()
+
+
+def _normalized(name: str) -> str:
+    """PEP 503 name normalization: case and separator insensitive."""
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+def _is_stub_dist(dist: str) -> bool:
+    return dist.startswith(STUB_DIST_PREFIX) or dist.endswith(STUB_DIST_SUFFIX)
+
+
+def _shipped_python() -> list[pathlib.Path]:
+    """Every Python file this repo ships, the way the other tree reads do it."""
+    return sorted(
+        p
+        for p in ROOT.rglob("*.py")
+        if not (SKIP_DIRS & set(p.parts)) and "__pycache__" not in p.parts
+    )
+
+
+def _imported_top_level(paths: list[pathlib.Path]) -> tuple[set[str], list[str]]:
+    """Top-level names bound by an import, and the files that could not be parsed.
+
+    Parsed with `ast` rather than a text scan, so a module named in a docstring or
+    a comment is not counted as a dependency's user. A relative `from . import x`
+    binds a local module and is skipped, like a package's own submodules.
+    """
+    names: set[str] = set()
+    unreadable: list[str] = []
+    for path in paths:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            unreadable.append(f"{path.relative_to(ROOT)}: {type(exc).__name__}: {exc}")
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                names.add(node.module.split(".")[0])
+    return names, unreadable
+
+
+def _dependency_issues(groups: dict[str, list[str]], imports: set[str], makefile: str) -> list[str]:
+    """Both directions of the declared-versus-used dependency contract.
+
+    A distribution nothing imports and nothing runs is attack surface the project
+    pays install time for; an import no distribution provides is code that works
+    only because something else happens to be installed. Neither is visible from
+    the tree alone, and neither is what `uv sync --frozen` checks: the lock
+    faithfully installs what the manifest declares, including a declaration the
+    code stopped needing.
+
+    The Makefile is the usage site for a distribution run as a console script
+    (black, ruff, mypy), which is what the import set cannot see. It is matched
+    by name anywhere in the text, so a dependency named in a comment counts as
+    used: the cost of that miss is a stale declaration surviving one more
+    release, against the cost of failing the gate over a run that is still there.
+    """
+    out: list[str] = []
+    provides: set[str] = set()
+    for group, dists in groups.items():
+        for dist in dists:
+            name = IMPORT_NAME_ALIASES.get(dist, _normalized(dist))
+            provides.add(name)
+            if name in imports or re.search(rf"\b{re.escape(name)}\b", makefile):
+                continue
+            if _is_stub_dist(dist):
+                continue
+            out.append(
+                f"pyproject.toml: {group} dependency '{dist}' is neither imported by "
+                "shipped Python nor run by a make target, so remove it or use it"
+            )
+    for name in sorted(imports):
+        if name in provides:
+            continue
+        out.append(
+            f"shipped Python imports '{name}', which no pyproject.toml distribution "
+            "provides; declare it or stop importing it"
+        )
+    return out
+
+
+def check_dependency_declarations() -> list[str]:
+    """pyproject.toml must declare exactly the third-party code the tree uses."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = pyproject.get("project", {})
+    groups = {
+        "runtime": [_dist_name(r) for r in project.get("dependencies", [])],
+        **{
+            f"dev group '{group}'": [_dist_name(r) for r in dists]
+            for group, dists in pyproject.get("dependency-groups", {}).items()
+        },
+    }
+    py_files = _shipped_python()
+    imports, unreadable = _imported_top_level(py_files)
+    third_party = imports - set(sys.stdlib_module_names) - {p.stem for p in py_files}
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    return _dependency_issues(groups, third_party, makefile) + unreadable
+
+
 def check_backup_runbook() -> list[str]:
     """The evidence store is the one state an operator cannot regenerate, so the
     archive tooling and the recovery contract must stay in place together: a
@@ -1807,6 +1932,40 @@ def _action_pin_self_test() -> list[str]:
     return errs
 
 
+def _dependency_self_test() -> list[str]:
+    """The dependency check must fire on each drift it exists to catch.
+
+    Same shape as the registry self-test: every case below declares or imports
+    something the tree does not need, or leaves something the tree needs
+    undeclared, and names the issue the check is expected to raise.
+    """
+    makefile = "lint: guard-python\n\t$(UV) black --check .\n\t$(UV) ruff check .\n"
+    errs: list[str] = []
+    if issues := _dependency_issues(
+        {"runtime": ["pyyaml"], "dev group 'dev'": ["black", "types-pyyaml"]},
+        {"yaml"},
+        makefile,
+    ):
+        errs.append(f"self-test: a used dependency set was reported unused: {issues}")
+    cases: tuple[tuple[dict[str, list[str]], set[str], str], ...] = (
+        # A declaration nothing imports and nothing runs: leftover install surface.
+        ({"runtime": ["pyyaml", "requests"]}, {"yaml"}, "'requests' is neither imported"),
+        # An import nothing declares: green on a developer's machine, red in CI.
+        ({"runtime": []}, {"yaml"}, "imports 'yaml'"),
+        # A distribution invoked as a console script, not imported: still in use.
+        ({"dev group 'dev'": ["ruff"]}, set(), ""),
+    )
+    for groups, imports, expected in cases:
+        issues = _dependency_issues(groups, imports, makefile)
+        if expected and not any(expected in issue for issue in issues):
+            errs.append(f"self-test: {expected!r} went unreported, got {issues}")
+        if not expected and issues:
+            errs.append(f"self-test: a script-run dependency was reported broken: {issues}")
+    if live := check_dependency_declarations():
+        errs.append(f"self-test: this repository's own dependencies are inconsistent: {live}")
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -1817,7 +1976,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        errs = [*self_test(), *_harness_registry_self_test()]
+        errs = [*self_test(), *_harness_registry_self_test(), *_dependency_self_test()]
         print(f"doccheck self-test: {len(errs)} issue(s)")
         for err in errs:
             print("  " + err, file=sys.stderr)
@@ -1843,6 +2002,7 @@ def main() -> int:
         ("backup runbook", check_backup_runbook),
         ("test harness registry", check_test_harness_registry),
         ("CI action pins", check_action_pins),
+        ("dependency declarations", check_dependency_declarations),
         ("required docs", check_required_docs),
     ]
     failures = dict(_run_check(name, check) for name, check in checks)

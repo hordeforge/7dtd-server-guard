@@ -75,7 +75,8 @@ bug to fix in the same change.
     │                          tool in here follows
     ├── detector_spec.yaml       canonical detector spec (single source of truth)
     ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
-    ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain)
+    ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain,
+    │                            declared-vs-used dependencies)
     ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
     ├── evidence_export.py       verified evidence archive export and restore drill
     │                            (make export-evidence, make backup, make verify-archive)

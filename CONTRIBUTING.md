@@ -111,6 +111,14 @@ is regenerated with `uv lock` and reviewed like any other change. `make sbom` re
 what the lock holds as CycloneDX 1.6, with each package marked `runtime` or `dev`, so
 the blast radius of a release is readable without running uv.
 
+`make check` enforces the other half of that contract: every distribution declared in
+`pyproject.toml` is imported by shipped Python or run by a make target, and every
+third-party import resolves to a declared distribution. A declaration the code stopped
+needing, and an import that only works because something else happens to be installed,
+both fail the gate. A distribution whose import name is not its own name
+(`PyYAML` imports as `yaml`) records that mapping in `IMPORT_NAME_ALIASES` in
+`tools/doccheck.py`; without the entry the used dependency reads as unused.
+
 ## Before you open a change
 
 - `make ci` green, and `make detectors` leaves the tree clean.

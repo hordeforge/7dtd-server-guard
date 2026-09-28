@@ -46,6 +46,15 @@ above reserves minor bumps for that.
 
 ### Added
 
+- A doccheck rule that `pyproject.toml` declares exactly the third-party code the tree
+  uses: every distribution in `[project] dependencies` and every `[dependency-groups]`
+  entry is imported by shipped Python or run by a make target, and every third-party
+  import resolves to a declared distribution. `uv sync --frozen` installs whatever the
+  manifest declares, including a declaration the code stopped needing, so neither drift
+  was visible from the lock or from the tree alone. Imports are read with `ast`, so a
+  module named in a docstring is not a dependency's user, and a distribution whose
+  import name differs from its own records the mapping in `IMPORT_NAME_ALIASES`.
+  `tools/doccheck.py --self-test` covers the rule.
 - A doccheck rule that the Makefile's test registries cover the tree: every
   `tools/fuzz_*.py` is in `FUZZERS` and run by `make test-tools` in that order, and every
   `tools/*.py` exposing `--self-test` is run by `make test-tools` or `make exercise`. A
