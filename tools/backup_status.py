@@ -206,7 +206,19 @@ def report(
             "the RPO window is open in full"
         )
         return errs
-    if status.age_hours > max_age_hours:
+    if status.age_hours < 0:
+        # An age is a duration, so it is negative when createdUtc names an instant
+        # that has not happened: a clock stepped back, a host ahead of this one, or
+        # a stamp entered by hand. A negative age is younger than every bound, so
+        # the RPO comparison below would read the window closed and the run would
+        # exit 0 over an archive that attests to no moment in the stream. The bytes
+        # may well be sound; what they are dated to is not, so it is named.
+        errs.append(
+            f"{status.fresh.name}: newest verifying archive is stamped "
+            f"{abs(status.age_hours):.1f} h in the future; createdUtc names an instant that "
+            f"has not happened, so it cannot open the {max_age_hours:.0f} h RPO"
+        )
+    elif status.age_hours > max_age_hours:
         errs.append(
             f"{status.fresh.name}: newest verifying archive is {status.age_hours:.1f} h old, "
             f"past the {max_age_hours:.0f} h RPO; evidence written since it is not backed up"
@@ -265,6 +277,44 @@ def _self_test() -> list[str]:
     return errs
 
 
+def _self_test_future_stamp() -> list[str]:
+    """An archive stamped after "now" is reported, not counted as the newest backup.
+
+    A stamp in the future is a clock step or a hand-entered value. Its age is a
+    negative number of hours, which is below every bound, so an RPO check that
+    only compares against the maximum calls the window closed and exits 0 over an
+    archive that covers no moment of the stream. The archive itself verifies: the
+    defect is the instant it claims, and the finding has to name that.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "backup-status-self-test-future"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        ee.write_sample_stream(source)
+        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20991231T235959Z"):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        now = dt.datetime(2026, 7, 21, 0, 1, tzinfo=dt.UTC)
+        status = check(archives, now=now)
+        if status.age_hours is None or status.age_hours >= 0:
+            return [f"self-test: a future stamp did not read as a negative age: {status}"]
+        found = report(status, archives)
+        if not any("in the future" in e for e in found):
+            errs.append(f"self-test: a future-stamped archive was not reported: {found}")
+        if "past the" in "".join(found):
+            errs.append(f"self-test: a future-stamped archive was reported as merely old: {found}")
+        verdict = _verdict(status, archives)
+        # Match the age the verdict would print if it dropped the abs(), not a
+        # substring of the whole line: the root path is part of it and can carry
+        # anything, including a "-0" of its own.
+        if f"{-abs(status.age_hours):.1f} h" in verdict:
+            errs.append(f"self-test: the verdict printed a negative age: {verdict}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def _report(label: str, errors: list[str]) -> int:
     """The one-line verdict on stdout and the per-issue detail on stderr, whether
     or not the run found something (tools/README.md), so a redirected run records
@@ -281,6 +331,14 @@ def _report(label: str, errors: list[str]) -> int:
 def _verdict(status: BackupStatus, root: pathlib.Path) -> str:
     if status.fresh is None or status.age_hours is None:
         return f"backup status {root}: none of the {status.total} present archive(s) verifies"
+    if status.age_hours < 0:
+        # A duration in the future is not an age; report() names it as a finding,
+        # and this line must not print it as a negative number of hours.
+        return (
+            f"backup status {root}: newest verifying archive {status.fresh.name} "
+            f"is stamped {abs(status.age_hours):.1f} h in the future "
+            f"of {status.total} present"
+        )
     return (
         f"backup status {root}: newest verifying archive {status.fresh.name} "
         f"is {status.age_hours:.1f} h old of {status.total} present"
@@ -479,6 +537,7 @@ def main() -> int:
             *_self_test(),
             *_self_test_older_corrupt(),
             *_self_test_undated(),
+            *_self_test_future_stamp(),
             *_self_test_gap(),
             *_self_test_main_contract(),
         ]

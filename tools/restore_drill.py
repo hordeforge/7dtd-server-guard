@@ -219,7 +219,17 @@ def secrets_errors(
             errs.append(f"{section}: {path} is zero bytes; an empty key is not a key")
             continue
         age_hours = (now.timestamp() - path.stat().st_mtime) / 3600
-        if age_hours > max_age_hours:
+        if age_hours < 0:
+            # An mtime later than now means the clock stepped, or the file came
+            # back from a copy with its timestamps preserved. A negative age is
+            # below every bound, so the comparison below would call the key
+            # newer than the copy cycle allows and report the cycle as run.
+            errs.append(
+                f"{section}: {path} is stamped {abs(age_hours):.1f} h in the future; "
+                f"its mtime names an instant that has not happened, so the "
+                f"{max_age_hours:.0f} h backup cycle cannot be confirmed"
+            )
+        elif age_hours > max_age_hours:
             errs.append(
                 f"{section}: {path} was last written {age_hours:.1f} h ago, past the "
                 f"{max_age_hours:.0f} h backup cycle; the scheduled copy has not run"
@@ -514,6 +524,14 @@ def _self_test_secrets() -> list[str]:
             "zero bytes" in e for e in secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now())
         ):
             errs.append("self-test: a zero-byte key was not reported")
+        # An mtime after now reads as a negative age, which is below every bound,
+        # so an unguarded comparison reports the copy cycle as run.
+        (scratch / "hmac.key").write_text("k\n", encoding="utf-8")
+        ahead = secrets_errors(
+            config, scratch, KEY_MAX_AGE_HOURS, _now() - dt.timedelta(days=KEY_COPY_CYCLE_DAYS * 2)
+        )
+        if not any("in the future" in e for e in ahead):
+            errs.append(f"self-test: a key stamped in the future was not reported: {ahead}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return errs
