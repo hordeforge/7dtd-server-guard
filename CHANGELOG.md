@@ -10,6 +10,8 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 This ships as 0.5.0, not a patch: the entries under Breaking change config validation, the
 evidence schema, and the exit codes a script reading the tool CLIs sees, and the 0.x policy
 above reserves minor bumps for that.
