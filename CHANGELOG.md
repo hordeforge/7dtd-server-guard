@@ -372,6 +372,19 @@ above reserves minor bumps for that.
   the top of `main()` (`tools/report_text.py`), so that text is reported in the
   `\udcff` spelling the JSON escape already used and the exit code still means
   something.
+- `tools/evidence_export.py` built one finding per entry in an archive manifest's
+  file list, with no cap, so a manifest naming a million files the archive does not
+  hold produced a million findings for a directory holding two. The manifest is
+  untrusted text, and the verifier runs on exactly the archive that came back
+  damaged from off-server media, which is where such a manifest is. The per-file
+  findings are now capped at 50, the way the chain errors already were, and the
+  report names how many it left out instead of implying it read everything. The
+  walk itself still accounts for every name, so the files-present-but-unlisted
+  check is unaffected.
+- `tools/replay_contract_check.py` materialized a path string for every non-finite
+  number in a trace before applying the reporting cap, so the cap bounded the
+  report and not the allocation. The walk now retains the first 5 paths and counts
+  the rest, and the "further non-finite value(s)" line is unchanged.
 - `config_check.py` exited 2 on a config file that could not be read, where
   `tools/README.md` -> Command-line contract and its own docstring make a path that
   does not exist a check failure (1). A deploy script branching on the code read a

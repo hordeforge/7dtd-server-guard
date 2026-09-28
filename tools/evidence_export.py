@@ -85,6 +85,15 @@ DEFAULT_INDEX_NAME = ec.DEFAULT_INDEX
 # Read/write block size for copying and hashing, so archive size does not set the
 # process's memory ceiling.
 COPY_CHUNK_BYTES = 1 << 20
+# How many per-file findings one archive verification reports. The file list comes
+# from the manifest, which is untrusted text: an entry naming a file the archive
+# does not hold is answered without reading a byte, so a manifest listing a million
+# of them costs a million findings for a directory holding one file. Past the cap
+# the walk continues, because it still has to account for every name against what
+# the archive holds, and the report says how many findings it left out rather than
+# implying it read everything. The chain errors below have the same cap, applied
+# where they are produced (evidence_check.MAX_REPORTED_CHAIN_ERRORS).
+MAX_REPORTED_FILE_ERRORS = 50
 # Archive-name stamp the self-tests pin, so a name collision under test is a
 # property of the export guard and not of when the test happened to run.
 SELF_TEST_STAMP = "20260723T120000Z"
@@ -572,26 +581,39 @@ def verify(archive: pathlib.Path) -> list[str]:
 
     errs: list[str] = []
     listed: set[str] = set()
+    hidden = 0
+
+    def report(message: str) -> None:
+        """Keep the first MAX_REPORTED_FILE_ERRORS findings and count the rest."""
+        nonlocal hidden
+        if len(errs) < MAX_REPORTED_FILE_ERRORS:
+            errs.append(message)
+        else:
+            hidden += 1
+
     for entry in entries:
         name = _entry_name(entry)
         if name is not None and not _is_size(entry.get("bytes")):
             # The manifest is untrusted text, so a byte count that is not a
             # non-negative integer is reported as a malformed entry. Summing it
             # would raise out of the verifier instead of naming the bad entry.
-            errs.append(f"{MANIFEST_NAME}: file entry for {name} has no integer byte count")
+            report(f"{MANIFEST_NAME}: file entry for {name} has no integer byte count")
             listed.add(name)
             continue
-        errs += _member_errors(members, counts, entry)
+        for message in _member_errors(members, counts, entry):
+            report(message)
         if isinstance(entry, dict) and isinstance(entry.get("name"), str):
             listed.add(entry["name"])
     present = archive_file_names(archive)
-    errs.extend(
-        f"{name}: present in the archive but not in the manifest"
-        for name in sorted(present - listed)
-    )
+    for name in sorted(present - listed):
+        report(f"{name}: present in the archive but not in the manifest")
     for field in ("bytes", "records"):
         if _entry_total(entries, field) != manifest.get(f"total{field.capitalize()}"):
-            errs.append(f"total{field.capitalize()} does not match the sum of its file entries")
+            report(f"total{field.capitalize()} does not match the sum of its file entries")
+    if hidden:
+        errs.append(
+            f"{hidden} further file finding(s) not shown (capped at {MAX_REPORTED_FILE_ERRORS})"
+        )
     errs += [f"chain: {e}" for e in chain_errors]
     return errs
 
@@ -751,6 +773,50 @@ def _self_test_edited_manifest(archive: pathlib.Path) -> list[str]:
     path.write_text(text, encoding="utf-8")
     if verify(archive) != before:
         errs.append("self-test: the restored manifest did not verify as it did before")
+    return errs
+
+
+def _self_test_error_cap(archive: pathlib.Path) -> list[str]:
+    """A manifest naming far more files than the archive holds reports a bounded set.
+
+    The file list is untrusted text, and an entry naming a file the archive does not
+    hold is answered without reading a byte, so an uncapped walk turns one planted
+    manifest into one finding per entry for a directory holding two files. The
+    operator runs the verifier on exactly the archive that came back damaged, which
+    is where that manifest is. Past the cap the walk still accounts for every name,
+    so the report says what it left out rather than implying it read everything.
+    """
+    errs: list[str] = []
+    path = archive / MANIFEST_NAME
+    text = path.read_text(encoding="utf-8")
+    before = verify(archive)
+    try:
+        manifest = json.loads(text)
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"self-test: exported manifest unreadable: {exc}"]
+    planted = 500
+    entries: list[object] = [
+        {"name": f"planted-{i:04d}.jsonl", "sha256": "0" * 64, "bytes": 0, "records": 0}
+        for i in range(planted)
+    ]
+    manifest["files"] = entries
+    manifest["totalBytes"] = _entry_total(entries, "bytes")
+    manifest["totalRecords"] = _entry_total(entries, "records")
+    manifest[MANIFEST_DIGEST_FIELD] = manifest_digest(manifest)
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        found = verify(archive)
+    finally:
+        path.write_text(text, encoding="utf-8")
+    if verify(archive) != before:
+        errs.append("self-test: the restored manifest did not verify as it did before")
+    reported = [e for e in found if e.startswith("planted-")]
+    if len(reported) > MAX_REPORTED_FILE_ERRORS:
+        errs.append(f"self-test: verify reported {len(reported)} planted entries uncapped")
+    if not any("further file finding" in e for e in found):
+        errs.append("self-test: a capped verify did not say how many findings it left out")
+    if len(found) > MAX_REPORTED_FILE_ERRORS + 1:
+        errs.append(f"self-test: verify returned {len(found)} findings for a planted manifest")
     return errs
 
 
@@ -1126,6 +1192,7 @@ def self_test() -> list[str]:
         errs += _self_test_record_count()
         errs += _self_test_unreadable_files()
         if archives:
+            errs += _self_test_error_cap(archives[0])
             errs += _self_test_case_variant_name(archives[0])
             errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
     finally:

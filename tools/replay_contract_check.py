@@ -45,8 +45,11 @@ def _is_int(v: object) -> TypeGuard[int]:
     return isinstance(v, int) and not isinstance(v, bool)
 
 
-def non_finite_paths(value: object, path: str = "trace") -> list[str]:
-    """JSON paths of every NaN/Infinity in the trace, in document order.
+def non_finite_paths(
+    value: object, path: str = "trace", keep: int | None = None
+) -> tuple[list[str], int]:
+    """JSON paths of every NaN/Infinity in the trace, in document order, and how
+    many there were.
 
     Bare NaN and Infinity are not JSON, and the fingerprint and per-record
     hashes are computed by json.dumps with allow_nan=False, so a trace carrying
@@ -55,29 +58,36 @@ def non_finite_paths(value: object, path: str = "trace") -> list[str]:
     node's children are pushed in reverse so the visit order is the document's
     own: the reported cap names the earliest occurrences, not whichever paths
     happen to sort first.
+
+    `keep` bounds the paths retained, not the walk: a trace carrying a million
+    non-finite numbers still costs one list of `keep` strings here rather than a
+    million, and the count returned is over every occurrence so the caller can say
+    how many it left out instead of implying the cap was the whole answer.
     """
     found: list[str] = []
+    total = 0
     stack: list[tuple[object, str]] = [(value, path)]
     while stack:
         node, node_path = stack.pop()
         if isinstance(node, float) and not math.isfinite(node):
-            found.append(node_path)
+            total += 1
+            if keep is None or len(found) < keep:
+                found.append(node_path)
         elif isinstance(node, dict):
             stack.extend((v, f"{node_path}.{k}") for k, v in reversed(list(node.items())))
         elif isinstance(node, list):
             stack.extend((v, f"{node_path}[{i}]") for i, v in reversed(list(enumerate(node))))
-    return found
+    return found, total
 
 
 def non_finite_errors(value: object) -> list[str]:
     """Contract errors for non-finite numbers, capped so one bad trace cannot
     bury the rest of the report under thousands of paths."""
-    paths = non_finite_paths(value)
+    paths, total = non_finite_paths(value, keep=MAX_REPORTED_NON_FINITE)
     errors = [
-        f"trace: non-finite number at {p}: JSON has no NaN or Infinity literal"
-        for p in paths[:MAX_REPORTED_NON_FINITE]
+        f"trace: non-finite number at {p}: JSON has no NaN or Infinity literal" for p in paths
     ]
-    hidden = len(paths) - MAX_REPORTED_NON_FINITE
+    hidden = total - len(paths)
     if hidden > 0:
         errors.append(f"trace: {hidden} further non-finite value(s)")
     return errors
