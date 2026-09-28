@@ -226,13 +226,13 @@ def load(path: pathlib.Path) -> tuple[Json | None, str | None]:
     except OSError as exc:
         return None, f"cannot read {path}: {exc}"
     except UnicodeDecodeError as exc:
-        # An operator's file is hand-edited and a Windows editor, a Latin-1
-        # locale, or a copy through a legacy toolchain saves it in something
-        # other than UTF-8. The file is read as UTF-8 because that is what the
+        # An operator's file is hand-edited, and a Windows editor, a Latin-1
+        # locale, or a legacy code page (UTF-16, a Latin-1 save) leaves bytes
+        # that are not UTF-8. The file is read as UTF-8 because that is what the
         # shipped config and the loader's contract are, so the bytes are refused
         # by name here: UnicodeDecodeError is not a JSONDecodeError, and letting
-        # it out aborts the pre-deploy check with a traceback instead of the
-        # refusal every other unreadable file gets.
+        # it out aborts the pre-deploy check with a traceback that names no config
+        # instead of the refusal every other unreadable file gets.
         return None, f"{path} is not valid UTF-8: {exc}"
     except json.JSONDecodeError as exc:
         return None, f"{path} is not valid JSON: {exc}"
@@ -333,10 +333,13 @@ def _effective_self_test(example: Json, failures: list[str]) -> None:
 def _load_self_test(failures: list[str]) -> None:
     """A file the loader must refuse by name, not by raising out of the check.
 
-    A config saved as Latin-1 (or through a Windows editor's default code page)
-    is a hand-editing accident, not a corrupt deployment, and the operator needs
-    the file named back. The bytes below are the shipped example's opening with a
-    single Latin-1 e-acute spliced in, so only the encoding is wrong.
+    A config saved as Latin-1 (or through a Windows editor's default code page,
+    or as UTF-16) is a hand-editing accident, not a corrupt deployment, and the
+    operator needs the file named back. `load` returns the reason to the caller so
+    the gate reports the file; a UnicodeDecodeError escaping it would print a
+    traceback that names no config. The bytes below are the shipped example's
+    opening with a single Latin-1 e-acute spliced in, so only the encoding is
+    wrong.
     """
     scratch = ROOT / ".scratch" / "config-check-self-test"
     shutil.rmtree(scratch, ignore_errors=True)

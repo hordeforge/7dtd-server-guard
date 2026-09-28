@@ -320,6 +320,15 @@ above reserves minor bumps for that.
   same second, so the same-second collision refusal it checks failed whenever the
   second boundary fell between them (roughly one run in four). `export()` takes the
   archive stamp as an argument and the self-test passes a fixed one.
+- `evidence_export.py verify` raised a traceback instead of reporting the archive
+  when a member or the manifest itself could not be read, and `export` did the same
+  when the archive root could not be created or a segment's size could not be read.
+  A restore drill runs after the disk has already lost something, and an unreadable
+  file is one of the answers the drill exists to produce. All three are named in the
+  report now, and the other manifest entries are still checked.
+- `config_check.py` raised a traceback naming no config file when an operator's
+  hand-edited config was not UTF-8 (a legacy code page or a UTF-16 save). It reports
+  the file and the reason, like the other load failures.
 
 ## [0.4.1] - 2026-09-20
 

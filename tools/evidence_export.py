@@ -162,11 +162,14 @@ def preflight(source: pathlib.Path, index_name: str) -> tuple[list[pathlib.Path]
     members = archive_members(source, index_name)
     if not members:
         return [], [f"{source}: no {SEGMENT_GLOB} segments to archive"]
-    empty = [
-        f"{m.name}: zero-byte file; a zero-byte segment is a failed write, not a backup"
-        for m in members
-        if m.stat().st_size == 0
-    ]
+    try:
+        empty = [
+            f"{m.name}: zero-byte file; a zero-byte segment is a failed write, not a backup"
+            for m in members
+            if m.stat().st_size == 0
+        ]
+    except OSError as exc:
+        return [], [f"archive failed: {members[0].parent}: {exc}"]
     if empty:
         return [], empty
     return members, []
@@ -219,14 +222,17 @@ def export(
     if errs:
         return errs
 
-    dest = out_root / f"evidence-{stamp or utc_stamp()}"
+    dest = out_root / f"evidence-{stamp if stamp is not None else utc_stamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
     staging = out_root / f".staging-{dest.name}"
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
     try:
+        out_root.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True)
         staging_errors = stage(staging, source, members, index_name)
         if staging_errors:
             return staging_errors
@@ -248,22 +254,40 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _read_member(archive: pathlib.Path, name: str) -> tuple[str, int, int | None] | str:
+    """(sha256, bytes, records) for a named member, or the message naming why not.
+
+    A restore drill runs against whatever survived the disk, so a member the
+    filesystem refuses to read, or one the server wrote with a truncated multi-byte
+    sequence, is an answer the report carries. A traceback out of the verifier names
+    no file and leaves every other entry unchecked.
+    """
+    try:
+        path = ec.exact_child(archive, name)
+        if path is None or not path.is_file():
+            return f"{name}: listed in the manifest but missing from the archive"
+        sha, size = file_digest(path)
+        records = _record_count(path) if path.suffix == ".jsonl" else None
+    except (OSError, UnicodeDecodeError) as exc:
+        return f"{name}: unreadable: {exc}"
+    return sha, size, records
+
+
 def _member_errors(archive: pathlib.Path, entry: object) -> list[str]:
     """What one manifest file entry claims about its file, against the bytes on disk."""
     if not isinstance(entry, dict) or not ec.valid_file_name(entry.get("name")):
         return [f"{MANIFEST_NAME}: malformed file entry"]
     name = entry["name"]
-    path = ec.exact_child(archive, name)
-    if path is None or not path.is_file():
-        return [f"{name}: listed in the manifest but missing from the archive"]
-    sha, size = file_digest(path)
+    read = _read_member(archive, name)
+    if isinstance(read, str):
+        return [read]
+    sha, size, records = read
     if sha != entry.get("sha256"):
         return [f"{name}: sha256 mismatch (archive is corrupt or was edited)"]
     if size != entry.get("bytes"):
         return [f"{name}: byte count mismatch ({size} vs {entry.get('bytes')})"]
     if entry.get("records") is None:
         return []
-    records = _record_count(path)
     return (
         []
         if records == entry["records"]
@@ -302,7 +326,7 @@ def verify(archive: pathlib.Path) -> list[str]:
         return [f"{archive}: no {MANIFEST_NAME}"]
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         return [f"{MANIFEST_NAME}: unreadable: {exc}"]
     if not isinstance(manifest, dict):
         return [f"{MANIFEST_NAME}: manifest is not a JSON object"]
@@ -602,6 +626,48 @@ def _self_test_record_count() -> list[str]:
     return errs
 
 
+def _self_test_unreadable_files() -> list[str]:
+    """A file the filesystem refuses is named in the report, not raised out of it.
+
+    A restore drill runs after the disk has already lost something, so an unreadable
+    member or manifest is a case the verifier exists to report. A traceback names no
+    file and leaves every other entry unchecked. The case runs only where a mode bit
+    actually denies a read: a gate running as root cannot make the read fail, and
+    there it is skipped rather than reported as a pass.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-unreadable"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        _write_sample_stream(scratch)
+        manifest = build_manifest(scratch, scratch, "20260721T000000Z", DEFAULT_INDEX_NAME)
+        (scratch / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
+        for path, what in (
+            (scratch / manifest["files"][0]["name"], "an unreadable member"),
+            (scratch / MANIFEST_NAME, "an unreadable manifest"),
+        ):
+            path.chmod(0o000)
+            try:
+                path.read_bytes()
+            except OSError:
+                pass
+            else:
+                path.chmod(0o600)
+                continue
+            try:
+                found = verify(scratch)
+            except Exception as exc:
+                errs.append(f"self-test: verify raised {type(exc).__name__} on {what}: {exc}")
+            else:
+                if not any("unreadable" in e for e in found):
+                    errs.append(f"self-test: {what} went unreported: {found}")
+            finally:
+                path.chmod(0o600)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     """Exercise the paths that decide whether a backup is trustworthy."""
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test"
@@ -614,6 +680,7 @@ def self_test() -> list[str]:
     errs += _self_test_member_names()
     errs += _self_test_manifest_bytes()
     errs += _self_test_record_count()
+    errs += _self_test_unreadable_files()
     if archives:
         errs += _self_test_case_variant_name(archives[0])
         errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
