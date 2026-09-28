@@ -20,7 +20,8 @@ instructions for a shipped product.
    and substitute the operator's own contact.
 2. Validate the config file before it reaches the server:
    `make verify-config FILE=config/server-guard.local.json`. It rejects unknown keys, a
-   misspelled detector id, a threshold outside the manifest's declared range, and an
+   misspelled detector id, a threshold outside the manifest's declared range, a temp-ban
+   permitted with the kick gate closed, a path escaping the data root, and an
    enabled webhook or dashboard whose environment variable is unset. A non-zero exit means
    the file is not deployable; the mod would refuse the same file at startup
    ([SCHEMAS.md](SCHEMAS.md) -> Config schema). Add `SHOW_EFFECTIVE=1` to also print the

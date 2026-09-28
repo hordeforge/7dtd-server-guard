@@ -5,15 +5,16 @@ it starts a server: a misspelled detector id, a threshold outside its declared
 range, or a webhook enabled with its environment variable unset produces a server
 that looks configured and is not. The validator is the only thing standing
 between that file and the loader, and every check it runs indexes content the
-schema pass has not narrowed (registry ids, manifest thresholds, env var names),
-so this harness throws structure-aware mutations at it:
+schema pass has not narrowed (registry ids, manifest thresholds, action gates, path
+values, env var names), so this harness throws structure-aware mutations at it:
 
   target 1  check                                         (schema, registry,
-                                                         manifest, and secret-env
-                                                         passes end to end)
+                                                         manifest, action, path,
+                                                         and secret-env passes end
+                                                         to end)
   target 2  registry_errors / threshold_errors /           (the cross-file
-           secret_env_errors / unlisted_detectors          consumers on content
-                                                         that never passed the
+           action_errors / path_errors /                   consumers on content
+           secret_env_errors / unlisted_detectors          that never passed the
                                                          schema gate)
   target 3  load                                          (the file entry point:
                                                          raw bytes to parsed
@@ -322,7 +323,33 @@ def sensitivity(example: Json) -> str:
     if cc.unlisted_detectors(example) != 0:
         raise InvariantBrokenError("the shipped example leaves a detector unlisted")
     secret_env_pairs(example)
+    dependent_pairs(example)
     return digest_of(example)
+
+
+def dependent_pairs(example: Json) -> None:
+    """The action and path passes, whose verdicts turn on a pair of values inside
+    the file rather than on anything the schema can express."""
+    ban = copy.deepcopy(example)
+    ban["actions"]["tempBanLocal"] = True
+    if not any("actions.kick" in e for e in check_list(cc.check, ban, {}, True)):
+        raise InvariantBrokenError("a temp-ban permitted with the kick gate closed was accepted")
+    ban["actions"]["kick"] = True
+    if check_list(cc.check, ban, {}, True):
+        raise InvariantBrokenError("a temp-ban permitted with the kick gate open was refused")
+    for section, key in cc.PATH_KEYS:
+        for value in ("../elsewhere", "..", "ServerGuard/../../elsewhere", "..\\elsewhere"):
+            escaping = copy.deepcopy(example)
+            escaping[section][key] = value
+            if not any(f"{section}.{key}" in e for e in check_list(cc.check, escaping, {}, True)):
+                raise InvariantBrokenError(
+                    f"{section}.{key} = {value!r} escaping the root was accepted"
+                )
+        for value in ("ServerGuard/evidence", "ev..idence", "/srv/7dtd/evidence"):
+            inside = copy.deepcopy(example)
+            inside[section][key] = value
+            if errs := check_list(cc.check, inside, {}, True):
+                raise InvariantBrokenError(f"{section}.{key} = {value!r} was refused: {errs}")
 
 
 def digest_of(config: Json) -> str:
@@ -388,6 +415,8 @@ def run_consumers(rng: random.Random, mut: Mutator, example: Json, iterations: i
         candidate = mut.mutate(mut.mutate(example))
         check_list(cc.registry_errors, candidate)
         check_list(cc.threshold_errors, candidate)
+        check_list(cc.action_errors, candidate)
+        check_list(cc.path_errors, candidate)
         check_list(cc.secret_env_errors, candidate, mutated_env(rng))
         unlisted = cc.unlisted_detectors(candidate)
         if not 0 <= unlisted <= registered:

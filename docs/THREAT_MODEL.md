@@ -20,7 +20,7 @@ runtime. "Shipped" means the code in this repository today.
 | 4 | `sbom --out` creates parent directories for an operator-chosen path, the same class as threat 3 with no validation in front of it | `tools/sbom.py:458`, `:459` | Tampering: a path that matters is created and overwritten | Unmitigated; hand to sec-review |
 | 5 | The restore drill resolves the identity-map and HMAC-key paths named in an operator config and stats them, with no permission or ownership check on the result | `tools/restore_drill.py:140` (`secrets_errors`), `:132` (`_resolve` returns a relative path joined onto `--runtime-root`) | Information disclosure: the report names the key paths and their age to anyone who can run the drill | Unmitigated; scheduled for Phase 3 |
 | 6 | Pseudonym re-identification keys have no runtime protection because no runtime exists | `config/schemas/config.v1.schema.json`, `docs/SCHEMAS.md`; no `os.chmod` anywhere in `tools/` | Information disclosure: platform IDs map back to players from any readable evidence copy | Unmitigated; scheduled for Phase 3 |
-| 7 | Self-tests and fuzzers create and recursively delete paths inside the repository, and run in CI | `tools/evidence_check.py:63` (`SCRATCH = ROOT / ".scratch"`), consumed at `:468`, `:558`, `:659`, `:692`, and by `restore_drill.py:232`, `backup_status.py:164`, `fuzz_evidence_export.py:41`, `fuzz_evidence_check.py:46`, `fuzz_config_check.py:74`, `fuzz_detector_spec.py:60` | Denial of service to a checkout; a wedged or slow fuzzer burns the CI budget | Bounded: every scratch path is a fixed constant, never a flag, and CI caps the job at `timeout-minutes: 20` (`.github/workflows/ci.yml:28`) |
+| 7 | Self-tests and fuzzers create and recursively delete paths inside the repository, and run in CI | `tools/evidence_check.py:63` (`SCRATCH = ROOT / ".scratch"`), consumed at `:468`, `:558`, `:659`, `:692`, and by `restore_drill.py:232`, `backup_status.py:164`, `fuzz_evidence_export.py:41`, `fuzz_evidence_check.py:46`, `fuzz_config_check.py:75`, `fuzz_detector_spec.py:60` | Denial of service to a checkout; a wedged or slow fuzzer burns the CI budget | Bounded: every scratch path is a fixed constant, never a flag, and CI caps the job at `timeout-minutes: 20` (`.github/workflows/ci.yml:28`) |
 | 8 | Generated thresholds and the detector registry are rewritten from one YAML file, so editing the spec silently changes config defaults and published tables | `tools/render_detectors.py:91` (safe load), writes at `:336` and `:348` | Tampering: a lower threshold becomes a default in shipped config | Mitigated: `tools/doccheck.py:643` (`check_registry_sync`) fails when the generated files drift from the spec |
 | 9 | Every in-game control this document previously listed as present (permissioned console, permission-restricted evidence files, dashboard auth, webhook) has no implementation | `TODO.md:108`, `TODO.md:112`, `TODO.md:189`, `TODO.md:192` | A false mitigation claim is worse than a named gap: a reader builds on a control that does not exist | Fixed in this document; the surface is now marked planned |
 
@@ -55,7 +55,7 @@ webhook, and no IPC in the tree.
 | `tools/evidence_export.py:906` (`--dir`, `--archive`, `--out`, `--index`, `--self-test`) | Evidence segments, an archive manifest, and the member names inside it | `tools/evidence_export.py:126` (`archive_members`), `:181` (`preflight`), `:450` (`verify`) | `tools/evidence_export.py:340`, `:346`, `:242` |
 | `tools/restore_drill.py:370` (`--archive`, `--work`, `--config`, `--runtime-root`, `--key-max-age-hours`) | An archive directory, an empty work directory, and an operator config naming the key and identity-map paths | `tools/restore_drill.py:88` (`restore`), `:140` (`secrets_errors`) | `tools/restore_drill.py:88` (restores into `--work`, refusing a non-empty one) |
 | `tools/backup_status.py:260` (`--root`, `--max-age-hours`) | An archive root: manifests and file digests | read-only | none |
-| `tools/config_check.py:442` (`--config`, `--show-effective`, `--skip-env`) | An operator config file, validated against the shipped JSON Schemas and detector registry | `tools/config_check.py:219` (process environment) | none |
+| `tools/config_check.py:605` (`--config`, `--show-effective`, `--skip-env`) | An operator config file, validated against the shipped JSON Schemas and detector registry | `tools/config_check.py:285` (process environment) | none |
 | `tools/sbom.py:429` (`--out`) | `uv.lock` | `uv.lock` | `tools/sbom.py:458` to `:459` |
 | `tools/doccheck.py:1475` (no flags) | The repository tree itself, treated as content to lint rather than as instructions; spawns three sibling tools as subprocesses | `tools/doccheck.py:625` (`subprocess.run`, literal script names, `shell` off) | none |
 | `tools/render_detectors.py:300` (`--check`, `--manifest`) | `tools/detector_spec.yaml`, parsed with the safe loader | `tools/render_detectors.py:91` | `tools/render_detectors.py:336`, `:348` |
@@ -83,9 +83,9 @@ These are the properties a reader is most likely to assume and that no shipped c
   any filesystem use (`tools/evidence_export.py:399`, `:445`, `:489`, `:682`, `:687`).
 - No credential handling. The chain is an unkeyed sha256 over canonical JSON
   (`tools/evidence_check.py:198`); no tool reads key or token contents. Two tools come close
-  enough to name: `config_check.py:219` reads the process environment to check that a
+  enough to name: `config_check.py:285` reads the process environment to check that a
   `webhook.urlEnv` or `dashboard.secretEnv` name is set, and reports presence only, never the
-  value (`tools/config_check.py:176`); `restore_drill.py:140` stats the identity-map and HMAC-key
+  value (`tools/config_check.py:240`); `restore_drill.py:140` stats the identity-map and HMAC-key
   files named in a config and reports their size and age, never their contents. Both resolve
   against a planned runtime, and both are threat 5 above.
 - No process spawning except `doccheck.py:625`, which runs three literal script names through
@@ -191,9 +191,9 @@ The boundaries that exist in shipped code today, with what crosses them:
 No secret enters the shipped tooling and no tool reads a credential's contents. Two tools touch
 the edges of that flow, and both are operator-invoked:
 
-- `config_check.py:219` reads the process environment to confirm that a name in
+- `config_check.py:285` reads the process environment to confirm that a name in
   `webhook.urlEnv` or `dashboard.secretEnv` is set for an enabled section. Only presence is
-  reported (`config_check.py:176`); `--skip-env` and `make verify-config SKIP_ENV=1` suppress it.
+  reported (`config_check.py:240`); `--skip-env` and `make verify-config SKIP_ENV=1` suppress it.
 - `restore_drill.py:140` stats the files named by `identityMap.path` and `hmacKey.path` and
   reports whether each is present, non-empty, and inside the backup cycle.
 

@@ -65,6 +65,20 @@ load time rather than a feature that quietly does nothing:
   enabled in the file cannot stay off at runtime. Secret values are never read into a
   finding, a log line, or a report; only the presence of the variable is.
 
+Two further rejections read one file's values against each other, so the JSON Schema cannot
+state them, and the pre-deploy check runs both:
+
+- Dependent actions. `actions.tempBanLocal` requires `actions.kick`; a local temp-ban is a
+  kick the mod applies itself, and [POLICY.md](POLICY.md) -> Enforcement gates opens it only
+  behind the kick gate. Either flag alone is a valid config, the pair with the gate closed
+  is not: the file would read as an approved enforcement that no gate permits.
+- Paths. `evidence.dir`, `identityMap.path`, and `hmacKey.path` may not carry a `..` path
+  segment, at either end or between separators, a backslash counting as a separator as on
+  Windows. A relative path is resolved against the data root and an absolute one is used as
+  given (the rules above this section), so a `..` puts the evidence, the re-identification
+  key, or the identity map outside the root the backup and the restore drill cover. Dots
+  inside a name (`ev..idence`) are not a traversal and are accepted.
+
 An operator runs the same checks before deploying, on the machine that will run the mod:
 `make verify-config FILE=<path>` ([tools/README.md](../tools/README.md) -> `config_check.py`).
 It prints the effective config's hash, the digest every evidence record, the health report,

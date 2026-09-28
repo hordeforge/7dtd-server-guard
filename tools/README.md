@@ -70,9 +70,11 @@
 - `config_check.py`: validates an operator's own config file the way the strict Phase 2
   loader is specified to: JSON Schema contract (unknown keys, types, enums, ranges),
   `modes` keys against the detector registry, `thresholds` keys and values against
-  `config/detector-config-manifest.json`, and an enabled `webhook` or `dashboard` whose
-  named environment variable is unset. `--skip-env` drops that last check, for a host
-  that has no server environment to check against. `--show-effective` prints the
+  `config/detector-config-manifest.json`, an `actions.tempBanLocal` with the `actions.kick`
+  gate it requires closed, a path escaping the mod's data root through `..`, and an enabled
+  `webhook` or `dashboard` whose named environment variable is unset. `--skip-env` drops
+  that last check, for a host that has no server environment to check against.
+  `--show-effective` prints the
   effective (defaulted)
   config and the SHA-256 written into evidence records, the health report, and the hook
   manifest. Secret values are never read: the config names the env var, the tool checks only

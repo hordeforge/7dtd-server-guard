@@ -14,6 +14,12 @@ This is the same validation the strict Phase 2 loader is specified from
              a detector silently at its `observe` default
   manifest   every `thresholds` key is declared for that detector in
              config/detector-config-manifest.json, with the declared type and range
+  actions    an action whose gate another action's flag opens is refused when that
+             gate is closed: `tempBanLocal` is a kick the mod applies itself, so it
+             requires `kick` (docs/POLICY.md -> Enforcement gates)
+  paths      a path in `evidence.dir`, `identityMap.path`, or `hmacKey.path` that
+             escapes the mod's data root through a `..` segment, which would put
+             evidence, the identity map, or the HMAC key outside the backup
   secrets    a sink or the dashboard that is `enabled` with its named environment
              variable unset is an error, not a silent no-op
   hash       the SHA-256 of the effective (defaulted) config, the digest written into
@@ -43,6 +49,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import sys
 from typing import Any
@@ -75,6 +82,18 @@ ENABLED_KEY = "enabled"
 # today. doccheck holds the example to the spec's per-detector default, so a
 # detector whose spec default ever rose is caught there rather than here.
 DEFAULT_MODE = "observe"
+# An action and the gate flag it is permitted under, as (action, required flag):
+# a local temp-ban is a kick the mod applies itself, so POLICY.md -> Enforcement
+# gates opens it only behind the kick gate. Either flag on its own is a valid
+# config; the pair is what the check refuses.
+DEPENDENT_ACTIONS = (("tempBanLocal", "kick"),)
+# The three keys whose value names a file the mod writes, resolved against the
+# mod's data root (SCHEMAS.md -> Config schema).
+PATH_KEYS = (("evidence", "dir"), ("identityMap", "path"), ("hmacKey", "path"))
+# A `..` that is a whole path segment, at either end or between separators. A
+# name that merely contains dots ("a..b") is not a traversal. Windows accepts a
+# backslash as a separator, so one written that way escapes the root as well.
+PARENT_SEGMENT = re.compile(r"(?:^|[/\\])\.\.(?:[/\\]|$)")
 
 
 def effective_config(config: Json, schema: Json, depth: int = 0) -> Json:
@@ -241,6 +260,51 @@ def threshold_errors(config: Json) -> list[str]:
     return out
 
 
+def action_errors(config: Json) -> list[str]:
+    """An action is not permitted past a gate the file leaves closed.
+
+    `actions.tempBanLocal` is the only such pair in v1: it is a kick the mod
+    applies itself, and POLICY.md -> Enforcement gates requires the kick gate plus
+    per-incident operator approval. A file that permits the ban with `kick` false
+    reads as an operator who approved enforcement, and a server that loads it
+    cannot act on it.
+    """
+    actions = config.get("actions")
+    if not isinstance(actions, dict):
+        return []
+    return [
+        f"actions.{action} is true but actions.{gate} is false; a local temp-ban is a kick "
+        f"the mod applies itself, and POLICY.md -> Enforcement gates requires the {gate} "
+        f"gate for it"
+        for action, gate in DEPENDENT_ACTIONS
+        if actions.get(action) is True and actions.get(gate) is not True
+    ]
+
+
+def path_errors(config: Json) -> list[str]:
+    """A path that escapes the mod's data root through a `..` segment.
+
+    The loader resolves a relative path against the data root and uses an absolute
+    one as given (SCHEMAS.md -> Config schema). A `..` segment in either form puts
+    the evidence directory, the identity map, or the HMAC key outside the root the
+    backup and the restore drill cover, which is the kind of misconfiguration that
+    is only discovered when a restore has nothing to restore.
+    """
+    out: list[str] = []
+    for section, key in PATH_KEYS:
+        block = config.get(section)
+        if not isinstance(block, dict):
+            continue
+        value = block.get(key)
+        if isinstance(value, str) and PARENT_SEGMENT.search(value):
+            out.append(
+                f"{section}.{key} = {value!r} escapes the mod's data root through a '..' "
+                f"segment; a relative path is resolved inside that root and an absolute "
+                f"one is used as given"
+            )
+    return out
+
+
 def secret_env_errors(config: Json, env: dict[str, str]) -> list[str]:
     """A section that is enabled must find its named environment variable set.
 
@@ -283,6 +347,8 @@ def check(config: Json, env: dict[str, str] | None = None, check_env: bool = Tru
         return out
     out.extend(registry_errors(config))
     out.extend(threshold_errors(config))
+    out.extend(action_errors(config))
+    out.extend(path_errors(config))
     if check_env:
         out.extend(secret_env_errors(config, env if env is not None else dict(os.environ)))
     return out
@@ -394,6 +460,58 @@ def _secret_env_self_test(example: Json, failures: list[str]) -> None:
     undeclared["webhook"]["urlEnv"] = 42
     if not check(undeclared, env={}):
         failures.append("a non-string env var name was accepted")
+
+
+def _dependent_self_test(example: Json, failures: list[str]) -> None:
+    """The action and path passes, each on a config that must pass and one that must not."""
+
+    def expect_error(name: str, config: Json, fragment: str) -> None:
+        errs = check(config)
+        if not any(fragment in e for e in errs):
+            failures.append(f"{name}: expected an error containing {fragment!r}, got {errs}")
+
+    def expect_clean(name: str, config: Json) -> None:
+        errs = check(config)
+        if errs:
+            failures.append(f"{name}: expected no error, got {errs}")
+
+    ban_no_kick = copy.deepcopy(example)
+    ban_no_kick["actions"]["tempBanLocal"] = True
+    expect_error("temp-ban without the kick gate", ban_no_kick, "actions.kick is false")
+
+    ban_with_kick = copy.deepcopy(ban_no_kick)
+    ban_with_kick["actions"]["kick"] = True
+    expect_clean("temp-ban with the kick gate open", ban_with_kick)
+
+    # An absent actions.kick loads at its declared default of false, so it closes
+    # the gate exactly as an explicit false does.
+    ban_default_kick = copy.deepcopy(ban_no_kick)
+    del ban_default_kick["actions"]["kick"]
+    expect_error("temp-ban with no actions.kick", ban_default_kick, "actions.kick is false")
+
+    for section, key in PATH_KEYS:
+        escaping = copy.deepcopy(example)
+        escaping[section][key] = "../elsewhere"
+        expect_error(f"{section}.{key} escaping the data root", escaping, f"{section}.{key}")
+
+        windows = copy.deepcopy(example)
+        windows[section][key] = "ServerGuard\\..\\..\\elsewhere"
+        expect_error(
+            f"{section}.{key} escaping on a backslash separator", windows, f"{section}.{key}"
+        )
+
+        absolute = copy.deepcopy(example)
+        absolute[section][key] = "/srv/7dtd/ServerGuard/evidence"
+        expect_clean(f"{section}.{key} absolute", absolute)
+
+        # Dots inside a name are not a traversal: a segment has to be ".." alone.
+        dotted = copy.deepcopy(example)
+        dotted[section][key] = "ServerGuard/ev..idence"
+        expect_clean(f"{section}.{key} with dots inside a name", dotted)
+
+    # A path whose section is absent loads at the schema's default, inside the
+    # root, so the pass has nothing to say about it.
+    expect_clean("a config with no path sections", {"schemaVersion": 1})
 
 
 def _effective_self_test(example: Json, failures: list[str]) -> None:
@@ -515,6 +633,7 @@ def self_test() -> list[str]:
         failures.append(f"shipped example: expected no error, got {errs}")
     _rejection_self_test(example, failures)
     _secret_env_self_test(example, failures)
+    _dependent_self_test(example, failures)
     _effective_self_test(example, failures)
     _load_self_test(failures)
     _main_contract_self_test(failures)
