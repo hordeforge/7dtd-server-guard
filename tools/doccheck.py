@@ -540,7 +540,8 @@ def _manifest_errors(example: Json, out: list[str], label: str = "example config
     Like every check here, a hand-edited manifest or spec is reported into the
     caller's error list; nothing is read with [] on a field that may be absent.
     """
-    manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
+    path = ROOT / "config" / "detector-config-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
     entries = manifest.get("detectors")
     if not isinstance(entries, list):
         out.append("config/detector-config-manifest.json: detectors must be an array")
@@ -710,6 +711,22 @@ def _pattern_to_regex(pat: str) -> re.Pattern[str]:
     return re.compile(r"^" + r"\.".join(parts) + r"$")
 
 
+def _pattern_ok(pattern: str, value: str) -> bool:
+    """Whether `value` satisfies a JSON Schema `pattern`.
+
+    `pattern` is an unanchored search, and its `$` is the end of the value. Python's
+    `$` also matches immediately before a trailing newline, so `re.match` on a
+    fully anchored pattern accepts a value carrying one: "movement.flight\\n" passes
+    `^[a-z]+\\.[a-z_]+$` here and is rejected by every conformant validator, which
+    makes a stray newline at the end of a detector id, a cause token, or a file name
+    a value this gate approves and the loader refuses. A pattern anchored at both
+    ends is therefore matched whole; an unanchored one is searched, as the spec says.
+    """
+    if pattern.startswith("^") and pattern.endswith("$") and not pattern.endswith("\\$"):
+        return re.fullmatch(pattern, value) is not None
+    return re.search(pattern, value) is not None
+
+
 def _matches_schema(path: str, patterns: list[re.Pattern[str]]) -> bool:
     """Match an example dotted path against compiled schema key patterns.
 
@@ -793,7 +810,7 @@ def _scalar_errors(instance: Json, schema: Json, path: str) -> list[str]:
     if not isinstance(instance, str):
         return errs
     errs += _format_errors(instance, schema, path)
-    if "pattern" in schema and not re.match(schema["pattern"], instance):
+    if "pattern" in schema and not _pattern_ok(schema["pattern"], instance):
         errs.append(f"{path}: {instance!r} does not match {schema['pattern']}")
     if "minLength" in schema and len(instance) < schema["minLength"]:
         errs.append(f"{path}: length {len(instance)} < minLength {schema['minLength']}")
@@ -824,7 +841,7 @@ def _object_errors(
         if k in props:
             errs += _schema_validate(v, props[k], f"{path}.{k}", depth + 1, root)
             continue
-        pattern_schema = next((sub for pat, sub in pats.items() if re.match(pat, k)), None)
+        pattern_schema = next((sub for pat, sub in pats.items() if _pattern_ok(pat, k)), None)
         if pattern_schema is not None:
             errs += _schema_validate(v, pattern_schema, f"{path}.{k}", depth + 1, root)
             continue

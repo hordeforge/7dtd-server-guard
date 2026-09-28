@@ -41,6 +41,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import sys
 from typing import Any
 
@@ -109,7 +110,8 @@ def _manifest_thresholds() -> dict[str, dict[str, Json]]:
     """Per-detector threshold entries from the generated manifest, keyed by threshold
     key. Detectors the manifest does not carry are absent, and every threshold set
     naming one is reported rather than skipped."""
-    manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
+    path = ROOT / "config" / "detector-config-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
     entries = manifest.get("detectors")
     if not isinstance(entries, list):
         return {}
@@ -223,6 +225,15 @@ def load(path: pathlib.Path) -> tuple[Json | None, str | None]:
         return json.loads(path.read_text(encoding="utf-8")), None
     except OSError as exc:
         return None, f"cannot read {path}: {exc}"
+    except UnicodeDecodeError as exc:
+        # An operator's file is hand-edited and a Windows editor, a Latin-1
+        # locale, or a copy through a legacy toolchain saves it in something
+        # other than UTF-8. The file is read as UTF-8 because that is what the
+        # shipped config and the loader's contract are, so the bytes are refused
+        # by name here: UnicodeDecodeError is not a JSONDecodeError, and letting
+        # it out aborts the pre-deploy check with a traceback instead of the
+        # refusal every other unreadable file gets.
+        return None, f"{path} is not valid UTF-8: {exc}"
     except json.JSONDecodeError as exc:
         return None, f"{path} is not valid JSON: {exc}"
 
@@ -258,6 +269,13 @@ def _rejection_self_test(example: Json, failures: list[str]) -> None:
     schema_version = copy.deepcopy(example)
     schema_version["schemaVersion"] = 2
     expect_error("unknown schema version", schema_version, "schemaVersion")
+
+    # A trailing newline is invisible in the file and Python's `$` matches before
+    # one, so a value carrying it must still be refused here rather than approved
+    # by a gate the loader's stricter reading would contradict.
+    trailing_newline = copy.deepcopy(example)
+    trailing_newline["identityMap"]["permissions"] = "0600\n"
+    expect_error("trailing newline in a pattern-matched value", trailing_newline, "does not match")
 
     if check("not an object") != ["config must be a JSON object, got str"]:
         failures.append("non-object config was not reported as a shape error")
@@ -312,6 +330,31 @@ def _effective_self_test(example: Json, failures: list[str]) -> None:
         failures.append("config hash differs between an absent key and its declared default")
 
 
+def _load_self_test(failures: list[str]) -> None:
+    """A file the loader must refuse by name, not by raising out of the check.
+
+    A config saved as Latin-1 (or through a Windows editor's default code page)
+    is a hand-editing accident, not a corrupt deployment, and the operator needs
+    the file named back. The bytes below are the shipped example's opening with a
+    single Latin-1 e-acute spliced in, so only the encoding is wrong.
+    """
+    scratch = ROOT / ".scratch" / "config-check-self-test"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True, exist_ok=True)
+    try:
+        latin1 = scratch / "server-guard.latin1.json"
+        latin1.write_bytes(
+            b'{"schemaVersion": 1, "console": {"enabled": true, "level": "caf\xe9"}}\n'
+        )
+        config, error = load(latin1)
+        if config is not None or error is None or "not valid UTF-8" not in error:
+            failures.append(f"non-UTF-8 config was not refused by name: {error!r}")
+        if (config, error) != load(latin1):
+            failures.append("loading the same file twice gave two different results")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def self_test() -> list[str]:
     """Negative and positive cases over the shipped example and mutations of it.
 
@@ -327,6 +370,7 @@ def self_test() -> list[str]:
     _rejection_self_test(example, failures)
     _secret_env_self_test(example, failures)
     _effective_self_test(example, failures)
+    _load_self_test(failures)
     return failures
 
 

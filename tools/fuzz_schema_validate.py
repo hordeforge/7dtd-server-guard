@@ -304,8 +304,9 @@ def check_non_finite_numbers() -> None:
     JSON has no encoding for either, so a strict reader downstream rejects the
     document outright.
     """
-    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
-    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text()
+    path = ROOT / "config" / "schemas" / "evidence.v1.schema.json"
+    schema = json.loads(path.read_text(encoding="utf-8"))
+    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text(encoding="utf-8")
     records = {
         rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
     }
