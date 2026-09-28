@@ -68,6 +68,12 @@ SEGMENT_DIGITS = re.compile(r"(\d+)")
 # the backup status check all decide which files are the evidence; one spelling
 # here keeps them deciding over the same set.
 SEGMENT_GLOB = "evidence-*.jsonl"
+# Longest untrusted string a report quotes before it is cut. A record field
+# reaches this tool from the server, which took it from a client, so it is
+# bounded text: a finding that names it needs the leading characters, not the
+# whole megabyte, and an unbounded one would put that megabyte on the
+# operator's terminal.
+MAX_REPORT_TEXT_LEN = 80
 # How many recently walked eventIds the duplicate-append check remembers. A
 # repeated record is written by a retry or a crash-restart replay, so the second
 # copy lands within the retry horizon, not months later; the window is that
@@ -193,6 +199,29 @@ def _reject_non_finite(token: str) -> float:
     raise ValueError(f"non-finite number {token!r}")
 
 
+def display_text(value: object, limit: int = MAX_REPORT_TEXT_LEN) -> str:
+    """Untrusted text as a report may print it.
+
+    A record field reaches this tool from the game server, which took it from a
+    client, so it is not the repository's own text: it can carry an ANSI escape
+    that erases the line the finding is on, or a control character that moves
+    the cursor and makes a spoofed finding appear where no other is. A terminal
+    is the only place these reports are read, so the escape is the attack. Every
+    control character is spelled out, rather than only the three or four escapes
+    that erase a line, because a filter chosen from the ones seen is one more
+    escape away from being wrong.
+
+    Length is bounded for the same reason the characters are: a megabyte of
+    quoted field would bury every other finding under it. The cut is marked, so
+    a truncated value cannot be read as the whole one.
+    """
+    text = value if isinstance(value, str) else str(value)
+    text = "".join(ch if ch.isprintable() else f"<U+{ord(ch):04X}>" for ch in text if ch != "\x7f")
+    if len(text) > limit:
+        text = text[:limit] + "..."
+    return text
+
+
 def segment_sort_key(path: pathlib.Path) -> tuple[tuple[int, int, str], ...]:
     """Order segments naturally, so an unpadded `<seq>` beyond 9 does not sort first.
 
@@ -226,6 +255,16 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
         # and a NaN/Infinity literal must be reported with the same file:line
         # context as any other bad line rather than escaping uncontextualized.
         raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
+    except RecursionError as exc:
+        # RecursionError is a RuntimeError, not a ValueError, and the decoder
+        # raises it on a line nested past the interpreter's recursion limit. A
+        # segment is server output the verifier is meant to distrust, so one
+        # crafted line carrying a hundred thousand open brackets would otherwise
+        # abort the whole walk with a traceback and name no file and no line,
+        # which is the one answer an operator mid-incident cannot act on.
+        raise ValueError(
+            f"{name}:{line_no}: unparseable JSON: nested too deeply to decode"
+        ) from exc
     if not isinstance(rec, dict):
         raise ValueError(f"{name}:{line_no}: record is not an object")
     for field in ("schemaVersion", "type", "eventId", "chainPrev"):
@@ -307,8 +346,9 @@ def verify_chain(
         count += 1
         if seen.seen_before(rec["eventId"]):
             report(
-                f"line {line_no}: eventId {rec['eventId']} was already appended earlier in the "
-                f"stream; the same event was written twice (a retry or a replayed append)"
+                f"line {line_no}: eventId {display_text(rec['eventId'])} was already appended "
+                f"earlier in the stream; the same event was written twice "
+                f"(a retry or a replayed append)"
             )
         if first_prev is None:
             first_prev = rec["chainPrev"]
@@ -323,7 +363,7 @@ def verify_chain(
             report(
                 f"line {line_no}: chainPrev mismatch; expected {expected[:16]}... ("
                 + ("previous record" if prev_hash else "genesis")
-                + f"), got {actual[:16]}..."
+                + f"), got {display_text(actual, 16)}..."
             )
         prev_hash = record_hash(rec)
     if hidden:
@@ -417,6 +457,10 @@ def verify_dir_with_counts(
     prev_last_hash: str | None = None
     prev_unlinked: str | None = None
     for si, seg in enumerate(segments):
+        # A segment name comes off the filesystem, so it carries whatever the
+        # server wrote. Every message below quotes it, so it is filtered once
+        # here rather than at each of the seven sites.
+        label = display_text(seg.name)
         try:
             chain: SegmentChain | None = verify_chain(
                 iter_records(seg), first_of_stream=si == 0, seen=seen
@@ -424,27 +468,34 @@ def verify_dir_with_counts(
         except ValueError as exc:
             errs.append(str(exc))
             chain = None
+        except RecursionError:
+            # Canonicalizing a record recurses to the depth the decoder reached,
+            # so a line that parses at the very edge of the interpreter's limit
+            # can still exhaust it here. Reported against the segment rather than
+            # raised: the walk continues to the next segment.
+            errs.append(f"{label}: a record is nested too deeply to canonicalize")
+            chain = None
         if chain is None:
-            prev_last_hash, prev_unlinked = None, seg.name
+            prev_last_hash, prev_unlinked = None, label
             continue
         counts[seg.name] = chain.record_count
         if chain.record_count == 0:
-            errs.append(f"{seg.name}: empty segment")
-            prev_last_hash, prev_unlinked = None, seg.name
+            errs.append(f"{label}: empty segment")
+            prev_last_hash, prev_unlinked = None, label
             continue
-        errs += [f"{seg.name}: {e}" for e in chain.errors]
+        errs += [f"{label}: {e}" for e in chain.errors]
         # cross-segment link
         if si == 0 and chain.first_prev != GENESIS:
-            errs.append(f"{seg.name}: first record of the stream must chain to genesis")
+            errs.append(f"{label}: first record of the stream must chain to genesis")
         if si > 0:
             if prev_unlinked is not None:
                 errs.append(
-                    f"{seg.name}: previous segment {prev_unlinked} yielded no records; "
+                    f"{label}: previous segment {prev_unlinked} yielded no records; "
                     "its link to this segment is unverified"
                 )
             elif chain.first_prev != prev_last_hash:
                 errs.append(
-                    f"{seg.name}: first record does not chain to previous segment's last record"
+                    f"{label}: first record does not chain to previous segment's last record"
                 )
         prev_last_hash, prev_unlinked = chain.last_hash, None
 
@@ -619,7 +670,43 @@ def self_test() -> list[str]:
     errs += _index_name_test(recs)
     errs += _sample_chain_test()
     errs += _verify_dir_tests()
+    errs += _untrusted_text_test()
     _unicode_self_test(errs)
+    return errs
+
+
+def _untrusted_text_test() -> list[str]:
+    """A record the server took from a client cannot rewrite the operator's terminal.
+
+    Two properties, both on a report a real evidence directory can produce: a
+    line nested past the interpreter's recursion limit is a reported finding
+    naming its file and line rather than a traceback that names neither, and a
+    field carrying an escape reaches the report with the control character
+    spelled out rather than interpreted.
+    """
+    errs: list[str] = []
+    with tempfile.TemporaryDirectory(dir=SCRATCH) as td:
+        deep = "[" * 200000 + "]" * 200000
+        try:
+            _parse_line("evidence-deep.jsonl", 1, deep)
+        except ValueError as exc:
+            if "evidence-deep.jsonl:1" not in str(exc):
+                errs.append(f"self-test: a deeply nested line was not reported by name: {exc}")
+        except Exception as exc:  # the point is that nothing but ValueError escapes
+            errs.append(f"self-test: a deeply nested line raised {type(exc).__name__}: {exc}")
+        else:
+            errs.append("self-test: a deeply nested line parsed as a record")
+
+        directory = pathlib.Path(td)
+        recs = _stream(2)
+        recs[0]["eventId"] = "\x1b[2K\x07chain OK"
+        recs[1]["eventId"] = recs[0]["eventId"]
+        _write_segment(directory, "evidence-2026-09-28-1.jsonl", recs)
+        found = verify_dir(directory, DEFAULT_INDEX)
+        if any("\x1b" in error or "\x07" in error for error in found):
+            errs.append(f"self-test: a control character reached the report raw: {found}")
+        elif not any("U+001B" in error for error in found):
+            errs.append(f"self-test: the duplicate eventId was not reported at all: {found}")
     return errs
 
 

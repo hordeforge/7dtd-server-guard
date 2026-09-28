@@ -123,9 +123,9 @@ where the serving environment is not the one running the check.
 | `evidence.positionHistoryDays` | int | 7 | 0..90 | 0 disables replay history |
 | `evidence.positionHistorySamplesPerPlayer` | int | 3600 | 0..20000 | Bounded replay timeline |
 | `identityMap.path` | string | `ServerGuard/identity-map.json` | restricted perms, non-empty | Pseudonym -> platform identity, operator-only |
-| `identityMap.permissions` | string | `0600` | POSIX octal | Enforced at startup on POSIX hosts, by the Phase 3 runtime; no shipped code enforces it yet (TODO.md) |
+| `identityMap.permissions` | string | `0600` | `0[4-6]00` | Owner only: the group and other digits must be `0`, so the map is never group- or world-readable and no other local user can rewrite it. Applied at startup on POSIX hosts by the Phase 3 runtime (TODO.md); the schema is what `config_check.py` refuses a looser mode against today |
 | `hmacKey.path` | string | `ServerGuard/hmac.key` | restricted perms, non-empty | Pseudonym key; destroyed when evidence under it expires |
-| `hmacKey.permissions` | string | `0600` | POSIX octal | Enforced at startup on POSIX hosts, as for the identity map: platform IDs are enumerable, so this file is the re-identification key. Phase 3 runtime; no shipped code enforces it yet (TODO.md) |
+| `hmacKey.permissions` | string | `0600` | `0[4-6]00` | Same owner-only rule as the identity map, which is weaker than a deployment should be: platform IDs are enumerable, so this file is the re-identification key. Applied at startup by the Phase 3 runtime (TODO.md); the schema refuses a looser mode today |
 | `hmacKey.rotationDays` | int | 90 | 1..365 | Starts a new pseudonym epoch |
 | `queues.actionQueueMax` | int | 4096 | 64..65536 | Main-thread action queue bound |
 | `queues.evidenceQueueMax` | int | 8192 | 64..65536 | Writer queue bound; drop soft first |

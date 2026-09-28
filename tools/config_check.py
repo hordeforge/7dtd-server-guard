@@ -419,6 +419,25 @@ def _rejection_self_test(example: Json, failures: list[str]) -> None:
     trailing_newline["identityMap"]["permissions"] = "0600\n"
     expect_error("trailing newline in a pattern-matched value", trailing_newline, "does not match")
 
+    # The identity map and the HMAC key are the re-identification material: a mode
+    # that lets the group or the world read them, or that lets another local user
+    # write them, is refused rather than carried to a deploy.
+    for section in ("identityMap", "hmacKey"):
+        for mode, what in (
+            ("0644", "a world-readable mode"),
+            ("0660", "a group-readable mode"),
+            ("0602", "a world-writable mode"),
+            ("0777", "a world-accessible mode"),
+            ("0000", "a mode with no owner access"),
+        ):
+            loose = copy.deepcopy(example)
+            loose[section]["permissions"] = mode
+            expect_error(f"{section} with {what}", loose, "does not match")
+        owner_only = copy.deepcopy(example)
+        owner_only[section]["permissions"] = "0400"
+        if found := check(owner_only):
+            failures.append(f"{section} narrowed to 0400 was refused: {found}")
+
     if check("not an object") != ["config must be a JSON object, got str"]:
         failures.append("non-object config was not reported as a shape error")
 
