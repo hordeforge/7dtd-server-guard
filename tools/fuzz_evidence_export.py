@@ -36,7 +36,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
 import evidence_export as ee
-from fuzz_common import InvariantBrokenError, Mutator
+from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args
 
 SCRATCH = ec.ROOT / ".scratch"
 
@@ -256,9 +256,8 @@ def main() -> int:
     # Each iteration writes and hashes real files twice, so this harness is far
     # slower per iteration than the in-memory ones; 300 covers every damage class
     # in about a minute.
-    ap.add_argument("--iterations", type=int, default=300)
-    ap.add_argument("--seed", type=int, default=0x5EED)
-    args = ap.parse_args()
+    add_fuzz_args(ap, default_iterations=300)
+    args = fuzz_args(ap)
     rng = random.Random(args.seed)  # noqa: S311 - seeded corpus fuzzing, not a secret
     mut = Mutator(rng, max_depth=3)
     stats = {"verify_runs": 0, "rejected": 0, "accepted": 0}

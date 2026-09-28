@@ -515,24 +515,22 @@ def check_registry_sync() -> list[str]:
     ]
 
 
-def _threshold_keys(thresholds: object) -> set[str]:
-    """Declared threshold keys, ignoring entries the spec validator already reported.
+def _thresholds_by_key(thresholds: object) -> dict[str, Json]:
+    """Threshold entries keyed by their declared key, skipping unusable entries.
 
     The cross-references read a spec that may be malformed, and check_spec owns
     the report on the entries that are; this pass only needs the keys.
     """
     if not isinstance(thresholds, list):
-        return set()
-    return {t["key"] for t in thresholds if isinstance(t, dict) and isinstance(t.get("key"), str)}
-
-
-def _thresholds_by_key(thresholds: object) -> dict[str, Json]:
-    """Threshold entries keyed by their declared key, skipping unusable entries."""
-    if not isinstance(thresholds, list):
         return {}
     return {
         t["key"]: t for t in thresholds if isinstance(t, dict) and isinstance(t.get("key"), str)
     }
+
+
+def _threshold_keys(thresholds: object) -> set[str]:
+    """Declared threshold keys, ignoring entries the spec validator already reported."""
+    return set(_thresholds_by_key(thresholds))
 
 
 def _manifest_errors(example: Json, out: list[str], label: str = "example config") -> None:

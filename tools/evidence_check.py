@@ -434,7 +434,7 @@ def _unicode_self_test(errs: list[str]) -> None:
     ).errors:
         errs.append("self-test: a chain over non-ASCII records did not verify")
 
-    scratch = ROOT / ".scratch" / "evidence-check-self-test"
+    scratch = SCRATCH / "evidence-check-self-test"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True, exist_ok=True)
     try:
@@ -701,7 +701,7 @@ def _verify_dir_tests() -> list[str]:
     property the tool exists for, yet nothing deterministic covered it. Each case gets
     its own directory, so no case can leave a segment behind for the next one.
     """
-    scratch = ROOT / ".scratch"
+    scratch = SCRATCH
     scratch.mkdir(exist_ok=True)
     cases = (
         _case_well_formed,

@@ -51,7 +51,7 @@ import yaml
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
 import render_detectors as rd
-from fuzz_common import InvariantBrokenError, Mutator
+from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC = rd.SPEC
@@ -286,9 +286,8 @@ def record_sensitivity(reported: SpecReader) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--iterations", type=int, default=400)
-    ap.add_argument("--seed", type=int, default=0x5EED)
-    args = ap.parse_args()
+    add_fuzz_args(ap, default_iterations=400)
+    args = fuzz_args(ap)
     rng = random.Random(args.seed)  # noqa: S311 - seeded corpus fuzzing, not a secret
     mut = Mutator(rng, weird_strings=DOMAIN_STRINGS, max_depth=4)
 

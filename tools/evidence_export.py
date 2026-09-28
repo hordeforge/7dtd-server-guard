@@ -214,15 +214,6 @@ def export(
     return []
 
 
-def valid_member_name(name: object) -> bool:
-    """A manifest names its files by plain file name. The name comes from an
-    untrusted manifest and reaches the filesystem, so only a bounded,
-    separator-free, ASCII name is accepted; anything else is reported, never
-    passed to open(). The rule itself is evidence_check's, so a name the chain
-    verifier accepts is a name the archive verifier accepts."""
-    return ec.valid_file_name(name)
-
-
 def _is_size(value: object) -> bool:
     """A byte count is a non-negative integer. bool is excluded: `true` is not 1 byte."""
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
@@ -235,7 +226,7 @@ def _is_int(value: object) -> bool:
 
 def _member_errors(archive: pathlib.Path, entry: object) -> list[str]:
     """What one manifest file entry claims about its file, against the bytes on disk."""
-    if not isinstance(entry, dict) or not valid_member_name(entry.get("name")):
+    if not isinstance(entry, dict) or not ec.valid_file_name(entry.get("name")):
         return [f"{MANIFEST_NAME}: malformed file entry"]
     name = entry["name"]
     path = ec.exact_child(archive, name)
@@ -275,7 +266,7 @@ def _attestation_errors(manifest: object) -> list[str]:
         ]
     if not isinstance(manifest.get("files"), list) or not manifest["files"]:
         return [f"{MANIFEST_NAME}: no file list"]
-    if not valid_member_name(manifest.get("indexFile") or DEFAULT_INDEX_NAME):
+    if not ec.valid_file_name(manifest.get("indexFile") or DEFAULT_INDEX_NAME):
         return [f"{MANIFEST_NAME}: indexFile is not a plain file name"]
     return []
 
@@ -302,7 +293,7 @@ def verify(archive: pathlib.Path) -> list[str]:
     for entry in entries:
         if (
             isinstance(entry, dict)
-            and valid_member_name(entry.get("name"))
+            and ec.valid_file_name(entry.get("name"))
             and not _is_size(entry.get("bytes"))
         ):
             # The manifest is untrusted text, so a byte count that is not a
@@ -376,6 +367,11 @@ def _self_test_happy_path(
         errs.append("self-test: a same-second export overwrote a live archive")
     if sorted(p for p in out_root.iterdir() if p.is_dir()) != archives:
         errs.append("self-test: a refused export still left a new archive behind")
+    errs += [
+        f"self-test: a refused export disturbed the live archive {archive.name}"
+        for archive in archives
+        if not archive.is_dir() or verify(archive)
+    ]
     return errs, archives
 
 
@@ -473,12 +469,12 @@ def _self_test_member_names() -> list[str]:
     errs.extend(
         f"self-test: archive member name rejected: {name!r}"
         for name in accepted
-        if not valid_member_name(name)
+        if not ec.valid_file_name(name)
     )
     errs.extend(
         f"self-test: archive member name accepted that is not a plain portable file name: {name!r}"
         for name in rejected
-        if valid_member_name(name)
+        if ec.valid_file_name(name)
     )
     return errs
 
