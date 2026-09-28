@@ -202,22 +202,22 @@ location, not a checklist.
 **Operator to tool (evidence CLI).**
 - *Tampering and denial of service*: `--out` reaches `mkdir(parents=True)` and, through
   `_sweep_stale_staging`, a recursive `rmtree` of every `.staging-evidence-*` directory under it
-  older than 24 hours (`tools/evidence_export.py:286`, `:290`, `:255` to `:260`). A crafted or
+  older than 24 hours (`tools/evidence_export.py:357`, `:298`, `:314` to `:320`). A crafted or
   simply mistyped root can lose an unrelated tree.
 - *Repudiation*: an operator can archive a chosen evidence set and the archive is indistinguishable
   from a complete one, because no signature binds an archive to the segment set it came from
-  (`tools/evidence_export.py:141` writes the manifest, and nothing signs it).
+  (`tools/evidence_export.py:249` writes the manifest, and nothing signs it).
 - *Information disclosure*: bounded, not a gap. Every untrusted name that reaches the filesystem
-  passes `valid_file_name` first (`tools/evidence_check.py:330`, `tools/evidence_export.py:337`),
-  and `exact_child` (`tools/evidence_check.py:151`) resolves a name against the directory's own
+  passes `valid_file_name` first (`tools/evidence_check.py:136`, `tools/evidence_export.py:414`),
+  and `exact_child` (`tools/evidence_check.py:159`) resolves a name against the directory's own
   entries rather than joining it, so a case-insensitive host cannot substitute a different file.
 
 **Evidence directory to verifier.**
-- *Tampering and spoofing*: the chain is an unkeyed sha256 (`tools/evidence_check.py:190`), so an
+- *Tampering and spoofing*: the chain is an unkeyed sha256 (`tools/evidence_check.py:198`), so an
   attacker with write access recomputes the whole chain rather than breaking it. The chain proves
   the file was not edited without recomputation; it does not prove who wrote it.
 - *Repudiation*: the last record of the final segment has no successor hash to check against, so
-  it is mutable until the next append (`tools/evidence_check.py:251`, consumed at `:381`).
+  it is mutable until the next append (`tools/evidence_check.py:412`, consumed at `:408`).
 - *Information disclosure*: an evidence file that reaches a backup or an archive carries
   pseudonymous records whose re-identification key has no enforced permissions today.
 

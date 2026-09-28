@@ -51,6 +51,10 @@ P_EDIT_SHA_FIELD = 0.2
 P_EDIT_BYTES_FIELD = 0.2
 # Probability of truncating a buffer instead of flipping one byte in it.
 P_TRUNCATE_BYTES = 0.2
+# The instant this harness exports at. Without it the archive name carries the
+# wall-clock second, so two runs of the same seed leave differently named
+# archives and a reported failure cannot be replayed byte-for-byte.
+HARNESS_NOW = "20260723T120000Z"
 
 
 def _valid_stream(dest: pathlib.Path) -> None:
@@ -233,12 +237,18 @@ def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
     return must_fail
 
 
+def _archive_bytes(archive: pathlib.Path) -> dict[str, tuple[str, int]]:
+    """Every archived file by name: (sha256, byte count), read the way the manifest
+    attests them. Two exports of the same stream have to agree on all of it."""
+    return {p.name: ee.file_digest(p) for p in sorted(archive.iterdir()) if p.is_file()}
+
+
 def check_export_pair(tmp: pathlib.Path) -> None:
     """export() output must verify; a segment directory with no manifest must not."""
     source = tmp / "pair-source"
     out_root = tmp / "pair-archives"
     _valid_stream(source)
-    errs = ee.export(source, out_root, ee.DEFAULT_INDEX_NAME)
+    errs = ee.export(source, out_root, ee.DEFAULT_INDEX_NAME, stamp=HARNESS_NOW)
     if errs:
         raise InvariantBrokenError(f"export() rejected a valid chain: {errs}")
     archives = sorted(p for p in out_root.iterdir() if p.is_dir())
@@ -246,6 +256,20 @@ def check_export_pair(tmp: pathlib.Path) -> None:
         raise InvariantBrokenError("export() did not produce exactly one archive")
     if ee.verify(archives[0]):
         raise InvariantBrokenError("verify() rejected a fresh export")
+    # Replay: the same stream exported into a second root at the same instant has
+    # to land on the same name and the same bytes, or a seed that reproduces a
+    # failure reproduces it only partway.
+    replay_root = tmp / "pair-archives-replay"
+    if replay_errs := ee.export(source, replay_root, ee.DEFAULT_INDEX_NAME, stamp=HARNESS_NOW):
+        raise InvariantBrokenError(f"export() rejected a valid chain on replay: {replay_errs}")
+    replay = sorted(p for p in replay_root.iterdir() if p.is_dir())
+    if [p.name for p in replay] != [p.name for p in archives]:
+        raise InvariantBrokenError(
+            f"export() named the replay differently: {[p.name for p in replay]} "
+            f"vs {[p.name for p in archives]}"
+        )
+    if _archive_bytes(replay[0]) != _archive_bytes(archives[0]):
+        raise InvariantBrokenError("export() wrote different bytes on replay of the same stream")
     (source / ee.MANIFEST_NAME).unlink()
     if not ee.verify(source):
         raise InvariantBrokenError("verify() accepted a directory that was never archived")

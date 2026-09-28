@@ -19,6 +19,10 @@
   mismatch aborts instead of recording a backup. A re-run of the same export into
   the same second converges on the archive that already exists rather than reporting
   a failed backup, and is refused when that archive holds a different evidence set.
+  `export()` takes the instant it runs at as `stamp` and `now`, and both default to
+  the wall clock; a caller replaying a run passes the instant it is replaying, so
+  the same seed names the same archive and sweeps the same dead run's staging
+  directories it did the first time.
   `make export-evidence DIR=... OUT=...`
   archives, `make verify-archive ARCHIVE=...` re-verifies an existing archive (the
   restore drill in docs/OPERATIONS.md). Secrets are never archived here: the identity map

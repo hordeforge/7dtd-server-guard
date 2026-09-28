@@ -167,12 +167,16 @@ def _self_test() -> list[str]:
         source = scratch / "source"
         archives = scratch / "archives"
         ee.write_sample_stream(source)
-        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+        # The export is stamped with a fixed name, so "now" is pinned to the same
+        # minute: age is what is under test, not the wall clock. The export takes
+        # the same instant for the staging sweep, so no part of this self-test
+        # reads the host clock.
+        now = dt.datetime(2026, 7, 21, 0, 1, tzinfo=dt.UTC)
+        if export_errs := ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=now
+        ):
             return [f"self-test: could not build an archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
-        # The export is stamped with a fixed name, so "now" is pinned to the same
-        # minute: age is what is under test, not the wall clock.
-        now = dt.datetime(2026, 7, 21, 0, 1, tzinfo=dt.UTC)
 
         fresh = check(archives, now=now)
         if fresh.fresh is None or fresh.fresh != archive:
@@ -237,11 +241,12 @@ def _self_test_older_corrupt() -> list[str]:
         ee.write_sample_stream(source)
         older = archives / "evidence-20260721T000000Z"
         newest = archives / "evidence-20260722T000000Z"
-        for stamp in ("20260721T000000Z", "20260722T000000Z"):
-            if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp=stamp):
-                return [f"self-test: could not build an archive: {export_errs}"]
-        # "now" sits after both stamps, so 20260722 is the newest and 20260721 the older.
+        # "now" sits after both stamps, so 20260722 is the newest and 20260721 the
+        # older, and the export reads the same instant for the staging sweep.
         now = dt.datetime(2026, 7, 23, 0, 0, tzinfo=dt.UTC)
+        for stamp in ("20260721T000000Z", "20260722T000000Z"):
+            if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp=stamp, now=now):
+                return [f"self-test: could not build an archive: {export_errs}"]
         before = check(archives, now=now)
         if before.fresh != newest or before.failed:
             errs.append(f"self-test: two healthy archives were misread: {before}")

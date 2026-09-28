@@ -87,10 +87,20 @@ SELF_TEST_STAMP = "20260723T120000Z"
 # directory older than this belongs to a run that died. Without the bound a
 # killed run would leave one directory behind per death, forever.
 STALE_STAGING_AGE_SECONDS = 24 * 60 * 60
+# The instant the staging self-test ages its leftovers against, so what the sweep
+# sweeps is a property of the export guard and not of when the test happened to
+# run. Pinned alongside the stamp the same self-test exports under.
+SELF_TEST_NOW = dt.datetime.strptime(SELF_TEST_STAMP, STAMP_FORMAT).replace(tzinfo=dt.UTC)
 
 
-def utc_stamp() -> str:
-    return dt.datetime.now(dt.UTC).strftime(STAMP_FORMAT)
+def utc_stamp(now: dt.datetime | None = None) -> str:
+    """The archive-name stamp for `now`, or the wall clock's second when omitted.
+
+    An explicit instant is how a caller names a second it means rather than
+    depending on where the clock is, which is what a replay of a run or a
+    self-test that must land on the same name twice needs.
+    """
+    return (now or dt.datetime.now(dt.UTC)).strftime(STAMP_FORMAT)
 
 
 def file_digest(path: pathlib.Path) -> tuple[str, int]:
@@ -289,7 +299,7 @@ def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
     return []
 
 
-def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path) -> None:
+def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path, now: dt.datetime) -> None:
     """Remove staging directories a dead run left behind, this run's excepted.
 
     Each export stages into its own directory, so a concurrent export cannot
@@ -301,8 +311,11 @@ def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path) -> None:
     name carries a one-second stamp, so a match on it would only ever see the
     leftovers of a run that died in the same second as this one, and every other
     killed run would stay in the archive root forever.
+
+    `now` is the instant the age is measured against, passed in by the caller so
+    a replay of a run sweeps the same directories it swept the first time.
     """
-    cutoff = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS
+    cutoff = now.timestamp() - STALE_STAGING_AGE_SECONDS
     for path in out_root.glob(f"{STAGING_PREFIX}*"):
         if path == keep or not path.is_dir():
             continue
@@ -314,7 +327,11 @@ def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path) -> None:
 
 
 def export(
-    source: pathlib.Path, out_root: pathlib.Path, index_name: str, stamp: str | None = None
+    source: pathlib.Path,
+    out_root: pathlib.Path,
+    index_name: str,
+    stamp: str | None = None,
+    now: dt.datetime | None = None,
 ) -> list[str]:
     """Verify, copy, and manifest. Returns errors; empty means the archive is
     complete and verified. Nothing is written when verification fails. A retry of
@@ -328,14 +345,22 @@ def export(
     two exports into the same root inside one second meet the redo check; the
     self-test passes the same stamp rather than depending on where the second
     boundary falls.
+
+    `now` is the same seam for the instant the stale-staging sweep ages
+    leftovers against, which the export reads off the clock twice otherwise:
+    once to name this archive and once to decide what a dead run left behind. A
+    caller replaying a run passes the instant it is replaying, and the export
+    names the same archive and sweeps the same directories.
     """
     members, errs = preflight(source, index_name)
     if errs:
         return errs
 
-    # One stamp, named once: it is the archive directory's name and the manifest's
-    # createdUtc, and deriving it twice let the two drift apart.
-    label = stamp if stamp is not None else utc_stamp()
+    # One instant and one stamp, each named once: the stamp is the archive
+    # directory's name and the manifest's createdUtc, and deriving it twice let
+    # the two drift apart.
+    moment = now or dt.datetime.now(dt.UTC)
+    label = stamp if stamp is not None else utc_stamp(moment)
     dest = out_root / f"{ARCHIVE_DIR_PREFIX}{label}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
@@ -344,7 +369,7 @@ def export(
     # which run a leftover belongs to; the sweep matches on STAGING_PREFIX, which
     # carries no stamp, so it reaches the leftovers of every earlier run.
     staging = pathlib.Path(tempfile.mkdtemp(prefix=f"{STAGING_PREFIX}{label}-", dir=out_root))
-    _sweep_stale_staging(out_root, keep=staging)
+    _sweep_stale_staging(out_root, keep=staging, now=moment)
     try:
         staging_errors = stage(staging, source, members, index_name, label)
         if staging_errors:
@@ -521,7 +546,7 @@ def _self_test_happy_path(
     # One fixed archive name for both exports: the collision refusal is a
     # same-second one, and reading the clock here made the case fail whenever the
     # second boundary happened to fall between the two calls.
-    if export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
+    if export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP, now=SELF_TEST_NOW):
         errs.append("self-test: export of a valid chain reported errors")
     archives = sorted(p for p in out_root.iterdir() if p.is_dir())
     if len(archives) != 1:
@@ -538,7 +563,7 @@ def _self_test_happy_path(
     # verified (OPERATIONS.md -> Schedule). The refusals themselves are the
     # divergence cases below.
     before = {p.name: file_digest(p) for p in archives[0].iterdir() if p.is_file()}
-    redo = export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP)
+    redo = export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP, now=SELF_TEST_NOW)
     if redo:
         errs.append(f"self-test: a retried export of the same evidence reported {redo}")
     if sorted(p for p in out_root.iterdir() if p.is_dir()) != archives:
@@ -849,15 +874,20 @@ def _self_test_stale_staging(source: pathlib.Path) -> list[str]:
         (stale / "half-copied-segment.jsonl").write_text('{"partial": true}\n', encoding="utf-8")
         # A second whose name no later export will ask for again, aged past the
         # window the sweep compares against.
-        old = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS - 60
+        old = SELF_TEST_NOW.timestamp() - STALE_STAGING_AGE_SECONDS - 60
         os.utime(stale, (old, old))
         running = out_root / f"{STAGING_PREFIX}20991231T235959Z-live"
         running.mkdir()
-        # A concurrent export stages right now, so its directory is younger than
-        # the window and has to survive the sweep.
-        os.utime(running)
+        # A concurrent export stages at the same instant this one is replaying
+        # at, so its directory is younger than the window and has to survive the
+        # sweep. Both mtimes are set: read off the host clock they would be
+        # seconds, not a day, either side of the pinned instant.
+        moment = SELF_TEST_NOW.timestamp()
+        os.utime(running, (moment, moment))
 
-        if errs_found := export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
+        if errs_found := export(
+            source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP, now=SELF_TEST_NOW
+        ):
             errs.append(
                 f"self-test: could not export into a root with staging leftovers: {errs_found}"
             )

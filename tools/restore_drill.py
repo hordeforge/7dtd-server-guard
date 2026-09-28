@@ -51,6 +51,11 @@ Record = dict[str, Any]
 # missing evidence archive and is only visible if something looks.
 KEY_COPY_CYCLE_DAYS = 7
 KEY_MAX_AGE_HOURS = 24 * KEY_COPY_CYCLE_DAYS
+# The instant the self-tests export at, matching the archive stamp they name. The
+# export reads the wall clock to decide what a dead run's staging directory is,
+# so a self-test that left that to the host read the clock on every run and
+# could not be replayed from a pin.
+SELF_TEST_NOW = dt.datetime(2026, 7, 21, 0, 0, tzinfo=dt.UTC)
 
 
 def _now() -> dt.datetime:
@@ -235,7 +240,9 @@ def _self_test_restore() -> list[str]:
         source = scratch / "source"
         archives = scratch / "archives"
         ee.write_sample_stream(source)
-        export_errs = ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z")
+        export_errs = ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=SELF_TEST_NOW
+        )
         if export_errs:
             return [f"self-test: could not build an archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
@@ -268,7 +275,9 @@ def _self_test_without_index() -> list[str]:
         (source / "evidence-2026-07-21-000000.jsonl").write_text(
             ec.canonical(record) + "\n", encoding="utf-8"
         )
-        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+        if export_errs := ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=SELF_TEST_NOW
+        ):
             return [f"self-test: could not build an indexless archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
         found, summary = drill(DrillRequest(archive=archive, work=scratch / "work"))
@@ -292,7 +301,9 @@ def _self_test_refusals() -> list[str]:
         source = scratch / "source"
         archives = scratch / "archives"
         ee.write_sample_stream(source)
-        if export_errs := ee.export(source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z"):
+        if export_errs := ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=SELF_TEST_NOW
+        ):
             return [f"self-test: could not build an archive: {export_errs}"]
         archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
 
