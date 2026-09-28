@@ -134,14 +134,25 @@ def manifest_digest(manifest: dict[str, Any]) -> str:
 
 
 def build_manifest(
-    source: pathlib.Path, dest: pathlib.Path, created_utc: str, index_name: str
+    source: pathlib.Path,
+    dest: pathlib.Path,
+    created_utc: str,
+    index_name: str,
+    digests: dict[str, tuple[str, int]] | None = None,
 ) -> dict[str, Any]:
     """Describe what was copied, from the copies (not from the source) so the
-    manifest records what a restore would actually read."""
+    manifest records what a restore would actually read.
+
+    `digests` carries the sha256 and byte count a caller already computed over the
+    staged copies (`copy_verified` hashes both sides of every copy it makes, and
+    only reaches here when they matched). Passing them back saves re-reading the
+    whole archive; a name absent from the map is digested here as before.
+    """
+    known = digests or {}
     files: list[ManifestFile] = []
     for name in sorted(p.name for p in dest.iterdir() if p.is_file() and p.name != MANIFEST_NAME):
         path = dest / name
-        sha, size = file_digest(path)
+        sha, size = known.get(name) or file_digest(path)
         entry: ManifestFile = {"name": name, "sha256": sha, "bytes": size}
         if path.suffix == ".jsonl":
             entry["records"] = _record_count(path)
@@ -185,15 +196,27 @@ def preflight(source: pathlib.Path, index_name: str) -> tuple[list[pathlib.Path]
     return members, []
 
 
-def copy_verified(members: list[pathlib.Path], staging: pathlib.Path) -> list[str]:
-    """Copy each member and prove the copy is byte-identical to the source."""
+def copy_verified(
+    members: list[pathlib.Path], staging: pathlib.Path
+) -> tuple[list[str], dict[str, tuple[str, int]]]:
+    """Copy each member and prove the copy is byte-identical to the source.
+
+    Returns the errors and the digest of every staged copy. The digest is of the
+    copy, not the source, and is what `build_manifest` records; both sides were
+    just read to compare them, so returning it saves the manifest a second full
+    pass over the archive.
+    """
     errs: list[str] = []
+    digests: dict[str, tuple[str, int]] = {}
     for member in members:
         target = staging / member.name
         shutil.copy2(member, target)
-        if file_digest(member) != file_digest(target):
+        source_digest = file_digest(member)
+        target_digest = file_digest(target)
+        digests[member.name] = target_digest
+        if source_digest != target_digest:
             errs.append(f"{member.name}: copy does not match the source")
-    return errs
+    return errs, digests
 
 
 def stage(
@@ -204,10 +227,10 @@ def stage(
     created_utc: str,
 ) -> list[str]:
     """Fill the staging directory and prove it is a restorable archive."""
-    copy_errors = copy_verified(members, staging)
+    copy_errors, digests = copy_verified(members, staging)
     if copy_errors:
         return copy_errors
-    manifest = build_manifest(source, staging, created_utc, index_name)
+    manifest = build_manifest(source, staging, created_utc, index_name, digests)
     if not manifest["totalBytes"] or not manifest["totalRecords"]:
         return [f"{source}: archive would be empty; refusing to record a zero-byte backup"]
     (staging / MANIFEST_NAME).write_text(

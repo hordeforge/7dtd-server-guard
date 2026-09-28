@@ -46,6 +46,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -131,6 +132,8 @@ def in_vocab(value: Json, vocab: frozenset[str] | set[str]) -> bool:
 ALLOWED_FIXTURES = frozenset(render_detectors.FIXTURE_FAMILIES)
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+DETECTOR_ID_RE = re.compile(r"`([a-z]+\.[a-z_]+)`")
+TODO_CHECKBOX_RE = re.compile(r"^[-*] \[[ xX]\]")
 
 # Key patterns declared in the SCHEMAS.md config table. They share the dotted
 # family.subject shape with detector IDs, but rows like actions.correct or
@@ -210,7 +213,7 @@ DENY_LIST_REF = f"#/definitions/{PERSONAL_DATA_DENY_LIST}"
 def detector_ids_in(text: str) -> set[str]:
     """Collect backticked `family.subject` tokens from a doc for detector families."""
     ids: set[str] = set()
-    for m in re.finditer(r"`([a-z]+\.[a-z_]+)`", text):
+    for m in DETECTOR_ID_RE.finditer(text):
         family = m.group(1).split(".", 1)[0]
         if family in SPEC_FAMILIES and m.group(1) not in CONFIG_SCHEMA_KEYS:
             ids.add(m.group(1))
@@ -226,7 +229,27 @@ def check_em_dashes() -> list[str]:
     return out
 
 
-def link_failure(start: pathlib.Path, target: str) -> str | None:
+def _dir_names(
+    directory: pathlib.Path, cache: dict[pathlib.Path, frozenset[str]]
+) -> frozenset[str]:
+    """The entry names of `directory`, listed once per gate run.
+
+    A relative link target is walked one component at a time and every component
+    is matched against the containing directory's own entries, so a doc set whose
+    links all point into docs/, config/, and src/ re-listed those same three
+    directories once per link component. The cache lives as long as one
+    `check_links` call, which is the window in which nothing writes to the tree.
+    """
+    names = cache.get(directory)
+    if names is None:
+        names = frozenset(entry.name for entry in directory.iterdir())
+        cache[directory] = names
+    return names
+
+
+def link_failure(
+    start: pathlib.Path, target: str, cache: dict[pathlib.Path, frozenset[str]]
+) -> str | None:
     """Why a relative link target does not resolve under `start`, or None when it does.
 
     `exists()` alone is not the check: on a case-insensitive filesystem (NTFS,
@@ -246,7 +269,7 @@ def link_failure(start: pathlib.Path, target: str) -> str | None:
             continue
         if not current.is_dir():
             return "broken link"
-        names = {entry.name for entry in current.iterdir()}
+        names = _dir_names(current, cache)
         if part not in names:
             return (
                 "link target name case does not match the file on disk"
@@ -259,6 +282,7 @@ def link_failure(start: pathlib.Path, target: str) -> str | None:
 
 def check_links() -> list[str]:
     out = []
+    dir_names: dict[pathlib.Path, frozenset[str]] = {}
     for p in MD_FILES:
         text = p.read_text(encoding="utf-8")
         for m in LINK_RE.finditer(text):
@@ -271,7 +295,7 @@ def check_links() -> list[str]:
             path_part = target.partition("#")[0]
             if not path_part:
                 continue
-            if reason := link_failure(p.parent, path_part):
+            if reason := link_failure(p.parent, path_part, dir_names):
                 out.append(f"{p.relative_to(ROOT)}: {reason} -> {target}")
     return out
 
@@ -281,7 +305,7 @@ def check_todo_format() -> list[str]:
     out = []
     for i, line in enumerate(todo.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
-        if re.match(r"^[-*] \[[ xX]\]", stripped):
+        if TODO_CHECKBOX_RE.match(stripped):
             continue
         if stripped.startswith(("- [", "* [")):
             out.append(f"TODO.md:{i}: malformed checkbox: {stripped[:80]}")
@@ -458,7 +482,7 @@ def check_spec() -> list[str]:
         d["id"] for d in detectors if isinstance(d, dict) and isinstance(d.get("id"), str)
     ]
     if len(ids) != len(set(ids)):
-        dups = sorted({i for i in ids if ids.count(i) > 1})
+        dups = sorted(i for i, n in Counter(ids).items() if n > 1)
         out.append(f"duplicate detector ids in spec: {dups}")
     for d in detectors:
         out += _detector_errors(d)

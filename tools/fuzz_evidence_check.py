@@ -135,30 +135,58 @@ def check_load_records(tmp: pathlib.Path, lines: list[bytes]) -> int:
 VALID_INDEX: dict[str, object] = {"segments": []}
 # Records in the clean round-trip chain used for the persistence pair assertion.
 PAIR_CHAIN_LEN = 5
+INDEX_NAME = "segment-index.json"
+RUN_DIR_NAME = "run"
 
 
-def check_verify_dir(tmp: pathlib.Path, files: dict[str, bytes], index: bytes | None) -> list[str]:
-    # Fresh state per iteration, torn down with it: the run directory and the
-    # segments written into it are removed on every exit, including the raise
-    # paths, so a run of N iterations leaves N directories behind otherwise.
-    with tempfile.TemporaryDirectory(dir=tmp) as run_dir:
-        run = pathlib.Path(run_dir)
-        for name, blob in files.items():
-            (run / name).write_bytes(blob)
+class RunDir:
+    """The directory `verify_dir` reads, reset to exactly the bytes it is handed.
+
+    One directory serves every iteration instead of one per iteration. The set of
+    names is the same almost every time, so the directory is created once and only
+    a name the previous iteration wrote and this one does not is unlinked; the rest
+    is overwritten in place. A fresh directory per iteration is a mkdir, an rmdir,
+    and an unlink per file that buys nothing, and across a full run those
+    thousands of syscalls dominated the harness's wall clock.
+
+    A name that survives into an iteration it does not belong to would be read by
+    the glob or the index lookup and turn one mutation into a different one, so
+    `_written` is what the previous iteration actually put on disk, not what the
+    generator meant to write.
+    """
+
+    def __init__(self, parent: pathlib.Path) -> None:
+        self.path = parent / RUN_DIR_NAME
+        self.path.mkdir()
+        self._written: set[str] = set()
+
+    def write(self, files: dict[str, bytes], index: bytes | None) -> pathlib.Path:
+        """Fill the directory with this iteration's segments and index, and no others."""
+        blobbed = dict(files)
         if index is not None:
-            (run / "segment-index.json").write_bytes(index)
-        try:
-            errs = ec.verify_dir(run, "segment-index.json")
-        except Exception as exc:
-            raise InvariantBrokenError(f"verify_dir raised {type(exc).__name__}: {exc}") from exc
-        # The list-ness of the result is statically guaranteed; the element types are
-        # not, because the verifier builds messages from mutated content.
-        if not all(isinstance(e, str) for e in errs):
-            raise InvariantBrokenError(f"verify_dir returned non-list-of-str: {errs!r}")
-        again = ec.verify_dir(run, "segment-index.json")
-        if again != errs:
-            raise InvariantBrokenError(f"verify_dir nondeterministic: {errs!r} vs {again!r}")
-        return errs
+            blobbed[INDEX_NAME] = index
+        for stale in sorted(self._written - blobbed.keys()):
+            (self.path / stale).unlink()
+        for name, blob in blobbed.items():
+            (self.path / name).write_bytes(blob)
+        self._written = set(blobbed)
+        return self.path
+
+
+def check_verify_dir(run: RunDir, files: dict[str, bytes], index: bytes | None) -> list[str]:
+    path = run.write(files, index)
+    try:
+        errs = ec.verify_dir(path, INDEX_NAME)
+    except Exception as exc:
+        raise InvariantBrokenError(f"verify_dir raised {type(exc).__name__}: {exc}") from exc
+    # The list-ness of the result is statically guaranteed; the element types are
+    # not, because the verifier builds messages from mutated content.
+    if not all(isinstance(e, str) for e in errs):
+        raise InvariantBrokenError(f"verify_dir returned non-list-of-str: {errs!r}")
+    again = ec.verify_dir(path, INDEX_NAME)
+    if again != errs:
+        raise InvariantBrokenError(f"verify_dir nondeterministic: {errs!r} vs {again!r}")
+    return errs
 
 
 def build_valid_segment(n: int) -> list[ec.Record]:
@@ -175,12 +203,12 @@ def build_valid_segment(n: int) -> list[ec.Record]:
     return out
 
 
-def check_clean_chain_pair(tmp: pathlib.Path) -> None:
+def check_clean_chain_pair(run: RunDir) -> None:
     """Pair assertion: chain built in memory -> disk -> parse -> zero errors."""
     good = build_valid_segment(PAIR_CHAIN_LEN)
     files = {"evidence-1.jsonl": ("\n".join(ec.canonical(r) for r in good)).encode("utf-8")}
     index = json.dumps({"segments": [{"file": "evidence-1.jsonl"}]}).encode("utf-8")
-    errs = check_verify_dir(tmp, files, index)
+    errs = check_verify_dir(run, files, index)
     if errs:
         raise InvariantBrokenError(f"pair assertion: valid chain reported broken: {errs}")
 
@@ -212,6 +240,7 @@ def main() -> int:
     SCRATCH.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="fuzz-evidence-", dir=SCRATCH) as td:
         tmp = pathlib.Path(td)
+        run = RunDir(tmp)
 
         # target 1: record-level parsing + hashing
         for _ in range(args.iterations):
@@ -251,14 +280,14 @@ def main() -> int:
                 if rng.random() < P_CORRUPT_INDEX_BYTES:
                     index = mutate_line_bytes(rng, index)
             try:
-                check_verify_dir(tmp, files, index)
+                check_verify_dir(run, files, index)
             except InvariantBrokenError as exc:
                 print(f"fuzz-evidence-check: FAIL target2: {exc}", file=sys.stderr)
                 return 1
             stats["t2_runs"] += 1
 
         try:
-            check_clean_chain_pair(tmp)
+            check_clean_chain_pair(run)
         except InvariantBrokenError as exc:
             print(f"fuzz-evidence-check: FAIL {exc}", file=sys.stderr)
             return 1
