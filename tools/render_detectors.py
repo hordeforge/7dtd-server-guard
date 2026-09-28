@@ -33,6 +33,8 @@ SPEC = ROOT / "tools" / "detector_spec.yaml"
 REGISTRY = ROOT / "docs" / "DETECTORS.md"
 MANIFEST = ROOT / "config" / "detector-config-manifest.json"
 
+# Section order and titles for the registry matrix. One mapping, not a list beside
+# a dict: a family added to one and not the other silently lost its section.
 FAMILY_TITLES = {
     "protocol": "Protocol and identity (Phase 4)",
     "movement": "Movement (Phase 5)",
@@ -42,15 +44,7 @@ FAMILY_TITLES = {
     "world": "World and entity (Phase 8)",
     "availability": "Availability (Phases 4 and 8)",
 }
-FAMILY_ORDER = [
-    "protocol",
-    "movement",
-    "combat",
-    "progression",
-    "inventory",
-    "world",
-    "availability",
-]
+FAMILY_ORDER = list(FAMILY_TITLES)
 AVAILABILITY_CEILING_SUFFIX = {
     "protocol.flood",
     "world.budget",

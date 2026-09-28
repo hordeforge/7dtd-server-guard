@@ -175,19 +175,14 @@ def build_valid_segment(n: int) -> list[ec.Record]:
     return out
 
 
-def check_clean_chain_pair(tmp: pathlib.Path) -> bool:
+def check_clean_chain_pair(tmp: pathlib.Path) -> None:
     """Pair assertion: chain built in memory -> disk -> parse -> zero errors."""
     good = build_valid_segment(PAIR_CHAIN_LEN)
     files = {"evidence-1.jsonl": ("\n".join(ec.canonical(r) for r in good)).encode("utf-8")}
     index = json.dumps({"segments": [{"file": "evidence-1.jsonl"}]}).encode("utf-8")
     errs = check_verify_dir(tmp, files, index)
     if errs:
-        print(
-            f"fuzz-evidence-check: FAIL pair assertion: valid chain reported broken: {errs}",
-            file=sys.stderr,
-        )
-        return False
-    return True
+        raise InvariantBroken(f"pair assertion: valid chain reported broken: {errs}")
 
 
 def load_seeds() -> list[ec.Record]:
@@ -260,7 +255,10 @@ def main() -> int:
                 return 1
             stats["t2_runs"] += 1
 
-        if not check_clean_chain_pair(tmp):
+        try:
+            check_clean_chain_pair(tmp)
+        except InvariantBroken as exc:
+            print(f"fuzz-evidence-check: FAIL {exc}", file=sys.stderr)
             return 1
         stats["clean_chain_ok"] = True
 

@@ -40,11 +40,19 @@ this file and are described only by their git tags.
 - `hmacKey.permissions` joins `identityMap.permissions`: the re-identification
   key file is stored at the same `0600` default as the identity map.
 
+### Added
+
+- `tools/replay_contract_check.py --fix-fingerprint` reseals a trace's recorded
+  `determinism.fingerprint` from its current outcome projection, rewriting only the
+  digest. Editing a trace without resealing it failed the gate with two digests and no
+  way to compute the right one short of running the projection by hand.
+
 ### Fixed
 
-- The shipped inventory stack trace carried a `determinism.fingerprint` that did not
-  match the outcome projection the checker recomputes, so `make check` and
-  `make exercise` failed on a clean tree. The digest is now the projection's.
+- The shipped inventory stack trace carried a `determinism.fingerprint` that matched no
+  outcome projection, so `make check` and `make exercise` failed on a clean tree from
+  the commit that added the field. The fixture now carries the digest its own content
+  produces.
 - `doccheck.py`, `evidence_check.py`, and `replay_contract_check.py` printed
   failure detail on stdout, where a script reading the verdict also reads the
   diagnostics. A failing run now reports on stderr and a clean one on stdout, which
@@ -61,6 +69,12 @@ this file and are described only by their git tags.
 - `make fuzz` and `make verify-evidence` passed operator-supplied paths unquoted, so
   an evidence directory containing a space split into two arguments, and their usage
   errors printed to stdout.
+- The doccheck spec and manifest checks indexed spec, threshold, and detector fields
+  with `[]`, so a hand-edited `tools/detector_spec.yaml` or manifest missing one of them
+  raised out of the gate instead of reporting the entry. Those reads report now, and a
+  threshold whose declared type is `int` or `float` must carry a numeric default inside
+  its range (a YAML `true` passed the range comparison as an int, and
+  `render_manifest` copies that default into the shipped manifest).
 - `fuzz_replay_trace.py` built its deep-nesting probe from a mutated trace and then
   indexed `cases[0]["events"][0]`, so a mutant that dropped or replaced either crashed
   the harness with a bare `TypeError`. The probe now copies the pristine sample. The

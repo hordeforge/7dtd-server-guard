@@ -7,3 +7,7 @@ detector once the corpus grows. Every trace file carries the recording build's h
 manifest hash and schema version; a fingerprint or schema mismatch skips and reports
 instead of replaying blindly. The inventory stack design vector is exercised before Phase 4;
 the full corpus remains Phase 4 work.
+
+Editing a trace changes its outcome projection, so reseal the recorded digest afterwards:
+`uv run python tools/replay_contract_check.py --fix-fingerprint`. The check then fails
+with both digests, which is the same mismatch the flag repairs.

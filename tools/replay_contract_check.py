@@ -1,5 +1,8 @@
 """Exercise design-time replay contracts before the Phase 4 replay harness exists.
 
+Usage:
+  uv run python tools/replay_contract_check.py [--fix-fingerprint]
+
 Exit codes: 0 the vector satisfies the contract, 1 the contract failed or a
 fixture could not be read, 2 usage error. The summary goes to stdout and
 contract failures to stderr.
@@ -13,7 +16,7 @@ import json
 import pathlib
 import re
 import sys
-from typing import Any, TypeGuard
+from typing import Any, NamedTuple, TypeGuard
 
 from evidence_check import record_hash
 
@@ -28,6 +31,8 @@ SPEC = ROOT / "tools/detector_spec.yaml"
 
 UTC_INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+# The recorded digest, with its quotes and value, for resealing a fixture in place.
+FINGERPRINT_FIELD = re.compile(r'("fingerprint":\s*")[0-9a-f]{64}(")')
 
 
 def _is_int(v: object) -> TypeGuard[int]:
@@ -118,16 +123,25 @@ def _determinism_errors(trace: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _case_errors(case: dict[str, Any], detector_id: str) -> tuple[list[str], int, int]:
-    """Contract checks for one case. Returns (errors, events counted, work units counted)."""
+class CaseResult(NamedTuple):
+    """What one case contributes: its errors, how many events it declares, and how many
+    work units its expectation charges against the trace's budget."""
+
+    errors: list[str]
+    event_count: int
+    work_units: int
+
+
+def _case_errors(case: dict[str, Any], detector_id: str) -> CaseResult:
+    """Contract checks for one case."""
     raw_name = case.get("name")
     name = raw_name if isinstance(raw_name, str) else "<unnamed>"
     events = case.get("events")
     expect = case.get("expect")
     if not isinstance(events, list) or not all(isinstance(e, dict) for e in events):
-        return ([f"{name}: events must be an array of objects"], 0, 0)
+        return CaseResult([f"{name}: events must be an array of objects"], 0, 0)
     if not isinstance(expect, dict):
-        return ([f"{name}: expect must be an object"], 0, 0)
+        return CaseResult([f"{name}: expect must be an object"], 0, 0)
 
     errors: list[str] = []
     sequences = [event.get("sequence") for event in events]
@@ -161,7 +175,7 @@ def _case_errors(case: dict[str, Any], detector_id: str) -> tuple[list[str], int
         errors.append(f"{name}: observe-mode contract must expect no actions")
 
     errors += _stack_invariant_errors(events, name, expected_findings=bool(findings))
-    return (errors, len(events), max_work)
+    return CaseResult(errors, len(events), max_work)
 
 
 def _stack_invariant_errors(
@@ -232,26 +246,62 @@ def contract_errors(trace: object, detector_ids: set[str]) -> list[str]:
     total_events = 0
     total_work = 0
     for case in cases:
-        case_errors, events, work = _case_errors(case, detector_id)
-        errors += case_errors
-        total_events += events
-        total_work += work
+        result = _case_errors(case, detector_id)
+        errors += result.errors
+        total_events += result.event_count
+        total_work += result.work_units
     errors += _determinism_errors(trace)
     return errors + _budget_errors(trace.get("workBudget"), total_events, total_work)
 
 
+def seal_fingerprint(trace: dict[str, Any], text: str) -> str | None:
+    """The trace text with its recorded digest replaced by the current projection.
+
+    Only the digest is touched, so re-sealing a fixture does not reflow its
+    hand-written layout. Returns None when the file holds no digest to replace
+    or holds more than one, where picking one would guess.
+    """
+    digest = outcome_fingerprint(trace)
+    if len(FINGERPRINT_FIELD.findall(text)) != 1:
+        return None
+    return FINGERPRINT_FIELD.sub(rf"\g<1>{digest}\g<2>", text, count=1)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.parse_args()
+    ap.add_argument(
+        "--fix-fingerprint",
+        action="store_true",
+        help="reseal the fixture's determinism.fingerprint from its current projection",
+    )
+    args = ap.parse_args()
 
     try:
-        trace = json.loads(TRACE.read_text(encoding="utf-8"))
+        text = TRACE.read_text(encoding="utf-8")
+        trace = json.loads(text)
         detector_ids = {
             d["id"] for d in yaml.safe_load(SPEC.read_text(encoding="utf-8"))["detectors"]
         }
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
         print(f"replay-contract: unreadable fixture or spec: {exc}", file=sys.stderr)
         return 1
+
+    if args.fix_fingerprint:
+        if not isinstance(trace.get("determinism"), dict):
+            print("replay-contract: trace has no determinism block to seal", file=sys.stderr)
+            return 1
+        sealed = seal_fingerprint(trace, text)
+        if sealed is None:
+            print(
+                f"replay-contract: {TRACE.relative_to(ROOT)} must hold exactly one "
+                "fingerprint field to reseal",
+                file=sys.stderr,
+            )
+            return 1
+        TRACE.write_text(sealed, encoding="utf-8")
+        print(f"replay-contract: resealed {TRACE.relative_to(ROOT)}")
+        return 0
+
     errors = contract_errors(trace, detector_ids)
     if errors:
         for error in errors:

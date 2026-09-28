@@ -240,13 +240,52 @@ def check_todo_format() -> list[str]:
 def spec_ids() -> set[str]:
     """Registry ids, or an empty set when the spec does not parse (check_spec reports that)."""
     try:
-        return {d["id"] for d in render_detectors.load_spec()}
+        return {d["id"] for d in render_detectors.load_spec() if isinstance(d.get("id"), str)}
     except Exception:
         return set()
 
 
-def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
-    """Threshold keys are unique, typed, and carry a sane range and default."""
+def _range_default_errors(did: str, t: Json, ttype: str) -> list[str]:
+    """The numeric checks on one threshold: its [min, max] pair and its default.
+
+    Both must be finite and the default must sit inside the range, because
+    render_manifest copies every threshold's default into the shipped manifest
+    unconditionally, so a missing or non-numeric one has to be rejected here. A
+    YAML `true` is an int in Python, hence the bool exclusion, and a fractional
+    value on an `int` threshold is truncated on load, so the value in the spec is
+    not the value that runs.
+    """
+    if ttype not in {"int", "float"}:
+        return []
+    rng = t.get("range")
+    if not isinstance(rng, list):
+        return []
+    out: list[str] = []
+    key = t.get("key")
+    default = t.get("default")
+    if len(rng) != RANGE_BOUNDS or not all(_is_finite_number(b) for b in rng):
+        out.append(f"{did}: threshold {key} bad range {rng}")
+    elif not rng[0] <= rng[1]:
+        out.append(f"{did}: threshold {key} bad range {rng}")
+    elif ttype == "int" and not all(_is_int_value(b) for b in rng):
+        out.append(f"{did}: threshold {key} int type with fractional range")
+    elif not _is_finite_number(default):
+        out.append(f"{did}: threshold {key} default {default!r} is not a number")
+    elif ttype == "int" and not _is_int_value(default):
+        out.append(f"{did}: threshold {key} int type with fractional default")
+    elif not rng[0] <= default <= rng[1]:
+        out.append(f"{did}: threshold {key} default {default} outside range {rng}")
+    return out
+
+
+def _threshold_errors(did: str, thresholds: Json) -> list[str]:
+    """Threshold keys are unique, typed, and carry a sane range and default.
+
+    Every field is read with .get: a hand-edited spec missing a key must be
+    reported, not raise out of the gate.
+    """
+    if not isinstance(thresholds, list):
+        return [f"{did}: thresholds must be a list"]
     out = []
     keys = []
     for t in thresholds:
@@ -262,30 +301,15 @@ def _threshold_errors(did: str, thresholds: list[Json]) -> list[str]:
         if ttype not in SPEC_THRESHOLD_TYPES:
             out.append(f"{did}: threshold {t.get('key')} bad type {ttype}")
             continue
-        rng = t.get("range")
-        default = t.get("default")
-        if ttype not in {"int", "float"} or not isinstance(rng, list):
-            continue
-        if len(rng) != RANGE_BOUNDS or not all(_is_finite_number(b) for b in rng):
-            out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
-        elif not rng[0] <= rng[1]:
-            out.append(f"{did}: threshold {t.get('key')} bad range {rng}")
-        elif t.get("type") == "int" and not all(_is_int_value(b) for b in rng):
-            # A fractional bound on an int threshold is truncated on load, so the
-            # bound in the spec is not the bound that runs.
-            out.append(f"{did}: threshold {t.get('key')} int type with fractional range")
-        elif not _is_finite_number(default):
-            out.append(f"{did}: threshold {t.get('key')} default {default!r} is not a number")
-        elif t.get("type") == "int" and not _is_int_value(default):
-            out.append(f"{did}: threshold {t.get('key')} int type with fractional default")
-        elif not rng[0] <= default <= rng[1]:
-            out.append(f"{did}: threshold {t.get('key')} default {default} outside range {rng}")
+        out.extend(_range_default_errors(did, t, ttype))
     return out
 
 
 def _detector_errors(d: Json) -> list[str]:
     """Required fields, input authority/role vocabulary, fixtures, and the D-07 rule."""
     did = d.get("id")
+    if not isinstance(did, str):
+        return [f"detector with no id: {d.get('id')!r}"]
     out = []
     if d.get("family") not in SPEC_FAMILIES:
         out.append(f"{did}: bad family {d.get('family')}")
@@ -319,7 +343,7 @@ def _detector_errors(d: Json) -> list[str]:
         out.append(f"{did}: must declare normal and violation fixtures (TEST_PLAN Layer 4)")
     # D-07 rule: Hard requires all decision inputs server-derived, or a hard_condition.
     decision_client = [
-        i["name"]
+        i.get("name")
         for i in inputs
         if i.get("role") == "decision" and i.get("authority") == "client-declared"
     ]
@@ -339,9 +363,9 @@ def check_spec() -> list[str]:
         return [f"tools/detector_spec.yaml {exc}"]
 
     out = []
-    ids: list[str] = [str(d.get("id")) for d in detectors if d.get("id") is not None]
-    if len(ids) != len(detectors):
-        out.append("detector entry without an id in tools/detector_spec.yaml")
+    # Entries with no usable id are reported by _detector_errors; they cannot take
+    # part in the duplicate-id comparison.
+    ids: list[str] = [d["id"] for d in detectors if isinstance(d.get("id"), str)]
     if len(ids) != len(set(ids)):
         dups = sorted({i for i in ids if ids.count(i) > 1})
         out.append(f"duplicate detector ids in spec: {dups}")
@@ -392,52 +416,87 @@ def check_registry_sync() -> list[str]:
     return _run_tool("render_detectors.py", "--check", on_failure="registry is stale")
 
 
-def _manifest_errors(example: Json, out: list[str]) -> None:
-    """Manifest metadata must track the spec, and both must cover the example config."""
-    manifest = json.loads(
-        (ROOT / "config" / "detector-config-manifest.json").read_text(encoding="utf-8")
-    )
-    spec_by_id = {d["id"]: d for d in render_detectors.load_spec()}
+def _threshold_map(entries: Json) -> dict[str, Json] | None:
+    """Threshold key -> threshold entry, or None when the list is malformed.
+
+    Both the spec and the generated manifest carry thresholds as unvalidated
+    JSON, so a hand edit that drops a key is reported, not indexed.
+    """
+    if not isinstance(entries, list):
+        return None
+    out: dict[str, Json] = {}
+    for t in entries:
+        if not isinstance(t, dict) or not isinstance(t.get("key"), str):
+            return None
+        out[t["key"]] = t
+    return out
+
+
+def _manifest_errors(example: Json) -> list[str]:
+    """Manifest metadata must track the spec, and both must cover the example config.
+
+    Like every check here, a hand-edited manifest or spec is reported as an error
+    list; nothing is read with [] on a field that may be absent.
+    """
+    manifest = json.loads((ROOT / "config" / "detector-config-manifest.json").read_text())
+    entries = manifest.get("detectors")
+    if not isinstance(entries, list):
+        return ["config/detector-config-manifest.json: detectors must be an array"]
+    spec_by_id = {d["id"]: d for d in render_detectors.load_spec() if "id" in d}
+    out: list[str] = []
+    # detector id -> that manifest entry's thresholds, keyed by threshold key.
     manifest_keys: dict[str, dict[str, Json]] = {}
     manifest_ids: set[str] = set()
-    for entry in manifest["detectors"]:
-        manifest_ids.add(entry["detectorId"])
-        spec_entry = spec_by_id.get(entry["detectorId"])
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("detectorId"), str):
+            out.append(f"manifest detector entry without a detectorId: {entry!r}")
+            continue
+        detector_id = entry["detectorId"]
+        manifest_ids.add(detector_id)
+        spec_entry = spec_by_id.get(detector_id)
         if spec_entry is None:
-            out.append(f"manifest detector {entry.get('detectorId')} not in spec")
+            out.append(f"manifest detector {detector_id} not in spec")
             continue
         if (
-            entry.get("phase") != spec_entry["phase"]
-            or entry.get("ceiling") != spec_entry["ceiling"]
-            or entry.get("defaultMode") != spec_entry["default_mode"]
+            entry.get("phase") != spec_entry.get("phase")
+            or entry.get("ceiling") != spec_entry.get("ceiling")
+            or entry.get("defaultMode") != spec_entry.get("default_mode")
         ):
-            out.append(f"manifest metadata drift for {entry['detectorId']}; re-run make detectors")
-        declared = {t["key"] for t in spec_entry.get("thresholds", [])}
-        manifest_keys[entry["detectorId"]] = {t["key"]: t for t in entry.get("thresholds", [])}
+            out.append(f"manifest metadata drift for {detector_id}; re-run make detectors")
+        declared = _threshold_map(spec_entry.get("thresholds", []))
+        in_manifest = _threshold_map(entry.get("thresholds", []))
+        if declared is None or in_manifest is None:
+            out.append(f"malformed threshold list for {detector_id} in the spec or manifest")
+            continue
+        manifest_keys[detector_id] = in_manifest
         out.extend(
-            f"manifest threshold {entry['detectorId']}.{t['key']} not declared in spec"
-            for t in entry.get("thresholds", [])
-            if t["key"] not in declared
+            f"manifest threshold {detector_id}.{key} not declared in spec"
+            for key in in_manifest
+            if key not in declared
         )
         out.extend(
             f"manifest is missing threshold {entry['detectorId']}.{key} declared in spec; "
             "re-run make detectors"
-            for key in sorted(declared - set(manifest_keys[entry["detectorId"]]))
+            for key in sorted(set(declared) - set(manifest_keys[entry["detectorId"]]))
         )
     out.extend(
         f"manifest is missing detector {d} declared in spec; re-run make detectors"
         for d in sorted(set(spec_by_id) - manifest_ids)
     )
     for did, keys in example.get("thresholds", {}).items():
+        known = manifest_keys.get(did, {})
         out.extend(
             f"example config threshold {did}.{key} not in generated manifest"
             for key in keys
-            if key not in manifest_keys.get(did, {})
+            if key not in known
         )
-        for key, value in keys.items():
-            spec_threshold = manifest_keys.get(did, {}).get(key)
-            if spec_threshold is not None:
-                out.extend(_threshold_value_errors(did, key, value, spec_threshold))
+        out.extend(
+            error
+            for key, value in keys.items()
+            if (threshold := known.get(key)) is not None
+            for error in _threshold_value_errors(did, key, value, threshold)
+        )
+    return out
 
 
 def _threshold_value_errors(did: str, key: str, value: Json, threshold: Json) -> list[str]:
@@ -495,7 +554,7 @@ def check_detector_ids() -> list[str]:
         for mode_id in sorted(registered - example_modes)
     )
     out.extend(_example_mode_errors(example))
-    _manifest_errors(example, out)
+    out.extend(_manifest_errors(example))
     return out
 
 
@@ -507,7 +566,7 @@ MODE_SEVERITY = ("observe", "correct", "enforce")
 
 def _example_mode_errors(example: Json) -> list[str]:
     """The example config may not ship a mode above the spec's default for any detector."""
-    defaults = {d["id"]: d["default_mode"] for d in render_detectors.load_spec()}
+    defaults = {d["id"]: d.get("default_mode") for d in render_detectors.load_spec() if "id" in d}
     out = []
     for mode_id, mode in sorted(example.get("modes", {}).items()):
         if mode not in MODE_SEVERITY:
@@ -678,9 +737,9 @@ def _array_errors(instance: list[Json], schema: Json, path: str, depth: int) -> 
     return errs
 
 
-def _schema_validate(instance: Json, schema: Json, path: str = "$", _depth: int = 0) -> list[str]:
+def _schema_validate(instance: Json, schema: Json, path: str = "$", depth: int = 0) -> list[str]:
     """Minimal JSON Schema (draft-07 subset) validator for the schemas we ship."""
-    if _depth > MAX_SCHEMA_DEPTH:
+    if depth > MAX_SCHEMA_DEPTH:
         return [f"{path}: nesting deeper than {MAX_SCHEMA_DEPTH} levels"]
     if "const" in schema:
         if instance != schema["const"]:
@@ -697,9 +756,7 @@ def _schema_validate(instance: Json, schema: Json, path: str = "$", _depth: int 
         if not isinstance(schema["oneOf"], list) or not schema["oneOf"]:
             errs.append(f"{path}: oneOf must be a non-empty array, got {schema['oneOf']!r}")
         else:
-            branches = [
-                _schema_validate(instance, sub, path, _depth + 1) for sub in schema["oneOf"]
-            ]
+            branches = [_schema_validate(instance, sub, path, depth + 1) for sub in schema["oneOf"]]
             matched = [i for i, b in enumerate(branches) if not b]
             if len(matched) != 1:
                 errs.append(
@@ -712,9 +769,9 @@ def _schema_validate(instance: Json, schema: Json, path: str = "$", _depth: int 
                     errs += branches[0]
         return errs
     if isinstance(instance, dict):
-        errs += _object_errors(instance, schema, path, _depth)
+        errs += _object_errors(instance, schema, path, depth)
     if isinstance(instance, list):
-        errs += _array_errors(instance, schema, path, _depth)
+        errs += _array_errors(instance, schema, path, depth)
     return errs
 
 
@@ -736,6 +793,17 @@ def load_instances(data_path: pathlib.Path) -> list[Json]:
     return [json.loads(text)]
 
 
+def _load_instances(data_path: pathlib.Path) -> tuple[list[Json], str | None]:
+    """Parsed data documents, with a parse failure returned instead of raised.
+
+    Returns (instances, error); error is None on success.
+    """
+    try:
+        return load_instances(data_path), None
+    except Exception as exc:
+        return [], str(exc)
+
+
 def check_config_schemas() -> list[str]:
     """Validate the shipped JSON Schemas parse and the example config and generated
     manifest conform to them."""
@@ -746,14 +814,21 @@ def check_config_schemas() -> list[str]:
         except Exception as exc:
             out.append(f"{schema_path.relative_to(ROOT)} unparseable: {exc}")
             continue
-        try:
-            instances = load_instances(data_path)
-        except Exception as exc:
-            out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
+        name = data_path.relative_to(ROOT)
+        instances, error = _load_instances(data_path)
+        if error is not None:
+            out.append(f"{name} unparseable: {error}")
             continue
-        for i, instance in enumerate(instances, 1):
+        if data_path.suffix == ".jsonl":
             out.extend(
-                f"{data_path.relative_to(ROOT)} line {i}: {err}"
+                f"{name} line {i}: {err}"
+                for i, instance in enumerate(instances, 1)
+                for err in _schema_validate(instance, schema)
+            )
+        else:
+            out.extend(
+                f"{name}: {err}"
+                for instance in instances
                 for err in _schema_validate(instance, schema)
             )
     return out

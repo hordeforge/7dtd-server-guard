@@ -28,11 +28,11 @@ replay of a reported failure is `uv run python tools/fuzz_replay_trace.py
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import pathlib
 import random
 import sys
+from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import replay_contract_check as rcc
@@ -42,6 +42,11 @@ DETECTOR_IDS = {"inventory.stack"}
 
 # Strings the contract checker branches on, so mutants land on both sides of its rules.
 DOMAIN_STRINGS = ["inventory.stack", "normal", "violation", "observe"]
+
+
+def clone(trace: Any) -> Any:
+    """Independent copy of a parsed trace, by the same JSON round trip the file uses."""
+    return json.loads(json.dumps(trace))
 
 
 def check(trace: object, where: str) -> list[str]:
@@ -83,17 +88,17 @@ def main() -> int:
             if not check(bad, f"sample without {drop}"):
                 raise InvariantBroken(f"dropping {drop} was accepted")
 
-        tampered = copy.deepcopy(pristine)
+        tampered = clone(pristine)
         tampered["determinism"]["fingerprint"] = "0" * 64
         if not check(tampered, "sample with a tampered fingerprint"):
             raise InvariantBroken("a fingerprint that does not match the projection was accepted")
 
-        skewed = copy.deepcopy(pristine)
+        skewed = clone(pristine)
         skewed["determinism"]["startUtc"] = "not-an-instant"
         if not check(skewed, "sample with an unparseable clock origin"):
             raise InvariantBroken("an unparseable determinism.startUtc was accepted")
 
-        backwards = copy.deepcopy(pristine)
+        backwards = clone(pristine)
         first = backwards["cases"][0]["events"][0]
         backwards["cases"][0]["events"].append(dict(first, sequence=2, tick=first["tick"] - 1))
         # Re-seal so the tick rule is the only thing left to catch.
@@ -112,7 +117,7 @@ def main() -> int:
         # Built from the pristine trace, not a mutant: the probe indexes cases ->
         # events, and a mutant may have dropped or replaced either (that is the
         # path under test above, not this one).
-        deep = copy.deepcopy(pristine)
+        deep = clone(pristine)
         deep["cases"][0]["events"][0]["values"] = {"claimedDestinationQuantity": nested(64)}
         check(deep, "deep-nested value")
     except InvariantBroken as exc:
