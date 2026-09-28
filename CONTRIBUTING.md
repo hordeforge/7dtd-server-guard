@@ -52,6 +52,25 @@ make detectors
 `make check` fails on a stale generated file, so never hand-edit the rendered tables
 or the manifest.
 
+## Releasing
+
+The version policy is the one at the head of [CHANGELOG.md](CHANGELOG.md): this is a 0.x
+project, so a minor bump may change tooling contracts and command names and a patch bump is
+expected not to. An `Unreleased` section carrying a `Breaking` entry therefore ships as the
+next minor, never as a patch.
+
+A release is one commit that edits three places by hand:
+
+1. `[project] version` in [pyproject.toml](pyproject.toml).
+2. The `## [Unreleased]` heading in [CHANGELOG.md](CHANGELOG.md) becomes
+   `## [x.y.z] - YYYY-MM-DD`, and a fresh empty `## [Unreleased]` takes its place.
+3. The tag `v<x.y.z>` on that commit.
+
+`make check` fails when the manifest version and the newest dated changelog section disagree,
+and when the dated sections are not in descending order, so the first two cannot ship out of
+sync. The tag is the third hand-edited place and nothing can check it, so tag the release
+commit, never a later one, and never move or re-cut a published tag.
+
 ## Dependencies
 
 The default is no new dependency. A package that only runs in this repository's

@@ -61,8 +61,8 @@ above reserves minor bumps for that.
 - `sg config show` and `sg config check [path]` in `docs/OPERATIONS.md`: the effective
   config as loaded, under the recorded `configHash`, and a validation pass that reports
   what startup would refuse without reloading.
-- `make self-test TOOL=<evidence_check|evidence_export|config_check>` runs one tool's
-  negative self-tests,
+- `make self-test TOOL=<evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom>`
+  runs one tool's negative self-tests,
   the half of `make test-tools` that `make fuzz FUZZ=<name>` does not cover. The Makefile's
   `SELF_TESTS` list is the registry: `make test-tools` iterates it, so a tool added to the list
   joins the CI run with no other edit.
@@ -142,9 +142,9 @@ above reserves minor bumps for that.
   and `make verify-archive ARCHIVE=<dir>`: the evidence directory's hash chain is
   verified before anything is copied, every copy is re-hashed, and the export is
   refused outright if either fails, so a bad backup is never declared complete. The
-  archive carries `archive-manifest.json` (`manifestVersion: 1`) with the sha256,
-  byte count, and record count of every file written, described from the copies
-  rather than the source. `make verify-archive` re-checks an archive against its
+  archive carries `archive-manifest.json` (`manifestVersion: 2`, see the manifest
+  entry under Added) with the sha256, byte count, and record count of every file
+  written, described from the copies rather than the source. `make verify-archive` re-checks an archive against its
   manifest and re-verifies the chain inside it, which is the restore drill.
 - `docs/OPERATIONS.md` -> Backup and restore: the operator procedure for the
   archive, including that the identity map and the HMAC key live outside the evidence
@@ -176,6 +176,14 @@ above reserves minor bumps for that.
   under a drifting toolchain. `backup` and `drill-restore` report a missing argument
   on stderr with exit 2, matching the other targets, and drop the deprecated
   `test -a`.
+- `make check` compares `[project] version` in `pyproject.toml` against the newest dated
+  section in this file, and requires the dated sections to be in descending order. A
+  release is a tag, a manifest version, and a dated section, and nothing read the other
+  two, so a bump that missed one shipped a tag whose metadata still named the previous
+  release. `## [Unreleased]` is above the comparison on purpose: between releases it is
+  expected to be ahead of the last tag.
+- `CONTRIBUTING.md` states the release step: which bump the 0.x policy above implies, the
+  three places a release edits, and that a published tag is not moved or re-cut.
 - `docs/SCHEMAS.md` states the two config rules the file alone cannot enforce: a
   detector id or threshold key outside the registry and the manifest is rejected
   rather than loaded as an `observe` default, and a sink enabled with its environment

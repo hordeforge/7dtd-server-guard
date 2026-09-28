@@ -40,12 +40,14 @@ stream and the diagnostics on the other.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import pathlib
 import re
 import subprocess
 import sys
+import tomllib
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
@@ -144,6 +146,9 @@ FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # CommonMark still renders as a checkbox.
 CANONICAL_CHECKBOX_RE = re.compile(r"^[-*] \[[ xX]\]")
 ANY_CHECKBOX_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s*\[[ xX]\]")
+# A released changelog section, dated. `## [Unreleased]` carries no version and is
+# not a release, so it cannot be compared against the manifest.
+RELEASED_SECTION_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$", re.MULTILINE)
 
 # Key patterns declared in the SCHEMAS.md config table. They share the dotted
 # family.subject shape with detector IDs, but rows like actions.correct or
@@ -379,6 +384,35 @@ def check_todo_format() -> list[str]:
             continue
         if ANY_CHECKBOX_RE.match(stripped):
             out.append(f"TODO.md:{i}: malformed checkbox: {stripped[:80]}")
+    return out
+
+
+def check_release_version() -> list[str]:
+    """Keep the manifest version and the changelog's newest release the same number.
+
+    A release is a tag, the `[project] version` in pyproject.toml, and a dated
+    changelog section, three places edited by hand. Nothing in the build reads the
+    other two, so a bump that misses one ships a tag whose manifest still says the
+    previous release, and the mismatch is only visible to a consumer reading the
+    installed metadata. This gate fails the release commit itself instead.
+
+    Only dated sections are compared. `## [Unreleased]` sits above them while the
+    tree is between releases and is expected to be ahead of the last tag.
+    """
+    manifest = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = manifest["project"]["version"]
+    released = RELEASED_SECTION_RE.findall((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+    out = []
+    if not released:
+        return ["CHANGELOG.md: no dated `## [x.y.z] - YYYY-MM-DD` release section"]
+    if version != released[0]:
+        out.append(
+            f"pyproject.toml: [project] version is {version}, the newest changelog "
+            f"release is {released[0]}"
+        )
+    for newer, older in itertools.pairwise(released):
+        if tuple(map(int, newer.split("."))) <= tuple(map(int, older.split("."))):
+            out.append(f"CHANGELOG.md: {older} is not older than the {newer} above it")
     return out
 
 
@@ -1445,6 +1479,7 @@ def main() -> int:
         ("em dashes", check_em_dashes),
         ("links", check_links),
         ("TODO checkboxes", check_todo_format),
+        ("release version", check_release_version),
         ("detector spec", check_spec),
         ("registry sync", check_registry_sync),
         ("detector registry coverage", check_detector_ids),
