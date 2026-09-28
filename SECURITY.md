@@ -20,12 +20,28 @@ location of every threat.
 - Include: affected build (target is V3.2.0 b9), the detector or code path, a reproduction or
   proof-of-concept, and the impact (false reject, evidence tampering, bypass, resource abuse).
 
+## Supported versions
+
+There is no released version to support yet. The only executable code is the tooling on the
+default branch of this repository, and the in-game runtime has not been built. Fixes land there
+and are not backported; there is no older line to patch.
+
 ## In scope
 
 Shipped today: the Python tooling under `tools/` (evidence chain verification, evidence
-archiving and restore drill, replay-trace contract checking) and the CI workflow. In particular
-path handling in `tools/evidence_check.py` and `tools/evidence_export.py`, and anything that
-weakens or forges an evidence hash chain.
+archiving, the restore drill, the backup-age check, config validation, and SBOM rendering) and
+the CI workflow. Two areas in particular, because they are where a mistake does damage today:
+
+- Any path an operator supplies that is used to create, copy, or delete a directory tree, in
+  `tools/evidence_export.py` (`--out`, `--archive`), `tools/restore_drill.py` (`--archive`,
+  `--work`, `--config`), `tools/backup_status.py` (`--root`), and `tools/sbom.py` (`--out`).
+- Anything that weakens or forges an evidence hash chain, or that corrupts an archive so a
+  restore cannot be proven.
+
+Path handling that is already covered and would be a regression: the untrusted-name validator
+shared by `tools/evidence_check.py` and `tools/evidence_export.py` refuses anything that is not
+a plain file name inside the evidence directory, and every manifest-supplied name passes it
+before reaching the filesystem.
 
 Planned runtime, not yet built: in-game detectors and the review surface. The classes below
 describe that design.
