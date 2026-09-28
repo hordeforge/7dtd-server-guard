@@ -75,9 +75,43 @@ KEY_MAX_AGE_HOURS = 24 * KEY_COPY_CYCLE_DAYS
 # separator in it is whichever one that editor used. A drive-qualified path
 # names a location on the server host that no other machine can open.
 WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:[\\/]")
-# The mode the config schema defaults each restricted file to, and the one the
-# drill compares the file's actual mode against.
-DEFAULT_SECRET_MODE = 0o600
+# The sections whose files the drill checks a mode on, and the mode the config
+# schema defaults each to. Read out of the schema rather than restated here: the
+# drill compares a host file's mode against the mode the config promises, so a
+# hand-copied constant goes stale the moment the schema default moves, and it
+# fails on the host that notices: a correctly configured file reported as too
+# permissive, or a permissive one passed. A schema that does not declare the
+# default is a broken install and stops the tool here rather than at the first
+# finding.
+SECRET_SECTIONS = ("identityMap", "hmacKey")
+
+
+def _schema_secret_modes() -> dict[str, int]:
+    """Each secret section's schema `permissions` default, as an int.
+
+    The schema writes the mode as an octal string (`"0600"`), not an integer, so
+    it is parsed rather than read.
+    """
+    schema = json.loads(cc.SCHEMA_PATH.read_text(encoding="utf-8"))
+    modes = {
+        section: int(
+            schema["properties"][section]["properties"]["permissions"]["default"], 8
+        )
+        for section in SECRET_SECTIONS
+    }
+    for section, mode in modes.items():
+        # A default that grants anything beyond the owner is not a mode a secret
+        # file may carry, so the tool refuses to run on one rather than passing
+        # every world-readable file it is handed.
+        if mode & 0o077:
+            raise ValueError(
+                f"{section}.permissions default {mode:04o} in {cc.SCHEMA_PATH.name} "
+                "grants access beyond the owner"
+            )
+    return modes
+
+
+SCHEMA_SECRET_MODES = _schema_secret_modes()
 # The instant the self-tests export at, matching the archive stamp they name. The
 # export reads the wall clock to decide what a dead run's staging directory is,
 # so a self-test that left that to the host read the clock on every run and
@@ -323,20 +357,21 @@ def _resolve(value: object, runtime_root: pathlib.Path) -> pathlib.Path | None:
     return runtime_root / candidate
 
 
-def _configured_mode(block: Any) -> int:
-    """The `permissions` a config declares for a restricted file, or None.
+def _configured_mode(section: str, block: Any) -> int:
+    """The `permissions` a config declares for a restricted file.
 
     The schema writes it as an octal string (`"0600"`), not an integer, so it is
     parsed rather than read. A value that is not four octal digits is reported
     by the config check against the same file; here it falls back to the schema
     default so a malformed mode is not mistaken for a permissive one.
     """
+    fallback = SCHEMA_SECRET_MODES[section]
     if not isinstance(block, dict):
-        return DEFAULT_SECRET_MODE
+        return fallback
     raw = block.get("permissions")
     if isinstance(raw, str) and re.fullmatch(r"0[0-7]{3}", raw):
         return int(raw, 8)
-    return DEFAULT_SECRET_MODE
+    return fallback
 
 
 def _mode_errors(section: str, path: pathlib.Path, block: Any, info: os.stat_result) -> list[str]:
@@ -348,7 +383,7 @@ def _mode_errors(section: str, path: pathlib.Path, block: Any, info: os.stat_res
     on a file that resolves pseudonyms to platform accounts, and the drill names
     the mode it found so the operator can see what to correct.
     """
-    wanted = _configured_mode(block)
+    wanted = _configured_mode(section, block)
     found = stat.S_IMODE(info.st_mode)
     extra = found & ~wanted
     if not extra:
@@ -380,7 +415,7 @@ def secrets_errors(
     so the drill reads the mode off the file and compares it to the one the
     config declares."""
     errs: list[str] = []
-    for section in ("identityMap", "hmacKey"):
+    for section in SECRET_SECTIONS:
         block = config.get(section)
         path_value = block.get("path") if isinstance(block, dict) else None
         if not isinstance(path_value, str) or not path_value:
@@ -722,8 +757,10 @@ def _self_test_config() -> list[str]:
 
         (runtime / "identity-map.json").write_text("{}\n", encoding="utf-8")
         (runtime / "keys" / "hmac.key").write_text("k\n", encoding="utf-8")
-        for secret in (runtime / "identity-map.json", runtime / "keys" / "hmac.key"):
-            secret.chmod(DEFAULT_SECRET_MODE)
+        # Each file at the mode its own section's schema default declares, so this
+        # case stays the positive control if that default ever moves.
+        for name in ("identity-map.json", "keys/hmac.key"):
+            (runtime / name).chmod(min(SCHEMA_SECRET_MODES.values()))
         if found := drill(
             DrillRequest(
                 archive=archive,
@@ -773,7 +810,7 @@ def _self_test_secrets() -> list[str]:
         # would be testing the umask of whoever runs the suite rather than the
         # mode check this suite is for.
         for name in ("identity-map.json", "hmac.key"):
-            (scratch / name).chmod(DEFAULT_SECRET_MODE)
+            (scratch / name).chmod(min(SCHEMA_SECRET_MODES.values()))
         if found := secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now()):
             errs.append(f"self-test: a present key and map were reported missing: {found}")
         # A world-readable identity map passes every presence and age check and
@@ -784,7 +821,7 @@ def _self_test_secrets() -> list[str]:
         (scratch / "identity-map.json").chmod(0o400)
         if found := secrets_errors(config, scratch, KEY_MAX_AGE_HOURS, _now()):
             errs.append(f"self-test: a mode tighter than configured was reported: {found}")
-        (scratch / "identity-map.json").chmod(DEFAULT_SECRET_MODE)
+        (scratch / "identity-map.json").chmod(SCHEMA_SECRET_MODES["identityMap"])
         # The declared mode is the bound, so a config asking for group-read
         # accepts a group-readable file and only a wider one is a finding.
         shared: Record = {
@@ -796,7 +833,7 @@ def _self_test_secrets() -> list[str]:
             errs.append(
                 f"self-test: a group-readable map under a 0640 config was reported: {found}"
             )
-        (scratch / "identity-map.json").chmod(DEFAULT_SECRET_MODE)
+        (scratch / "identity-map.json").chmod(SCHEMA_SECRET_MODES["identityMap"])
         # An age far past the cycle is a scheduled copy that did not run, which
         # is the same failure as a missing archive and the drill has to name it.
         stale = secrets_errors(
@@ -826,7 +863,7 @@ def _self_test_secrets() -> list[str]:
         # At the declared mode, for the reason the case above states: this one is
         # about the separator, and a umask-default key would be reported for its
         # mode before the path was ever resolved.
-        (scratch / "keys" / "hmac.key").chmod(DEFAULT_SECRET_MODE)
+        (scratch / "keys" / "hmac.key").chmod(SCHEMA_SECRET_MODES["hmacKey"])
         backslashed: Record = {
             "identityMap": {"path": "identity-map.json"},
             "hmacKey": {"path": "keys\\hmac.key"},
