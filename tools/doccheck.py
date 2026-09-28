@@ -38,6 +38,9 @@ Checks:
       patch bump.
   17. Every shipped fuzzer and every tool exposing `--self-test` is reachable from a
       make target, and the FUZZERS registry matches the order `make test-tools` runs.
+  16. Every third-party action a workflow runs is pinned to a 40-character commit SHA
+      and carries a trailing release comment, so a dependabot bump cannot leave the
+      workflow claiming a version it no longer runs.
 
 Exit codes: 0 clean, 1 the gate found issues, 2 usage error. The one-line summary goes to
 stdout and the
@@ -1725,6 +1728,82 @@ def _harness_registry_self_test() -> list[str]:
             errs.append(f"self-test: {label} went unreported, got {issues}")
     if live := check_test_harness_registry():
         errs.append(f"self-test: this repository's own registry is inconsistent: {live}")
+    errs += _action_pin_self_test()
+    return errs
+
+
+_USES_LINE = re.compile(
+    r"^\s*(?:-\s+)?uses:\s*(?P<action>[^\s@]+)(?:@(?P<ref>\S*))?\s*(?:#\s*(?P<label>.*))?$"
+)
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+_RELEASE = re.compile(r"^v\d+\.\d+\.\d+$")
+WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
+
+
+def _action_pin_issues(workflow: str, rel: str) -> list[str]:
+    """Whether every third-party action a workflow runs is a pinned commit.
+
+    The CI dependency surface is these `uses` lines and nothing else, and a tag or
+    branch resolves to whatever the publisher's HEAD is at run time, so an unpinned
+    ref lets a new commit execute in the gate. Dependabot rewrites the SHA on a
+    bump and leaves the trailing version comment alone, so the comment drifts out
+    of date on every update: a missing or malformed one means the workflow no longer
+    records which release a commit is, which is the only readable mapping from a
+    green gate back to a dependency version.
+    """
+    out: list[str] = []
+    for number, line in enumerate(workflow.splitlines(), 1):
+        match = _USES_LINE.match(line)
+        if match is None or match["action"].startswith("."):
+            continue
+        action, ref, label = match["action"], match["ref"] or "", match["label"] or ""
+        where = f"{rel}:{number} ({action})"
+        if not _SHA.match(ref):
+            out.append(f"{where}: action ref '{ref or '<none>'}' is not a pinned commit SHA")
+        if not _RELEASE.match(label):
+            out.append(f"{where}: no trailing '# vMAJOR.MINOR.PATCH' release comment")
+    return out
+
+
+def check_action_pins() -> list[str]:
+    """Every workflow action is SHA-pinned and names the release it pins."""
+    return [
+        issue
+        for path in WORKFLOWS
+        for issue in _action_pin_issues(path.read_text("utf-8"), path.name)
+    ]
+
+
+def _action_pin_self_test() -> list[str]:
+    """The pin check must fire on each way an action can be unpinned or unlabelled.
+
+    A gate that only ever sees the clean tree proves nothing, so each case below
+    breaks one property the check enforces and names the issue it must raise.
+    """
+    sha = "a" * 40
+    clean = f"      - uses: owner/action@{sha} # v1.2.3\n"
+    errs: list[str] = []
+    if issues := _action_pin_issues(clean, "ci.yml"):
+        errs.append(f"self-test: a pinned, labelled action was reported broken: {issues}")
+    cases: tuple[tuple[str, str, str], ...] = (
+        ("a mutable tag ref", "      - uses: owner/action@v1.2.3\n", "not a pinned"),
+        ("a branch ref", "      - uses: owner/action@main\n", "not a pinned"),
+        ("a ref with no version at all", "      - uses: owner/action\n", "<none>"),
+        ("a missing release comment", f"      - uses: owner/action@{sha}\n", "no trailing"),
+        (
+            "a mangled release comment",
+            f"      - uses: owner/action@{sha} # bump me\n",
+            "no trailing",
+        ),
+    )
+    for label, workflow, expected in cases:
+        issues = _action_pin_issues(workflow, "ci.yml")
+        if not any(expected in issue for issue in issues):
+            errs.append(f"self-test: {label} went unreported, got {issues}")
+    if local := _action_pin_issues("      - uses: ./.github/actions/local\n", "ci.yml"):
+        errs.append(f"self-test: a local action was reported unpinned: {local}")
+    if live := check_action_pins():
+        errs.append(f"self-test: this repository's own workflows are unpinned: {live}")
     return errs
 
 
@@ -1763,6 +1842,7 @@ def main() -> int:
         ("folder structure", check_folder_structure),
         ("backup runbook", check_backup_runbook),
         ("test harness registry", check_test_harness_registry),
+        ("CI action pins", check_action_pins),
         ("required docs", check_required_docs),
     ]
     failures = dict(_run_check(name, check) for name, check in checks)

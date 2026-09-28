@@ -36,7 +36,8 @@ jobs:
     steps:
       # actions/checkout, SHA-pinned per dependabot.yml: these actions are the
       # whole dependency surface, so tags must not be mutable refs. The
-      # trailing version comment on each `uses` line is the source of truth.
+      # trailing version comment on each `uses` line names the release, and
+      # `make check` fails the gate when either the pin or the comment is lost.
       # The token is read-only and nothing pushes from CI, so the credential
       # does not stay in .git/config between steps.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

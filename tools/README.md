@@ -93,7 +93,8 @@
   detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
   schema/data pairs, evidence sample chain, replay-contract vector, evidence
-  personal-data deny-list, backup/restore runbook, and folder structure. The release
+  personal-data deny-list, backup/restore runbook, test-harness registry, CI action
+  pins, and folder structure. The release
   contract passes are here too: the manifest version against the newest dated changelog
   section, the dated sections in descending order, and one `###` change type per release
   with no breaking entry in a patch bump. `--self-test` fires the changelog rules from

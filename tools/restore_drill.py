@@ -254,17 +254,21 @@ def config_match_errors(config: Record, hashes: set[str], config_path: pathlib.P
     """
     if not hashes:
         return [
-            f"{config_path}: no restored record carries a configHash, so the config "
-            "the archive was written under cannot be confirmed"
+            (
+                f"{config_path}: no restored record carries a configHash, so the config "
+                "the archive was written under cannot be confirmed"
+            )
         ]
     schema = json.loads(cc.SCHEMA_PATH.read_text(encoding="utf-8"))
     digest = cc.config_hash(cc.effective_config(config, schema))
     if digest in hashes:
         return []
     return [
-        f"{config_path}: hashes to {digest[:12]}, which no restored record was written "
-        f"under (the archive holds {', '.join(sorted(h[:12] for h in hashes))}); "
-        "these are not the config that produced this evidence"
+        (
+            f"{config_path}: hashes to {digest[:12]}, which no restored record was written "
+            f"under (the archive holds {', '.join(sorted(h[:12] for h in hashes))}); "
+            "these are not the config that produced this evidence"
+        )
     ]
 
 
