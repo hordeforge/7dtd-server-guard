@@ -27,6 +27,8 @@ Checks:
   13. Every open object in the evidence schema carries the property-name deny-list,
       so no raw identity, contact, network address, or credential can ride along in
       a detector-supplied value bag.
+  14. The backup and restore path stays wired: the archive targets exist in the Makefile,
+      run under test-tools, and docs/OPERATIONS.md states RPO/RTO and a restore drill.
 
 Exit code 0 when clean; 1 otherwise. Prints a summary and any failures.
 """
@@ -823,6 +825,30 @@ def check_required_docs() -> list[str]:
     return [d for d in REQUIRED_DOCS if not (ROOT / d).exists()]
 
 
+def check_backup_runbook() -> list[str]:
+    """The evidence store is the one state an operator cannot regenerate, so the
+    archive tooling and the recovery contract must stay in place together: a
+    Makefile target with no runbook, or a runbook citing a target that no longer
+    exists, is a backup nobody can run."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    ops = (ROOT / "docs" / "OPERATIONS.md").read_text(encoding="utf-8")
+    out = [
+        f"Makefile: missing the '{target}' target"
+        for target in ("export-evidence", "verify-archive")
+        if f"\n{target}:" not in makefile
+    ]
+    if "tools/evidence_export.py --self-test" not in makefile:
+        out.append("Makefile: test-tools does not run the evidence export self-test")
+    if "### Restore drill" not in ops:
+        out.append("docs/OPERATIONS.md: no restore drill in the backup and restore runbook")
+    out.extend(
+        f"docs/OPERATIONS.md: backup runbook does not mention {marker!r}"
+        for marker in ("| RPO | RTO |", "make export-evidence", "make verify-archive")
+        if marker not in ops
+    )
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.parse_args()
@@ -841,6 +867,7 @@ def main() -> int:
         "evidence sample chain": check_evidence_sample_chain(),
         "replay contract": check_replay_contract(),
         "folder structure": check_folder_structure(),
+        "backup runbook": check_backup_runbook(),
         "required docs": check_required_docs(),
     }
     total = sum(len(v) for v in failures.values())

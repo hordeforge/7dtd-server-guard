@@ -36,7 +36,8 @@ instructions for a shipped product.
 - Weekly: review new findings with disposition `benign` or `uncertain` and export confirmed
   false positives to the regression corpus (TEST_PLAN.md Layer 7).
 - Monthly: confirm evidence rotation, retention expiry, and HMAC key rotation are running;
-  spot-verify a tombstone keeps the chain verifiable.
+  spot-verify a tombstone keeps the chain verifiable; run the restore drill and the archive
+  verification below (Backup and restore).
 
 ## Incident response
 
@@ -96,12 +97,86 @@ The webhook URL comes from `SERVERGUARD_WEBHOOK_URL` (SCHEMAS.md config), never 
 file. Interception or spoofing of the endpoint is an in-scope report class
 ([SECURITY.md](../SECURITY.md)).
 
+## Backup and restore
+
+The evidence directory, the identity map, and the HMAC key are the only state the
+operator cannot regenerate. All three live on the server's local disk, the evidence
+directory is gitignored, and retention expiry deletes segments, so a lost disk is an
+unrecoverable loss of every finding, disposition, and audit record this deployment
+made. The procedures below are the recovery contract; the storage that holds the
+archives is the operator's choice and must be named in the deployment notes.
+
+### Targets
+
+| RPO | RTO | Meaning |
+|---|---|---|
+| Evidence: 24 h | 4 h | Worst case: evidence written since the last successful archive is lost, and recovery takes one archive restore plus a chain verification |
+| Identity map and HMAC key: per backup cycle, never longer than 7 days | 1 h | A pseudonym epoch whose key is lost can never be resolved again; the affected evidence becomes permanently unattributable |
+| Config: per upgrade | minutes | `server-guard.json` and the local override are copied on every upgrade |
+
+An archive counts as existing only when `make verify-archive ARCHIVE=<dir>` exits 0.
+A scheduled copy whose exit code nobody checks is not a backup.
+
+### What gets archived, and what does not
+
+`make export-evidence DIR=<evidence-dir> OUT=<archive-root>` copies every
+`evidence-*.jsonl` segment and the segment index, after verifying the hash chain and
+re-verifying the copies, and writes `archive-manifest.json` with a per-file SHA-256
+and byte count. It refuses to run on a chain that does not verify, on a zero-byte
+segment, and on a copy that does not match the source, so a failed write can never be
+recorded as a successful backup.
+
+The identity map and the HMAC key are archived separately, under different
+credentials, in a different failure domain than the evidence they explain. A single
+stolen archive containing both would turn every pseudonym in it into a named player.
+
+### Schedule
+
+- Every 24 h: `make export-evidence` for the live evidence directory, then copy the
+  resulting archive off the server. Alert on a non-zero exit and on a missing
+  archive for a scheduled run; a silent archive is a missed backup, not a clean one.
+- Every 7 days: copy the identity map and the HMAC key to the separate store.
+- Before any retention expiry or purge: archive the affected segments first. Expiry
+  and purge are the only mass-deletion paths in the system, and the archive is the
+  undo.
+- Monthly: restore drill (below), and confirm the archives for the last 30 days are
+  present and verify.
+
+### Restore
+
+1. Stop the server. Never restore over a running store: the evidence writer holds the
+   active segment, and the restored chain would be extended from a record the restore
+   does not contain.
+2. Move the current evidence directory aside rather than deleting it. It is evidence.
+3. Copy the archive's segments and index into the configured `evidence.dir`, keeping
+   the file names: the cross-segment links are name ordered, and a rename breaks the
+   chain.
+4. Restore `hmac.key` before the identity map. Pseudonym resolution fails closed
+   without the key, and a map restored under a different key epoch resolves to the
+   wrong players.
+5. `make verify-evidence DIR=<evidence-dir>`. A broken link names the first record that
+   does not chain; stop and use the next archive rather than editing records.
+6. Start the server and confirm the health report and the oldest finding resolve.
+7. Keep the moved-aside directory until the restored chain verifies and the operator
+   has confirmed the appeals record reads correctly.
+
+### Restore drill
+
+Monthly, into a scratch directory on a machine that is not the production server:
+`make verify-archive ARCHIVE=<dir>`, then copy the archive into an empty directory,
+run `make verify-evidence` against the copy, and open a recent finding. Record the
+date and the result in the deployment notes. An archive that has never been restored
+is a hypothesis, and the first real restore is the worst possible time to discover a
+missing key or a renamed segment.
+
 ## Upgrade and rollback
 
 
-- Upgrade path: stop the server, back up `ServerGuard/` (evidence, identity map, HMAC key,
-  config), replace the DLL, run the config migration tool if the schema changed
-  ([SCHEMAS.md](SCHEMAS.md) -> Schema evolution), restart, verify the health report.
+- Upgrade path: stop the server, archive `ServerGuard/` with
+  `make export-evidence DIR=<evidence-dir> OUT=<archive-root>` plus a separate copy of the
+  identity map, HMAC key, and config, replace the DLL, run the config migration tool if the
+  schema changed ([SCHEMAS.md](SCHEMAS.md) -> Schema evolution), restart, verify the health
+  report.
 - Rollback: replace the previous DLL and config; evidence written by the newer version is
   read-only to the older one (schema mismatch refuses, it does not guess). The older build
   must not overwrite newer segments; verify before restoring.

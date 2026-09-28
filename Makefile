@@ -3,7 +3,7 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools fuzz verify-evidence guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools fuzz verify-evidence export-evidence verify-archive guard-python help
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in harness order.
 FUZZERS := evidence_check schema_validate replay_trace
@@ -56,9 +56,11 @@ exercise: guard-python
 # validator, and the replay-trace contract checker.
 test-tools: guard-python
 	$(UV) python tools/evidence_check.py --self-test
+	$(UV) python tools/evidence_export.py --self-test
 	$(UV) python tools/fuzz_evidence_check.py
 	$(UV) python tools/fuzz_schema_validate.py
 	$(UV) python tools/fuzz_replay_trace.py
+	$(UV) python tools/fuzz_evidence_export.py
 
 # One fuzzer at a short iteration count: the loop for a single harness, and the
 # way to re-run a seed a failure reported. A failing seed replays exactly.
@@ -81,6 +83,20 @@ verify-evidence:
 	@test -n "$(DIR)" || { echo "usage: make verify-evidence DIR=/path/to/evidence"; exit 2; }
 	$(UV) python tools/evidence_check.py --dir $(DIR)
 
+# Archive an evidence directory: the chain is verified before and after the copy,
+# and a manifest of per-file sha256 is written beside it.
+# Usage: make export-evidence DIR=/path/to/evidence OUT=/path/to/archive-root
+export-evidence:
+	@test -n "$(DIR)" -a -n "$(OUT)" || { echo "usage: make export-evidence DIR=<evidence-dir> OUT=<archive-root>"; exit 2; }
+	$(UV) python tools/evidence_export.py --dir $(DIR) --out $(OUT)
+
+# Prove an archive is intact and restorable (the restore drill; also catches silent
+# backup corruption long before a real restore needs it).
+# Usage: make verify-archive ARCHIVE=/path/to/archive
+verify-archive:
+	@test -n "$(ARCHIVE)" || { echo "usage: make verify-archive ARCHIVE=/path/to/archive"; exit 2; }
+	$(UV) python tools/evidence_export.py --archive $(ARCHIVE)
+
 help:
 	@echo "Targets:"
 	@echo "  make setup           materialize .venv from uv.lock (uv sync --frozen)"
@@ -92,5 +108,7 @@ help:
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
+	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"
+	@echo "  make verify-archive ARCHIVE=<dir>   re-verify an archive against its manifest"
 	@echo "Python floor: .python-version (uv installs exactly it; local builds enforce it)."
 	@echo "Build targets (net48 solution, tests) are added in Phase 2 (TODO.md)."

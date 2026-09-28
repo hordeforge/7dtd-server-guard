@@ -6,22 +6,30 @@
 - `render_detectors.py`: renders docs/DETECTORS.md tables and
   config/detector-config-manifest.json from the spec (`make detectors`).
 - `evidence_check.py`: verifies evidence hash chains (canonical serialization, genesis,
-  intra-segment continuity, cross-segment links) with negative self-tests; the doccheck gate
-  runs it on the sample, and `make verify-evidence DIR=...` targets operator evidence dirs.
-  A tampered last record is not detectable until the next record is appended, which is
-  inherent to an append-only chain and is stated in SCHEMAS.md.
+  intra-segment continuity, cross-segment links, tamper/truncation) with negative
+  self-tests; the doccheck gate runs it on the sample, and `make verify-evidence DIR=...`
+  targets operator evidence dirs. A tampered last record is not detectable until the next
+  record is appended, which is inherent to an append-only chain and is stated in SCHEMAS.md.
+- `evidence_export.py`: archives an evidence directory and proves the archive is
+  restorable. The chain is verified before the copy and the copies are re-verified
+  against a per-file SHA-256 manifest; a chain error, a zero-byte segment, or a copy
+  mismatch aborts instead of recording a backup. `make export-evidence DIR=... OUT=...`
+  archives, `make verify-archive ARCHIVE=...` re-verifies an existing archive (the
+  restore drill in docs/OPERATIONS.md). Secrets are never archived here: the identity map
+  and HMAC key are backed up separately. Self-tests run under `make test-tools`.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
   format, detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
   schema/data pairs, evidence sample chain, replay-contract vector, evidence
-  personal-data deny-list, and folder structure.
-- `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`: seeded,
-  deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator
-  in doccheck.py, and the replay-trace contract checker (`make test-tools`, or
-  `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` for one harness at a short run). Temporary
-  segments go under `.scratch/`, never the system temp dir.
+  personal-data deny-list, backup/restore runbook, and folder structure.
+- `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`,
+  `fuzz_evidence_export.py`: seeded, deterministic structure-aware fuzzers over the evidence
+  parser, the JSON Schema validator in doccheck.py, the replay-trace contract checker, and
+  the archive verifier (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a
+  single harness from the Makefile's FUZZERS list at a short run). Temporary segments go under
+  `.scratch/`, never the system temp dir.
 - `fuzz_common.py`: the mutation engine all three fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `guard_python.py`: fails the build when the interpreter is older than the floor in
