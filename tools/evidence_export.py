@@ -333,23 +333,20 @@ def export(
     if errs:
         return errs
 
-    dest = out_root / f"{ARCHIVE_DIR_PREFIX}{stamp if stamp is not None else utc_stamp()}"
+    # One stamp, named once: it is the archive directory's name and the manifest's
+    # createdUtc, and deriving it twice let the two drift apart.
+    label = stamp if stamp is not None else utc_stamp()
+    dest = out_root / f"{ARCHIVE_DIR_PREFIX}{label}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return redo_errors(dest, members)
     # The stamp is kept in the directory name so a human reading the root can tell
     # which run a leftover belongs to; the sweep matches on STAGING_PREFIX, which
     # carries no stamp, so it reaches the leftovers of every earlier run.
-    staging = pathlib.Path(
-        tempfile.mkdtemp(
-            prefix=f"{STAGING_PREFIX}{dest.name.removeprefix(ARCHIVE_DIR_PREFIX)}-", dir=out_root
-        )
-    )
+    staging = pathlib.Path(tempfile.mkdtemp(prefix=f"{STAGING_PREFIX}{label}-", dir=out_root))
     _sweep_stale_staging(out_root, keep=staging)
     try:
-        staging_errors = stage(
-            staging, source, members, index_name, dest.name.removeprefix(ARCHIVE_DIR_PREFIX)
-        )
+        staging_errors = stage(staging, source, members, index_name, label)
         if staging_errors:
             return staging_errors
         staging.rename(dest)
@@ -389,11 +386,24 @@ def _read_member(archive: pathlib.Path, name: str) -> tuple[str, int, int | None
     return sha, size, records
 
 
+def _entry_name(entry: object) -> str | None:
+    """The file name a manifest entry claims, or None when the entry is unusable.
+
+    One definition of "a manifest entry that names a file", so the callers that
+    read a name (the byte check, the per-member check, the listed-name set) agree
+    on which entries they accept.
+    """
+    if not isinstance(entry, dict):
+        return None
+    name = entry.get("name")
+    return name if isinstance(name, str) and ec.valid_file_name(name) else None
+
+
 def _member_errors(archive: pathlib.Path, entry: object) -> list[str]:
     """What one manifest file entry claims about its file, against the bytes on disk."""
-    if not isinstance(entry, dict) or not ec.valid_file_name(entry.get("name")):
+    name = _entry_name(entry)
+    if name is None or not isinstance(entry, dict):
         return [f"{MANIFEST_NAME}: malformed file entry"]
-    name = entry["name"]
     read = _read_member(archive, name)
     if isinstance(read, str):
         return [read]
@@ -457,18 +467,13 @@ def verify(archive: pathlib.Path) -> list[str]:
     errs: list[str] = []
     listed: set[str] = set()
     for entry in entries:
-        if (
-            isinstance(entry, dict)
-            and ec.valid_file_name(entry.get("name"))
-            and not _is_size(entry.get("bytes"))
-        ):
+        name = _entry_name(entry)
+        if name is not None and not _is_size(entry.get("bytes")):
             # The manifest is untrusted text, so a byte count that is not a
             # non-negative integer is reported as a malformed entry. Summing it
             # would raise out of the verifier instead of naming the bad entry.
-            errs.append(
-                f"{MANIFEST_NAME}: file entry for {entry['name']} has no integer byte count"
-            )
-            listed.add(entry["name"])
+            errs.append(f"{MANIFEST_NAME}: file entry for {name} has no integer byte count")
+            listed.add(name)
             continue
         errs += _member_errors(archive, entry)
         if isinstance(entry, dict) and isinstance(entry.get("name"), str):

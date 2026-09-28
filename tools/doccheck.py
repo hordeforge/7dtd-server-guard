@@ -713,9 +713,9 @@ def _manifest_errors(example: Json, out: list[str], label: str = "example config
             if key not in declared
         )
         out.extend(
-            f"manifest is missing threshold {entry['detectorId']}.{key} declared in spec; "
+            f"manifest is missing threshold {detector_id}.{key} declared in spec; "
             "re-run make detectors"
-            for key in sorted(set(declared) - set(manifest_keys[entry["detectorId"]]))
+            for key in sorted(declared - entry_keys.keys())
         )
     out.extend(
         f"manifest is missing detector {d} declared in spec; re-run make detectors"

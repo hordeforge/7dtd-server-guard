@@ -116,16 +116,15 @@ def check(root: pathlib.Path, now: dt.datetime | None = None) -> BackupStatus:
     age: float | None = None
     failed: list[tuple[str, str]] = []
     for archive_age, archive in dated:
-        if fresh is not None:
-            # Dated newest first, so everything past the archive that verified is
-            # older than it. Its state cannot open the RPO, and verifying it would
-            # cost a full chain walk per archive for a finding nobody acts on.
-            break
         errs = ee.verify(archive)
         if errs:
             failed.append((archive.name, errs[0]))
             continue
         fresh, age = archive, archive_age
+        # Dated newest first, so everything past the archive that verified is
+        # older than it. Its state cannot open the RPO, and verifying it would
+        # cost a full chain walk per archive for a finding nobody acts on.
+        break
     return BackupStatus(fresh, age, failed, undated, len(found))
 
 
@@ -274,10 +273,10 @@ def main() -> int:
         return _report("backup-status self-test", [*_self_test(), *_self_test_older_corrupt()])
 
     if args.root is None:
-        ap.print_help()
+        ap.print_help(sys.stderr)
         return 2
     if not 0 < args.max_age_hours <= DEFAULT_MAX_AGE_HOURS:
-        print(f"--max-age-hours must be in (0, {DEFAULT_MAX_AGE_HOURS:.0f}]")
+        print(f"--max-age-hours must be in (0, {DEFAULT_MAX_AGE_HOURS:.0f}]", file=sys.stderr)
         return 2
 
     status = check(args.root)

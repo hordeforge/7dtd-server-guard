@@ -91,10 +91,7 @@ def restore(archive: pathlib.Path, work: pathlib.Path, index_name: str) -> list[
     errs = work_dir_errors(work)
     if errs:
         return errs
-    members = [archive / name for name in sorted(p.name for p in archive.glob(ee.SEGMENT_GLOB))]
-    index = archive / index_name
-    if index.is_file():
-        members.append(index)
+    members = ee.archive_members(archive, index_name)
     if not members:
         return [f"{archive}: archive holds no {ee.SEGMENT_GLOB} segments to restore"]
     work.mkdir(parents=True, exist_ok=True)
@@ -113,7 +110,8 @@ def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str]:
     first: Record | None = None
     last: Record | None = None
     count = 0
-    for segment in sorted(work.glob(ee.SEGMENT_GLOB), key=ec.segment_sort_key):
+    segments = sorted(work.glob(ee.SEGMENT_GLOB), key=ec.segment_sort_key)
+    for segment in segments:
         for _line_no, record, _raw in ec.iter_records(segment):
             if first is None:
                 first = record
@@ -122,7 +120,7 @@ def readback(work: pathlib.Path, expected_index: str) -> tuple[list[str], str]:
     if count == 0 or first is None or last is None:
         return [f"{work}: restored chain holds no readable records"], ""
     summary = (
-        f"{count} record(s) across {len(list(work.glob(ee.SEGMENT_GLOB)))} segment(s); "
+        f"{count} record(s) across {len(segments)} segment(s); "
         f"oldest {first.get('type')}/{first.get('eventId')}, "
         f"newest {last.get('type')}/{last.get('eventId')}"
     )
@@ -392,13 +390,13 @@ def main() -> int:
         return _report("restore-drill self-test", self_test(), "")
 
     if not args.archive:
-        ap.print_help()
+        ap.print_help(sys.stderr)
         return 2
     if not args.work:
-        print("usage: --archive requires --work <empty-dir>")
+        print("usage: --archive requires --work <empty-dir>", file=sys.stderr)
         return 2
     if not 0 < args.key_max_age_hours <= KEY_MAX_AGE_HOURS:
-        print(f"--key-max-age-hours must be in (0, {KEY_MAX_AGE_HOURS:.0f}]")
+        print(f"--key-max-age-hours must be in (0, {KEY_MAX_AGE_HOURS:.0f}]", file=sys.stderr)
         return 2
 
     errs, summary = drill(
