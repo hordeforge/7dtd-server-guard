@@ -48,7 +48,8 @@
           "const": "finding"
         },
         "utc": {
-          "type": "string"
+          "type": "string",
+          "format": "date-time"
         },
         "monotonicMs": {
           "type": "integer",
@@ -272,7 +273,8 @@
           ]
         },
         "savedAt": {
-          "type": "string"
+          "type": "string",
+          "format": "date-time"
         },
         "replayedFrom": {
           "type": [
@@ -419,7 +421,8 @@
           "const": "audit"
         },
         "utc": {
-          "type": "string"
+          "type": "string",
+          "format": "date-time"
         },
         "actor": {
           "type": "string",

@@ -105,7 +105,12 @@ Canonical serialization (pinned by `tools/evidence_check.py`):
 the first record of the very first segment has `chainPrev` equal to 64 zeros. A chain
 detects tampering of any record except the last one; tampering the last record is only
 detected when the next record is appended, because an append-only chain has no later
-record to cross-check. The verifier is `make verify-evidence DIR=<evidence-dir>`
+record to cross-check. `utc` and `savedAt` are RFC 3339 date-times carrying an explicit
+offset (serialized as `Z`); the schema declares `format: date-time` and the gate rejects a
+value without an offset, which names no instant and would be read in the reader's own local
+zone. Duration fields (`monotonicMs`, `latencyMs`, `uptimeS`) come from the server monotonic
+clock, so they measure elapsed time within one process and are never compared across
+processes or machines. The verifier is `make verify-evidence DIR=<evidence-dir>`
 and the shipped sample (`config/schemas/evidence.v1.sample.jsonl`) is a real, verifiable
 chain run by the doccheck gate.
 

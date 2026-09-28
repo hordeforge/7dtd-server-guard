@@ -134,6 +134,38 @@ def check_deep_nesting() -> None:
             raise InvariantBroken(f"{name}: rejected at the legal bound: {errs!r}")
 
 
+def check_datetime_format() -> None:
+    """Timestamp fields must be offset-qualified instants, not local-time strings.
+
+    A value like `2026-07-21T12:34:56` names no instant: each reader resolves it
+    against its own zone, so the same record reads as a different moment in
+    different deployments. An impossible calendar date is rejected by the same
+    path, since `format` is asserted by the platform parser.
+    """
+    schema = json.loads((ROOT / "config" / "schemas" / "evidence.v1.schema.json").read_text())
+    text = (ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl").read_text()
+    records = {
+        rec["type"]: rec for rec in (json.loads(ln) for ln in text.splitlines() if ln.strip())
+    }
+    field_of = {"finding": "utc", "audit": "utc", "reconciliation": "savedAt"}
+    good = "2026-07-21T12:34:56.789Z"
+    bad_values = {
+        "2026-07-21T12:34:56.789": "no offset: resolved against the reader's zone",
+        "2026-07-21 12:34:56Z": "space separator instead of the RFC 3339 T",
+        "2026-07-21T12:34:56": "local wall time with no offset at all",
+        "2026-02-30T00:00:00Z": "impossible calendar date",
+        "1753098896": "epoch seconds in a string field",
+        "yesterday": "not a date at all",
+    }
+    for rec_type, field in field_of.items():
+        pristine = records[rec_type]
+        if dc._schema_validate({**pristine, field: good}, schema):
+            raise InvariantBroken(f"{rec_type}.{field}: valid instant rejected")
+        for value, why in bad_values.items():
+            if not dc._schema_validate({**pristine, field: value}, schema):
+                raise InvariantBroken(f"{rec_type}.{field}={value!r} accepted: {why}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--iterations", type=int, default=1500)
@@ -162,6 +194,7 @@ def main() -> int:
                 stats["sensitivity"] += 1
 
         check_deep_nesting()
+        check_datetime_format()
     except InvariantBroken as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
@@ -169,7 +202,7 @@ def main() -> int:
     print(
         f"fuzz-schema-validate: ok seed={args.seed} iterations={args.iterations} "
         f"validator_runs={stats['runs']} rejected_mutants={stats['rejected']} "
-        f"sensitivity_checks={stats['sensitivity']} deep_probe=ok"
+        f"sensitivity_checks={stats['sensitivity']} deep_probe=ok datetime_probe=ok"
     )
     return 0
 

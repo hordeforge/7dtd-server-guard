@@ -34,6 +34,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from datetime import datetime
 from typing import Any
 
 # Spec loading (and its PyYAML dependency guard) lives in render_detectors.
@@ -117,6 +118,10 @@ CONFIG_SCHEMA_KEYS: frozenset[str] = frozenset(_schema_table_keys())
 # bites on pathological documents (deeply nested or self-referential schemas), where
 # unbounded recursion would end in RecursionError instead of a reported error.
 MAX_SCHEMA_DEPTH = 100
+
+# `format` values the validator asserts. A schema declaring anything else is
+# reported rather than silently accepted as unchecked.
+SUPPORTED_FORMATS = frozenset({"date-time"})
 
 # A numeric threshold range in the spec is a [min, max] pair.
 RANGE_BOUNDS = 2
@@ -420,6 +425,31 @@ def _schema_type_ok(instance: Json, t: Json) -> bool:
     }.get(t, False)
 
 
+def _format_errors(instance: str, schema: Json, path: str) -> list[str]:
+    """Assert the declared `format` keyword. Only `date-time` (RFC 3339) is in use.
+
+    An offset is required: a date-time string without one parses fine but names
+    no instant, and every reader would resolve it against its own local zone.
+    Calendar validity (month lengths, leap days) comes from the platform parser,
+    so a schema can state the contract without hand-rolled date arithmetic here.
+    """
+    fmt = schema.get("format")
+    if fmt is None:
+        return []
+    if fmt not in SUPPORTED_FORMATS:
+        return [f"{path}: schema declares unsupported format {fmt!r}"]
+    not_a_date_time = [f"{path}: {instance!r} is not an RFC 3339 date-time"]
+    if "T" not in instance:
+        return not_a_date_time
+    try:
+        parsed = datetime.fromisoformat(instance)
+    except ValueError:
+        return not_a_date_time
+    if parsed.tzinfo is None:
+        return [f"{path}: {instance!r} carries no UTC offset"]
+    return []
+
+
 def _scalar_errors(instance: Json, schema: Json, path: str) -> list[str]:
     """Range, pattern, and length keywords, which apply to numbers and strings."""
     errs = []
@@ -430,6 +460,7 @@ def _scalar_errors(instance: Json, schema: Json, path: str) -> list[str]:
         errs.append(f"{path}: {instance} > maximum {schema['maximum']}")
     if not isinstance(instance, str):
         return errs
+    errs += _format_errors(instance, schema, path)
     if "pattern" in schema and not re.match(schema["pattern"], instance):
         errs.append(f"{path}: {instance!r} does not match {schema['pattern']}")
     if "minLength" in schema and len(instance) < schema["minLength"]:
