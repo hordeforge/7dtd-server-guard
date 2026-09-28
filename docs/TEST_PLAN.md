@@ -94,8 +94,9 @@ it is gated by this layer and Layer 1 instead of appearing as a matrix column.
 
 Mutation tests perturb a single field of a legal trace and assert the expected finding appears
 (or that the trace stays legal). Mutations cover every validator input, including authority
-class: any validator with a client-declared input is exercised in observe-only and never
-asserts correction.
+class. Replay cases are observe-only and assert no gameplay action (DECISIONS.md D-17), and a
+validator whose decision input is client-declared is exercised at or below its `Hard` ceiling
+(DECISIONS.md D-15); a client-declared *observed* quantity is mutated like any other input.
 
 Exit: every planned detector has its full fixture set; replay is bit-reproducible for a fixed
 seed; the mutation suite is green.

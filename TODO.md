@@ -74,8 +74,10 @@ the objection). The review is the gate; nothing in later phases starts until it 
   expected call rate, reject capability, compatibility risk, and fallback event; the seam, input
   authority, and role per detector come from [tools/detector_spec.yaml](tools/detector_spec.yaml).
 - [ ] Confirm which client values the vanilla server already validates or overwrites.
-- [ ] Classify every planned validator input as server-derived or client-declared; a
-  client-declared input caps that validator below Hard.
+- [ ] Classify every planned validator input as server-derived or client-declared and record
+  its role (observed or decision); a client-declared *decision* input caps that validator
+  below Hard unless a hard condition documents complete server-side determination
+  (DECISIONS.md D-15).
 - [ ] Resolve the at-risk seams flagged in `tools/detector_spec.yaml`: craft transactions, trader
   pricing, and the second damage path (`NetPackageRangeCheckDamageEntity`).
 - [ ] Enumerate every server-side teleport origin (trader ejection, quests, respawn, console,
@@ -150,8 +152,8 @@ the objection). The review is the gate; nothing in later phases starts until it 
 - [ ] Record aim/visibility time series as weak, review-only signals with sampling controls.
 - [ ] Build weapon/action-family fixture catalog; test PvE, PvP, turret, vehicle, explosive, DOT.
 - [ ] Exit: every combat validator declares each input's authority class from the Phase 1
-  inventory; any validator with a client-declared input is demoted below Hard and stays
-  observe-only.
+  inventory; any validator with a client-declared decision input is demoted below Hard and
+  stays observe-only.
 
 ## Phase 7: inventory and economy conservation
 
