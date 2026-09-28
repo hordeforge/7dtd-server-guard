@@ -25,7 +25,7 @@ FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_
 # self-test here is enough to put it in the CI run. `make check` fails when a
 # tools/*.py exposes --self-test that neither this list nor the exercise recipe
 # runs, so a new self-test cannot be added and left dark.
-SELF_TESTS := doccheck evidence_check evidence_export restore_drill backup_status config_check sbom
+SELF_TESTS := doccheck evidence_check evidence_export restore_drill backup_status config_check sbom report_text
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each

@@ -343,6 +343,16 @@ above reserves minor bumps for that.
   bytes. The leading U+FEFF is not JSON, so the file was refused as malformed
   rather than validated as the config it is. Bytes that are not UTF-8 at all are
   still refused by name, as before.
+- A finding quoting text no encoding can write ended the run with a
+  `UnicodeEncodeError` instead of the report. stdout encodes with `errors="strict"`,
+  and two legal inputs reach it: a JSON string holding an unpaired UTF-16 half
+  (`"\udcff"` is well-formed JSON, and the server can write it), and a file name Linux
+  surfaces through `surrogateescape`. A restore drill whose oldest or newest record
+  carried one restored and verified every record and then died printing its summary.
+  Every tool now puts stdout and stderr into UTF-8 with `errors="backslashreplace"` at
+  the top of `main()` (`tools/report_text.py`), so that text is reported in the
+  `\udcff` spelling the JSON escape already used and the exit code still means
+  something.
 - `config_check.py` exited 2 on a config file that could not be read, where
   `tools/README.md` -> Command-line contract and its own docstring make a path that
   does not exist a check failure (1). A deploy script branching on the code read a

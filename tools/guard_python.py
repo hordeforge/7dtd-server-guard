@@ -11,6 +11,8 @@ from __future__ import annotations
 import pathlib
 import sys
 
+import report_text
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSION_FILE = ".python-version"
 # The pin must carry major, minor, and patch: a partial pin lets the patch float,
@@ -19,6 +21,7 @@ PIN_PARTS = 3
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     path = ROOT.joinpath(VERSION_FILE)
     try:
         raw = path.read_text(encoding="utf-8").strip()

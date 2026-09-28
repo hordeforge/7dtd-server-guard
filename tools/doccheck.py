@@ -75,6 +75,7 @@ from urllib.parse import unquote
 
 # Spec loading (and its PyYAML dependency guard) lives in render_detectors.
 import render_detectors
+import report_text
 
 # A parsed JSON Schema or instance: shape is what the validator below checks, so
 # it cannot be narrowed statically.
@@ -545,8 +546,10 @@ def self_test() -> list[str]:
         ),
         (
             "breaking change in a patch release",
-            "## [0.4.2] - 2026-10-01\n\n### Breaking\n\n- a\n\n"
-            "## [0.4.1] - 2026-09-20\n\n### Changed\n\n- a\n",
+            (
+                "## [0.4.2] - 2026-10-01\n\n### Breaking\n\n- a\n\n"
+                "## [0.4.1] - 2026-09-20\n\n### Changed\n\n- a\n"
+            ),
             "0.4.2 carries a Breaking entry but is a patch bump over 0.4.1",
         ),
     ]
@@ -2138,6 +2141,7 @@ def _toolchain_pin_self_test() -> list[str]:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

@@ -112,14 +112,20 @@
   files, and config files go under `.scratch/`, never the system temp dir.
 - The Makefile's `SELF_TESTS` list is the registry of tools reachable through
   `make self-test` (`evidence_check`, `evidence_export`, `restore_drill`, `backup_status`,
-  `config_check`, `sbom`): `make test-tools` runs every entry, and `make self-test
-  TOOL=<name>` runs one alone while editing it. Adding a tool to that list is the only
-  edit needed to put its self-tests in the CI run. `replay_contract_check.py` also carries
-  `--self-test` but runs it under `make exercise` rather than through this list.
+  `config_check`, `sbom`, `report_text`): `make test-tools` runs every entry, and
+  `make self-test TOOL=<name>` runs one alone while editing it. Adding a tool to that list
+  is the only edit needed to put its self-tests in the CI run. `replay_contract_check.py`
+  also carries `--self-test` but runs it under `make exercise` rather than through this
+  list.
 - `fuzz_common.py`: the mutation engine all six fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `self_test_common.py`: the exit-code and stream assertions `config_check.py`, `restore_drill.py`,
   and `backup_status.py` share, so the three self-tests cannot drift apart. Not an entry point.
+- `report_text.py`: puts stdout and stderr into UTF-8 with `errors="backslashreplace"` at
+  the top of every tool's `main()`, so a finding that quotes text no encoding can write
+  (an eventId holding an unpaired UTF-16 half, a file name Linux surfaces through
+  surrogateescape) is reported in its `\udcff` spelling instead of ending the run with a
+  UnicodeEncodeError. Carries `--self-test`; not otherwise an entry point.
 - `guard_python.py`: fails the build unless the running interpreter is exactly the
   version in `.python-version`. It is the `guard-python` prerequisite of every target
   that executes a tool, the developer ones (`check`, `lint`, `detectors`, `exercise`,

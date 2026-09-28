@@ -49,6 +49,7 @@ from typing import Any
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
 import evidence_export as ee
+import report_text
 from self_test_common import main_contract_errors
 
 Record = dict[str, Any]
@@ -497,6 +498,7 @@ def _self_test_main_contract() -> list[str]:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

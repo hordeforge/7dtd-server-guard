@@ -20,6 +20,7 @@ import sys
 from collections.abc import Callable
 from typing import Any, NamedTuple, TypeGuard
 
+import report_text
 from evidence_check import record_hash
 
 try:
@@ -584,6 +585,7 @@ def _fix_fingerprint(trace: dict[str, Any], text: str) -> int:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

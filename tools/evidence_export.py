@@ -54,6 +54,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
+import report_text
 
 Record = dict[str, Any]
 # One archived file: the manifest entry, keyed by file name.
@@ -1141,6 +1142,7 @@ def _report(summary: str, errs: list[str]) -> int:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

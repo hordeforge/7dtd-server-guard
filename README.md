@@ -118,7 +118,7 @@ Loop:
   (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
   checker, detector spec consumers, operator config validator). It takes minutes; while
   editing a single tool, run its two halves on their own.
-- `make self-test TOOL=doccheck|evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom`:
+- `make self-test TOOL=doccheck|evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom|report_text`:
   one tool's negative self-tests, the half of `make test-tools` a `make fuzz FUZZ=` run
   does not cover.
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short

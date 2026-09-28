@@ -40,6 +40,8 @@ import tomllib
 import uuid
 from typing import Any
 
+import report_text
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "uv.lock"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
@@ -427,6 +429,7 @@ def _self_test() -> int:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

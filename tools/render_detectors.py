@@ -21,6 +21,8 @@ import sys
 from collections.abc import Sequence
 from typing import Any, cast
 
+import report_text
+
 try:
     import yaml
 except ModuleNotFoundError:
@@ -298,6 +300,7 @@ def render_manifest(detectors: list[Detector]) -> dict[str, Any]:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

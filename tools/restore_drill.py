@@ -40,7 +40,9 @@ verdict and never mixes it with its diagnostics.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import io
 import json
 import pathlib
 import re
@@ -54,6 +56,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config_check as cc
 import evidence_check as ec
 import evidence_export as ee
+import report_text
 from self_test_common import main_contract_errors
 
 Record = dict[str, Any]
@@ -698,6 +701,80 @@ def _main_contract_self_test() -> list[str]:
     return main_contract_errors(cases, script="restore_drill.py", run=main, usage_error=USAGE_ERROR)
 
 
+def _self_test_unencodable_report() -> list[str]:
+    """A record whose text no stream can encode is reported, not crashed on.
+
+    The summary names the oldest and newest eventId, and stdout encodes with
+    errors="strict", so an eventId holding an unpaired UTF-16 half, which is
+    well-formed JSON and which the server can write, ended the drill with a
+    UnicodeEncodeError after it had restored and verified every record. The run
+    must still finish with the exit code and the summary that the record quoting
+    is part of, so the case writes through strict streams rather than the
+    in-memory buffers the other self-tests use.
+    """
+    errs: list[str] = []
+    scratch = ec.SCRATCH / "restore-drill-self-test-unencodable"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        archives = scratch / "archives"
+        source.mkdir(parents=True, exist_ok=True)
+        record: Record = {
+            "schemaVersion": 1,
+            "type": "health",
+            "eventId": "00000000-0000-4000-8000-00000000\udcff",
+            "chainPrev": ec.GENESIS,
+        }
+        (source / "evidence-2026-07-21-000000.jsonl").write_text(
+            ec.canonical(record) + "\n", encoding="utf-8"
+        )
+        if export_errs := ee.export(
+            source, archives, ec.DEFAULT_INDEX, stamp="20260721T000000Z", now=SELF_TEST_NOW
+        ):
+            return [f"self-test: could not build an archive: {export_errs}"]
+        archive = next(p for p in sorted(archives.iterdir()) if p.is_dir())
+        out, out_raw = _strict_stream()
+        err, _err_raw = _strict_stream()
+        saved = sys.argv
+        sys.argv = [
+            "restore_drill.py",
+            "--archive",
+            str(archive),
+            "--work",
+            str(scratch / "work"),
+        ]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main()
+        except SystemExit as exc:  # argparse rejects a bad argument by exiting
+            code = int(exc.code or 0)
+        except Exception as exc:  # the run must report, not raise out of the gate
+            errs.append(f"self-test: a drill over an unencodable record raised: {exc!r}")
+            code = 1
+        finally:
+            sys.argv = saved
+        out.flush()
+        written = out_raw.getvalue().decode("utf-8", "replace")
+        if code != 0:
+            errs.append(f"self-test: a drill over an unencodable record exited {code}")
+        if "\\udcff" not in written:
+            errs.append(f"self-test: the record text is missing from the report: {written!r}")
+        out.close()
+        err.close()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _strict_stream() -> tuple[io.TextIOWrapper, io.BytesIO]:
+    """A stdout-shaped stream that refuses to encode what it cannot represent,
+    and the buffer behind it. The default error handler is `strict`, so this is
+    what the report streams look like before the tool says otherwise, and it is
+    the stream a run has to survive the text it read."""
+    raw = io.BytesIO()
+    return io.TextIOWrapper(raw, encoding="utf-8", errors="strict"), raw
+
+
 def _write_stream_under(source: pathlib.Path, config_hash: str | None) -> None:
     """Two chained segments whose records carry `config_hash`, the way the writer
     stamps every record (SCHEMAS.md -> Evidence stream). `None` writes the records
@@ -858,11 +935,13 @@ def self_test() -> list[str]:
     errs += _self_test_config()
     errs += _self_test_config_match()
     errs += _main_contract_self_test()
+    errs += _self_test_unencodable_report()
     errs += _self_test_rerun()
     return errs
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

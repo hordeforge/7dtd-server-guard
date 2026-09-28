@@ -56,6 +56,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
+import report_text
 from self_test_common import main_contract_errors
 
 # Config JSON, loaded from an operator's file or a self-test fixture: shape is
@@ -716,6 +717,7 @@ def _report(label: str, errors: list[str]) -> int:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

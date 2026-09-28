@@ -35,6 +35,8 @@ from collections import deque
 from collections.abc import Iterable, Iterator
 from typing import Any, NamedTuple
 
+import report_text
+
 # An evidence record as parsed from a segment line. Fields are validated by
 # _parse_line and the evidence.v1 JSON Schema, not by the type.
 Record = dict[str, Any]
@@ -957,6 +959,7 @@ def _reports(found: list[str], needle: str) -> bool:
 
 
 def main() -> int:
+    report_text.safe_report_streams()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
