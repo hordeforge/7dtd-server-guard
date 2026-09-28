@@ -5,9 +5,10 @@ This is the canonical registry of every planned detector. The validation-primiti
 ([POLICY.md](POLICY.md)) defines *how* a signal may act, and this registry names each
 detector with a stable ID so config, evidence, fixtures, metrics, and phases all refer to
 the same thing. Add a detector to `tools/detector_spec.yaml` first and re-render
-(`make detectors`); Phase 2 scaffolding, the per-detector config manifest
-([SCHEMAS.md](SCHEMAS.md) -> Per-detector config manifest), and the fixture catalog
-([TEST_PLAN.md](TEST_PLAN.md) -> Layer 4) are all generated from the same YAML.
+(`make detectors`); this registry and the per-detector config manifest
+([SCHEMAS.md](SCHEMAS.md) -> Per-detector config manifest) are both generated from the same
+YAML, including the fixture coverage matrix below. The fixture catalog in
+([TEST_PLAN.md](TEST_PLAN.md) -> Layer 4) is maintained by hand.
 
 Rules for the registry:
 
@@ -21,8 +22,11 @@ Rules for the registry:
   Phase 1 publishes each input's authority class and role in the hook manifest.
 - Default mode is always `observe`. A detector may only be raised to `correct` or
   `enforce` after its phase exit criteria and the policy gates pass.
-- `Contexts` are named exemptions that must suppress or widen the detector; every context
-  named here needs a fixture family in TEST_PLAN.md.
+- `Contexts` are named exemptions that must suppress or widen the detector. They are not
+  fixture families of their own: a context is covered by the nearest family in
+  ([TEST_PLAN.md](TEST_PLAN.md) -> Layer 4) (`normal`, `violation`, `latency-stall`,
+  `reconnect-duplicate-session`, `teleport-vehicle-death`, `admin-mod-origin`, `rollback`,
+  `induced-finding`).
 
 The machine-readable spec behind every row lives in
 [`tools/detector_spec.yaml`](../tools/detector_spec.yaml): per-detector input roles

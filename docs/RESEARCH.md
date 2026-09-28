@@ -1,6 +1,7 @@
 # Research and constraints
 
-Research date: 2026-07-21. Local target: 7 Days to Die dedicated V3.2.0 (b9), Unity Mono
+Research date: 2026-08-28 (the initial survey is dated inline where it is cited). Local
+target: 7 Days to Die dedicated V3.2.0 (b9), Unity Mono
 (the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research` narratives under Local
 evidence now include **V3.2.0** regenerable dumps (`il/netpackages-v3.2.0/`,
 `il/dedi-complete-v3.2.0/`, `il/deep-v3.2.0/`, `il/loop-complete-v3.2.0/`) and the

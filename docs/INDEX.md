@@ -59,8 +59,9 @@ bug to fix in the same change.
 ├── pyproject.toml             tool dependencies and black config (uv, uv.lock)
 ├── ruff.toml, mypy.ini        lint and type-check settings (make lint)
 ├── .python-version            pinned interpreter version; uv installs exactly it
-├── .github/                   CI workflow, dependabot, review prompts
+├── .github/                   CI workflow, dependabot, design-contract review document
 ├── config/
+│   ├── README.md              the config contract and the local-config gitignore rule
 │   ├── server-guard.example.json     example config v1
 │   ├── detector-config-manifest.json generated per-detector thresholds (make detectors,
     │                            never hand-edited)
@@ -70,12 +71,14 @@ bug to fix in the same change.
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
 ├── tests/                     planned test projects
 └── tools/
+    ├── README.md              the tool inventory and the command-line contract every
+    │                          tool in here follows
     ├── detector_spec.yaml       canonical detector spec (single source of truth)
     ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
     ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain)
     ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
     ├── evidence_export.py       verified evidence archive export and restore drill
-    │                            (make export-evidence, make verify-archive)
+    │                            (make export-evidence, make backup, make verify-archive)
     ├── restore_drill.py         restores an archive into a scratch dir and reads it back
     │                            (make drill-restore)
     ├── backup_status.py         read-only RPO check over an archive root
@@ -98,7 +101,8 @@ bug to fix in the same change.
     │                            the six fuzzers
     ├── guard_python.py          enforces the .python-version pin before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
-    │                            inventory design vector now; the rest fill in at Phase 4)
+    │                            inventory design vector now; the replay corpus fills in
+    │                            at Phase 4, the labeled regression corpus at Phase 7/9)
     └── surface_inventory/       Phase 1 Mono.Cecil metadata probe (planned)
 ```
 

@@ -143,10 +143,12 @@ sbom: guard-python
 # Validate an operator's config file before it is deployed: schema, detector
 # registry, per-detector manifest thresholds, and the env vars an enabled webhook
 # or dashboard names. --skip-env checks the file alone, with no environment.
-# Usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1]
+# SHOW_EFFECTIVE=1 also prints the effective (defaulted) config and the config hash
+# the evidence records and the health report carry.
+# Usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1] [SHOW_EFFECTIVE=1]
 verify-config: guard-python
-	@test -n "$(FILE)" || { echo "usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1]" >&2; exit 2; }
-	$(UV) python tools/config_check.py --config "$(FILE)" $(if $(SKIP_ENV),--skip-env,)
+	@test -n "$(FILE)" || { echo "usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1] [SHOW_EFFECTIVE=1]" >&2; exit 2; }
+	$(UV) python tools/config_check.py --config "$(FILE)" $(if $(SKIP_ENV),--skip-env,) $(if $(SHOW_EFFECTIVE),--show-effective,)
 
 # Verify an evidence directory's hash chain (append-only segments).
 # Usage: make verify-evidence DIR=/path/to/evidence

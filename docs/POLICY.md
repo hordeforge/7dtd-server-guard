@@ -146,7 +146,7 @@ the fact.
 | Term | Meaning | Canonical definition |
 |---|---|---|
 | Mode | Per-detector capability level: `Observe`, `Correct`, `Enforce` | Detector mode ladder |
-| Action | What a decision produces: `record`, `correct`, `quarantine`, `throttle`, `kick`, `temp-ban (local)` | Action set |
+| Action | What a decision produces: `record`, `correct`, `quarantine`, `throttle`, `kick`, `temp-ban (local)`, or `permanent-ban` (operator-only, never issued by the mod) | Action set |
 | Severity | Property of a signal: `Hard`, `Strong`, `Weak` | Severity |
 | Authority class | Whether a validator input is server-derived or client-declared, plus its role (observed or decision); a client-declared *decision* input caps the signal below `Hard` unless a hard condition documents complete server-side determination | Severity |
 | Ledger | Per-player bounded double-entry state for movement, combat, inventory, or world actions | ARCHITECTURE.md → Components |
@@ -158,7 +158,7 @@ the fact.
 | Dry-run diff | Report of what *would* have happened, required before enabling any enforcement family | Enforcement gates |
 | Tombstone | Purge/redaction placeholder that preserves the record hash in the chain | ARCHITECTURE.md → Evidence model |
 | Detector ID | Stable `family.subject` identifier for a detector; config, evidence, metrics, and fixtures use the same ID | DETECTORS.md → Detector registry |
-| Schema version | `schemaVersion` integer on config, evidence, hook manifest, audit, and health records; consumers refuse or skip unknown versions | SCHEMAS.md → Schema evolution |
+| Schema version | `schemaVersion` integer on config, evidence, audit, and health records, and `manifestVersion` on the hook and config manifests; consumers refuse or skip unknown versions | SCHEMAS.md → Schema evolution |
 | Fail-open | A detector disables itself on hook mismatch or runtime fault rather than risking gameplay | ARCHITECTURE.md → Hook policy |
 | Regression corpus | Labeled false-positive and detector-bug fixtures replayed on every change | TEST_PLAN.md → Layer 7 |
 | Hook manifest | Machine-readable fingerprint of resolved hooks and metadata tokens for the build | TODO.md → Phase 1; TEST_PLAN.md → Layer 3 |

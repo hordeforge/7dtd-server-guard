@@ -231,7 +231,7 @@ evidence lands:
   Phase 7 must extend it to container, trader, and craft traffic or the ledger phase cannot be
   exercised (Phase 7).
 - **Build delta:** older narratives were inventoried against V3.0.1 (b4) and V3.1.0 (b14);
-  regenerable dumps for both and for the pinned V3.2.0 (b9) exist
+  regenerable dumps for V3.1.0 and for the pinned V3.2.0 (b9) exist
   (`il/netpackages-v3.2.0/`, `il/dedi-complete-v3.2.0/`), partially
   de-risking the delta, but Phase 1 still re-verifies the pinned V3.2.0 (b9) before any
   hook is written.

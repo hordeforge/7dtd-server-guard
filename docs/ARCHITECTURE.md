@@ -39,7 +39,7 @@ ModEvents and narrowly pinned Harmony hooks
 | `InvariantEngine` | Hard predicates that can safely reject impossible requests | Main thread |
 | `BehaviorEngine` | Windowed scores with uncertainty and peer/baseline context | Worker over copied data |
 | `EvidenceStore` | JSONL segments, hash chain, retention, redaction, rotation | Dedicated writer thread |
-| `ResponseCoordinator` | Cooldowns, corrections, quarantine, kick; no permanent auto-ban | Main thread action queue |
+| `ResponseCoordinator` | Cooldowns, corrections, quarantine, throttle, kick, local temp-ban; no permanent auto-ban | Main thread action queue |
 | `Metrics` | Detector cost, queue depth, drops, flags, corrections, false-positive labels | Lock-free counters |
 
 ## Source layout and naming
@@ -222,8 +222,11 @@ States the server does not model (mod-added movement types, unknown buffs) widen
 uncertainty window rather than triggering violations.
 
 Sampled position history for review replay: record position, tick, and envelope state every
-20 ticks (~1 s at 20 Hz) plus on every discontinuity. Retain at most 3600 samples per player
-(~1 hour), expired by wall clock at 7 days.
+20 ticks (~1 s at 20 Hz) plus on every discontinuity. The two retention limits are config,
+not invariants: `evidence.positionHistorySamplesPerPlayer` (default 3600, about an hour at
+20 Hz) and `evidence.positionHistoryDays` (default 7), which is a wall-clock expiry.
+`positionHistoryDays: 0` disables the history entirely
+([SCHEMAS.md](SCHEMAS.md) -> Config schema).
 
 ### Inventory reconciliation
 

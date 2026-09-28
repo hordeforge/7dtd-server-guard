@@ -104,7 +104,9 @@ installs. uv enforces that pin itself and installs the exact interpreter version
 Loop:
 
 - `make check`: docs quality gate (em dashes, internal links, detector spec and ceiling
-  rule, registry sync, JSON Schemas, config/schema cross-references). Run before opening
+  rule, registry sync, JSON Schemas, config/schema cross-references, the evidence sample
+  chain, the replay contract vector, the release version against the newest CHANGELOG
+  entry, and the documented folder structure). Run before opening
   any change.
 - `make lint`: black, ruff, and mypy over the whole repository.
 - `make detectors`: re-render the detector registry tables and the per-detector config

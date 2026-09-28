@@ -1,8 +1,10 @@
 # Validation primitives
 
 This document owns reusable validation mechanics. The generated
-[detector registry](DETECTORS.md) owns detector identity, seams, inputs, algorithms, state,
-contexts, thresholds, and fixtures. [POLICY.md](POLICY.md) owns what findings may justify.
+[detector registry](DETECTORS.md) owns detector identity, seams, contexts, and the fixture
+matrix, and points at `tools/detector_spec.yaml` for the per-detector input roles,
+algorithm sketch, state, and threshold keys. [POLICY.md](POLICY.md) owns what findings may
+justify.
 This split is intentional: a primitive is a building block, not a detector and never an
 enforcement reason by itself.
 

@@ -4,7 +4,8 @@ Why the design is the way it is. Each entry records the decision, the alternativ
 were considered and rejected, and the consequence that binds later phases. The design
 contract says "update documents when evidence changes an assumption"; when that happens,
 update the owning document *and* add an entry here with status `superseded` and a pointer to
-the new decision, so the reasoning trail survives.
+the new decision, so the reasoning trail survives. A decision only part of which is replaced
+keeps `accepted` and names the superseded part inline, as D-01 does for its build pin.
 
 Status values: `accepted` (binding), `proposed` (under review), `superseded` (replaced;
 see note).
@@ -56,7 +57,8 @@ see note).
 - **Status:** accepted.
 - **Decision:** Mode (`observe`/`correct`/`enforce`) is a per-detector capability level; the
   action a decision produces (`record`, `correct`, `quarantine`, `throttle`, `kick`,
-  `temp-ban (local)`) is chosen by the response policy. These were previously conflated.
+  `temp-ban (local)`, or the operator-only `permanent-ban`) is chosen by the response policy.
+  These were previously conflated.
 - **Alternatives:** One combined "severity -> action" map (rejected: `enforce` implies
   quarantine *or* kick, but which one is a policy choice, not a capability choice).
 - **Consequence:** POLICY.md owns both vocabularies; SCHEMAS.md config exposes modes

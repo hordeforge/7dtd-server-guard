@@ -49,8 +49,10 @@ The surface probe emits one entry per candidate hook with:
 | Safety | Reject capability, co-patch behavior, failure behavior, fallback event |
 | Verification | Probe result, smoke-test result, reviewer, and manifest-entry hash |
 
-The probe studies installed stock assemblies in `../7dtd-engine-research/` and emits only metadata
-facts here. It never copies game assemblies or reverse-engineering narratives into this repo.
+The probe reads the installed stock assemblies by path (`--assembly-dir`, defaulting to the
+local dedicated server's managed directory) and emits only metadata facts here. It never
+copies game assemblies or reverse-engineering narratives into this repo; the RE narratives
+and the Mono.Cecil dump tooling live in `../7dtd-engine-research/`.
 
 ### Questions resolved first
 

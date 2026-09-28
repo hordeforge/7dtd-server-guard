@@ -8,7 +8,9 @@ in [ARCHITECTURE.md](ARCHITECTURE.md) can be tested against something concrete.
 
 Rules that apply to every schema in this document:
 
-- Every schema carries a `schemaVersion` integer. A consumer that sees an unknown version
+- Every record schema carries a `schemaVersion` integer; the two manifests
+  (`config-manifest.v1.schema.json` and the hook manifest) carry a `manifestVersion`
+  instead. A consumer that sees an unknown version
   refuses to start (config) or skips and reports (evidence replay), never guesses.
 - Unknown keys are rejected, not ignored. Invalid ranges and enums are rejected.
 - Identifiers are validated per field, not by one shared charset. A detector ID is
@@ -63,7 +65,9 @@ load time rather than a feature that quietly does nothing:
 An operator runs the same checks before deploying, on the machine that will run the mod:
 `make verify-config FILE=<path>` ([tools/README.md](../tools/README.md) -> `config_check.py`).
 It prints the effective config's hash, the digest every evidence record, the health report,
-and the hook manifest carry. `--skip-env` checks the file alone, for a config being reviewed
+and the hook manifest carry. `make verify-config FILE=<path> SHOW_EFFECTIVE=1` forwards
+`--show-effective` to get that hash; a plain run prints only the verdict. `--skip-env`
+checks the file alone, for a config being reviewed
 where the serving environment is not the one running the check.
 
 | Key | Type | Default | Range / enum | Meaning |
@@ -150,7 +154,8 @@ raw packets, chat, or copied server data.
 
 Append-only JSONL, one object per line, hash-chained. Segment files
 `evidence-<UTC-date>-<seq>.jsonl` plus a `segment-index.json`. Every record starts with
-`schemaVersion`, `type`, and `eventId` (UUID v4). `chainPrev` is the SHA-256 of the
+`schemaVersion`, `type`, and `eventId` (a UUID; the schema pins the shape, not the
+version nibble). `chainPrev` is the SHA-256 of the
 canonical serialization of the previous record in the chain; the first record of a segment
 chains to the last record of the previous segment.
 
@@ -188,7 +193,8 @@ memory cost does not grow with segment size.
 The machine form of this section is the JSON Schema at
 `config/schemas/evidence.v1.schema.json` with a one-record-per-type sample at
 `config/schemas/evidence.v1.sample.jsonl`; the doccheck gate validates the sample, and the
-EvidenceStore and replay harness validate against the schema. Machine `severity` values are
+EvidenceStore and replay harness (Phase 2 and Phase 4) validate against the schema. Machine
+`severity` values are
 lowercase (`hard`/`strong`/`weak`); POLICY.md terms are the display vocabulary.
 
 Record types and their extra fields:
@@ -241,7 +247,9 @@ copying this example into a record needs values that validate.
 }
 ```
 
-Boundedness: `observations` is capped at 32 entries and each entry at 4 scalar fields;
+Boundedness: `observations` is capped at 32 entries and each entry at 4 keys (the schema
+bounds the key count and the deny-listed names, not the value types, so a value that fits
+is a detector's choice to keep flat);
 `context`, `expected`, and `actual` at 8 keys each; `causeEventIds` at 32 records and
 `evidenceIds` at 64. Anything larger is truncated with a `truncated: true` marker so a
 hostile request cannot inflate evidence size.
@@ -413,11 +421,12 @@ identity labels:
 
 ## Schema evolution
 
-- Bump `schemaVersion` when a field's meaning changes incompatibly. Additive fields bump a
-  minor marker in the same version number only when every consumer is updated in the same
-  release.
-- Evidence replay (TEST_PLAN.md Layer 4) refuses traces whose `schemaVersion`, `buildId`,
-  or `configHash` does not match the replaying build, and reports instead of guessing.
+- Bump `schemaVersion` when a field's meaning changes incompatibly. v1 pins the version to
+  an exact integer, so an incompatible change ships a new `vN` schema file rather than a
+  marker inside v1; a `1.1` document is refused by every consumer today.
+- Evidence replay (TEST_PLAN.md Layer 4) refuses a trace whose `schemaVersion` or
+  `build.hookManifestHash` does not match the replaying build, and reports instead of
+  guessing. `buildId` and `configHash` are evidence-record fields, not trace fields.
 - Config upgrade rules: `schemaVersion` must match exactly; unknown keys are an error. A
   config migration tool (Phase 10 packaging) rewrites old configs to the new schema and
   prints the diff before writing.

@@ -27,7 +27,9 @@ Usage:
   make backup-status ROOT=/path/to/archive-root
 
 Exit codes: 0 the RPO is met, 1 the window is open or an archive does not
-verify, 2 usage error. The one-line verdict goes to stdout and the per-issue
+verify, 2 usage error. The window defaults to 24 hours and cannot be set above
+it: a ceiling longer than a day would report a green root while a whole backup
+day was missing. The one-line verdict goes to stdout and the per-issue
 detail to stderr, whether or not the run found something, so a redirected run
 records the verdict and never mixes it with its diagnostics.
 """

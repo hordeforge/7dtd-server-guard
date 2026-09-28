@@ -13,7 +13,10 @@ Before promotion, record all of the following:
 2. A candidate authoritative seam on the pinned build, with pre-state and post-state.
 3. Every input's authority and role, plus the resulting severity ceiling.
 4. Legal contexts, induced-finding risks, privacy/retention cost, and a bounded work budget.
-5. Normal, violation, missing-state, replay, concurrency, and relevant context fixtures.
+5. Fixture families drawn from the closed TEST_PLAN vocabulary the spec validates against
+   (`normal`, `violation`, `latency-stall`, `reconnect-duplicate-session`,
+   `teleport-vehicle-death`, `admin-mod-origin`, `rollback`, `induced-finding`); `normal`
+   and `violation` are required per detector.
 6. Why extending an existing detector or validation primitive is insufficient.
 
 If Phase 1 cannot find a decision seam, keep the idea here, demote it to review-only, or
@@ -94,12 +97,14 @@ drop it. Do not create a detector merely because a packet or metric is observabl
 
 ## Later research candidates
 
-### C-07: Server-visible-information frontier
+### C-07: Server-visible-information frontier (promoted as `combat.acquisition`)
 
 Track when an entity first enters the stock server's distribution set and compare that
 frontier with target selection. Because vanilla interest management is distance-based and
 not line-of-sight secrecy, this can only become weak review context. It must not be described
-as proof of ESP or wallhack.
+as proof of ESP or wallhack. This is now a registry detector, so the reasoning lives in
+[DETECTORS.md](DETECTORS.md) and `tools/detector_spec.yaml`; keep it here only as a record
+of the original proposal.
 
 ### C-08: Cooperative causality anomalies
 

@@ -34,7 +34,8 @@ Checks:
   15. Every shipped fuzzer and every tool exposing `--self-test` is reachable from a
       make target, and the FUZZERS registry matches the order `make test-tools` runs.
 
-Exit code 0 when clean; 1 otherwise. The one-line summary goes to stdout and the
+Exit codes: 0 clean, 1 the gate found issues, 2 usage error. The one-line summary goes to
+stdout and the
 per-check failure detail to stderr, so a redirected run keeps the verdict on one
 stream and the diagnostics on the other.
 """

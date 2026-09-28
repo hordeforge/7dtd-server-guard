@@ -21,14 +21,16 @@ instructions for a shipped product.
 2. Validate the config file before it reaches the server:
    `make verify-config FILE=config/server-guard.local.json`. It rejects unknown keys, a
    misspelled detector id, a threshold outside the manifest's declared range, and an
-   enabled webhook or dashboard whose environment variable is unset, then prints the
-   effective config's hash. A non-zero exit means the file is not deployable; the mod
-   would refuse the same file at startup ([SCHEMAS.md](SCHEMAS.md) -> Config schema).
+   enabled webhook or dashboard whose environment variable is unset. A non-zero exit means
+   the file is not deployable; the mod would refuse the same file at startup
+   ([SCHEMAS.md](SCHEMAS.md) -> Config schema). Add `SHOW_EFFECTIVE=1` to also print the
+   effective config's hash, which step 3 compares by hand.
 3. Verify the config hash and hook manifest hash against the release notes. No command
    does this yet: `make check` is a repository docs and schema gate, and the release-artifact
    verifier is a Phase 9 requirement (this runbook is a requirements document, see the
    preamble). Until it exists, compare the values the health report prints by hand. The
-   config hash `make verify-config` prints is the one the evidence records and the health
+   config hash `make verify-config FILE=<path> SHOW_EFFECTIVE=1` prints is the one the
+   evidence records and the health
    report carry, so the two can be compared directly.
 4. Start in observe mode. Confirm the health report shows every detector `active` and the
    hook manifest resolved fully on the pinned build.
@@ -229,7 +231,8 @@ reads the oldest and newest records back out, printing their types and event IDs
 under: every record carries the `configHash` of the effective config in force when it
 was written, so a config that hashes to a value no restored record carries is
 reported instead of paired with findings that were never produced under it. It then
-resolves `identityMap.path` and `hmacKey.path` and fails when either
+resolves `identityMap.path` and `hmacKey.path` (a relative one against the config
+file's own directory, or against `--runtime-root`) and fails when either
 is missing, zero bytes, older than the 7-day copy cycle, or stamped with an mtime
 later than the current time, so a drill cannot pass on
 an archive that restores records nobody can attribute. Without `CONFIG` the verdict

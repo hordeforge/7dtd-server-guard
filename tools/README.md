@@ -24,8 +24,9 @@
   the same seed names the same archive and sweeps the same dead run's staging
   directories it did the first time.
   `make export-evidence DIR=... OUT=...`
-  archives, `make verify-archive ARCHIVE=...` re-verifies an existing archive (the
-  restore drill in docs/OPERATIONS.md). Secrets are never archived here: the identity map
+  archives, the identical `make backup DIR=... OUT=...` is the same command under the name
+  the scheduler calls, and `make verify-archive ARCHIVE=...` re-verifies an existing archive
+  (the restore drill in docs/OPERATIONS.md). Secrets are never archived here: the identity map
   and HMAC key are backed up separately. Self-tests run under `make test-tools`.
 - `restore_drill.py`: performs the monthly restore drill
   (`make drill-restore ARCHIVE=... WORK=... [CONFIG=...]`). It verifies the archive
@@ -35,7 +36,8 @@
   hashes to a value the restored records carry (every record stamps the `configHash`
   it was written under, so a config the archive was not written under is reported
   rather than paired with the evidence it did not produce), resolves
-  `identityMap.path` and `hmacKey.path`, and fails on a missing, zero-byte, or
+  `identityMap.path` and `hmacKey.path` (a relative one against the config file's own
+  directory, or against `--runtime-root`), and fails on a missing, zero-byte, or
   past-cycle key, so a drill cannot pass on a chain nobody can attribute. Without
   `--config` the verdict says the config went unchecked, so the drill record does
   not imply a cross-check that never ran. The live
@@ -50,17 +52,22 @@
   during an incident. It also reports the gaps between adjacent archives: a run that
   never landed is invisible to the age of the newest one, and a root holding a
   three-hour-old archive and a ten-day-old one is fresh with nine days of evidence
-  unarchived. It writes nothing. Self-tests run under `make test-tools`.
+  unarchived. The window defaults to 24 hours and cannot be set above it: a
+  ceiling longer than a day would report a green root while a whole backup day was
+  missing. It writes nothing. Self-tests run under `make test-tools`.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
 - `config_check.py`: validates an operator's own config file the way the strict Phase 2
   loader is specified to: JSON Schema contract (unknown keys, types, enums, ranges),
   `modes` keys against the detector registry, `thresholds` keys and values against
   `config/detector-config-manifest.json`, and an enabled `webhook` or `dashboard` whose
-  named environment variable is unset. `--show-effective` prints the effective (defaulted)
+  named environment variable is unset. `--skip-env` drops that last check, for a host
+  that has no server environment to check against. `--show-effective` prints the
+  effective (defaulted)
   config and the SHA-256 written into evidence records, the health report, and the hook
   manifest. Secret values are never read: the config names the env var, the tool checks only
-  that it is set. `make verify-config FILE=...`; self-tests run under `make test-tools`.
+  that it is set. `make verify-config FILE=... [SKIP_ENV=1] [SHOW_EFFECTIVE=1]`;
+  self-tests run under `make test-tools`.
 - `sbom.py`: renders `uv.lock` as a CycloneDX 1.6 bill of materials
   (`make sbom [OUT=dist/sbom.cdx.json]`), one component per locked package with the
   sha256 the lock records, the dependency graph, and a `runtime` or `dev` scope property,
@@ -72,7 +79,8 @@
   the lock does not describe, is an error rather than a quietly omitted component. Runs
   under `make ci`; self-tests run under `make test-tools`.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
-  format, detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
+  format, the release version in `pyproject.toml` against the newest CHANGELOG entry,
+  detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped
   schema/data pairs, evidence sample chain, replay-contract vector, evidence
   personal-data deny-list, backup/restore runbook, and folder structure.
@@ -85,16 +93,20 @@
   (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a
   single harness from the Makefile's FUZZERS list at a short run). Temporary segments, spec
   files, and config files go under `.scratch/`, never the system temp dir.
-- The Makefile's `SELF_TESTS` list is the registry of tools carrying `--self-test`
-  (`evidence_check.py`, `evidence_export.py`): `make test-tools` runs every entry, and
-  `make self-test TOOL=<name>` runs one alone while editing it. Adding a tool to that list
-  is the only edit needed to put its self-tests in the CI run.
+- The Makefile's `SELF_TESTS` list is the registry of tools reachable through
+  `make self-test` (`evidence_check`, `evidence_export`, `restore_drill`, `backup_status`,
+  `config_check`, `sbom`): `make test-tools` runs every entry, and `make self-test
+  TOOL=<name>` runs one alone while editing it. Adding a tool to that list is the only
+  edit needed to put its self-tests in the CI run. `replay_contract_check.py` also carries
+  `--self-test` but runs it under `make exercise` rather than through this list.
 - `fuzz_common.py`: the mutation engine all six fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `guard_python.py`: fails the build unless the running interpreter is exactly the
-  version in `.python-version`. Runs first in every target that executes a tool:
-  `make check`, `make lint`, `make detectors`, `make exercise`, `make test-tools`,
-  `make self-test`, and `make fuzz`.
+  version in `.python-version`. It is the `guard-python` prerequisite of every target
+  that executes a tool, the developer ones (`check`, `lint`, `detectors`, `exercise`,
+  `test-tools`, `self-test`, `fuzz`, `sbom`) and the operator ones (`verify-config`,
+  `verify-evidence`, `export-evidence`, `verify-archive`, `backup`, `backup-status`,
+  `drill-restore`).
 - `surface_inventory/`: Phase 1 Mono.Cecil metadata probe emitting hook manifest v1
   (SCHEMAS.md). Planned; only the README contract exists, no code yet.
 - `fixtures/`: versioned synthetic traces (`traces/`), the labeled false-positive regression
