@@ -118,6 +118,8 @@
   `--self-test` but runs it under `make exercise` rather than through this list.
 - `fuzz_common.py`: the mutation engine all six fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
+- `self_test_common.py`: the exit-code and stream assertions `config_check.py`, `restore_drill.py`,
+  and `backup_status.py` share, so the three self-tests cannot drift apart. Not an entry point.
 - `guard_python.py`: fails the build unless the running interpreter is exactly the
   version in `.python-version`. It is the `guard-python` prerequisite of every target
   that executes a tool, the developer ones (`check`, `lint`, `detectors`, `exercise`,

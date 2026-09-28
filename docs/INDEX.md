@@ -100,6 +100,8 @@ bug to fix in the same change.
     │                            its file entry point (make test-tools)
     ├── fuzz_common.py           mutation engine and shared --iterations/--seed flags for
     │                            the six fuzzers
+    ├── self_test_common.py      exit-code and stream assertions shared by the three tool
+    │                            self-tests that pin the command-line contract
     ├── guard_python.py          enforces the .python-version pin before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
     │                            inventory design vector now; the replay corpus fills in

@@ -56,6 +56,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
+from self_test_common import main_contract_errors
 
 # Config JSON, loaded from an operator's file or a self-test fixture: shape is
 # what the validator checks, so it cannot be narrowed statically.
@@ -645,34 +646,16 @@ def _main_contract_self_test(failures: list[str]) -> None:
     """Pin the exit codes and stream split documented in tools/README.md.
 
     A deployment script branches on these: 0 deployable, 1 not deployable (a
-    file that is missing or unparsable included), 2 for a usage error, which
-    writes its help to stderr and leaves stdout empty so a redirected run cannot
-    capture a help dump where a verdict belongs.
+    file that is missing or unparsable included), 2 for a usage error.
     """
-    cases = [
+    cases: list[tuple[str, list[str], int]] = [
         ("bare run", [], USAGE_ERROR),
         ("missing config file", ["--config", str(ROOT / ".scratch" / "no-such-config.json")], 1),
         ("shipped example", ["--config", str(EXAMPLE_PATH), "--skip-env"], 0),
     ]
-    saved = sys.argv
-    for label, argv, expected in cases:
-        out, err = io.StringIO(), io.StringIO()
-        sys.argv = ["config_check.py", *argv]
-        try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                code = main()
-        except SystemExit as exc:  # argparse rejects an unknown flag by exiting
-            code = int(exc.code or 0)
-        finally:
-            sys.argv = saved
-        if code != expected:
-            failures.append(f"{label}: exit {code}, expected {expected}")
-        if expected != USAGE_ERROR:
-            continue
-        if out.getvalue():
-            failures.append(f"{label}: usage error wrote to stdout: {out.getvalue()!r}")
-        if not err.getvalue():
-            failures.append(f"{label}: usage error wrote nothing to stderr")
+    failures += main_contract_errors(
+        cases, script="config_check.py", run=main, usage_error=USAGE_ERROR
+    )
 
 
 def _show_effective_self_test(failures: list[str]) -> None:

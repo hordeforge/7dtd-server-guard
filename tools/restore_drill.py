@@ -40,9 +40,7 @@ verdict and never mixes it with its diagnostics.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import datetime as dt
-import io
 import json
 import pathlib
 import re
@@ -56,6 +54,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config_check as cc
 import evidence_check as ec
 import evidence_export as ee
+from self_test_common import main_contract_errors
 
 Record = dict[str, Any]
 
@@ -684,9 +683,7 @@ def _main_contract_self_test() -> list[str]:
     """Pin the exit codes and stream split documented in tools/README.md.
 
     A scheduled drill branches on these: 0 restored, 1 the drill found a problem
-    (an archive that does not exist included), 2 for a usage error, which writes
-    its help or its message to stderr and leaves stdout empty so a redirected run
-    cannot capture a help dump where a verdict belongs.
+    (an archive that does not exist included), 2 for a usage error.
     """
     cases: list[tuple[str, list[str], int]] = [
         ("bare run", [], USAGE_ERROR),
@@ -698,29 +695,7 @@ def _main_contract_self_test() -> list[str]:
         ),
         ("missing archive", ["--archive", "/nonexistent", "--work", "/nonexistent"], 1),
     ]
-    errs: list[str] = []
-    saved = sys.argv
-    for label, argv, expected in cases:
-        out, err = io.StringIO(), io.StringIO()
-        sys.argv = ["restore_drill.py", *argv]
-        try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                code = main()
-        except SystemExit as exc:  # argparse rejects a bad argument by exiting
-            code = int(exc.code or 0)
-        finally:
-            sys.argv = saved
-        if code != expected:
-            errs.append(f"{label}: exit {code}, expected {expected}")
-        if expected != USAGE_ERROR:
-            if not out.getvalue():
-                errs.append(f"{label}: a verdict run wrote nothing to stdout")
-            continue
-        if out.getvalue():
-            errs.append(f"{label}: usage error wrote to stdout: {out.getvalue()!r}")
-        if not err.getvalue():
-            errs.append(f"{label}: usage error wrote nothing to stderr")
-    return errs
+    return main_contract_errors(cases, script="restore_drill.py", run=main, usage_error=USAGE_ERROR)
 
 
 def _write_stream_under(source: pathlib.Path, config_hash: str | None) -> None:
