@@ -11,10 +11,12 @@ agent-facing prompt quality; doc-review judges writing quality; specs-review jud
 documents as specifications. None of those checks whether the contract is still true of this
 tree. Where `make check` (tools/doccheck.py) already proves a property, treat it as
 verified and do not re-report it; the proven set is the `checks` list in that tool's
-main() (em dashes, links, TODO checkboxes, detector spec, registry sync, detector id
-coverage, config example/schema cross-references, evidence chain and personal data,
-replay contract, folder structure, backup runbook, required docs). Read that list
-before claiming a property is unchecked; this review covers what the gate cannot see.
+main() (em dashes, links, TODO checkboxes, release version, detector spec, registry
+sync, detector id coverage, config example/schema cross-references, evidence chain
+and personal data, replay contract, folder structure, backup runbook, required docs).
+That list is the authority, not this gloss: it gains entries as the tool grows, so
+read it before claiming a property is unchecked; this review covers what the gate
+cannot see.
 
 First decide if this review applies. If AGENTS.md, docs/INDEX.md, or TODO.md is missing,
 there is no contract here; print the skip result and stop. Otherwise run `make check`
@@ -65,13 +67,17 @@ Review the following:
    changes operator-visible behavior is a high-severity finding even when the canonical
    source is still correct.
 
-If available, use: `rg` for cross-document sweeps of repeated facts and "Document ->
-Section" pointers; `uv run --frozen python` with stdlib only (json, re, pathlib) for
-comparisons such as INDEX rows versus directory listings (`--frozen` matches what `make
-check` runs and fails loudly instead of re-resolving a stale uv.lock). Never install
-packages or add dependencies: if the frozen environment cannot be resolved, report the
-failure as a blocked finding rather than installing around it.
-Re-run `make check` before finishing so your edits keep the gate green.
+Instructions:
+- Fix every finding you have proved, and prove it before editing: open both sides of
+  the disagreement and confirm the text actually says what you are about to change.
+- Re-verify each fix with the same command or file read that found it, and re-run
+  `make check`; a fix nobody re-checked is a fix nobody knows closed.
+- If available, use: `rg` for cross-document sweeps of repeated facts and "Document ->
+  Section" pointers; `uv run --frozen python` with stdlib only (json, re, pathlib) for
+  comparisons such as INDEX rows versus directory listings (`--frozen` matches what `make
+  check` runs and fails loudly instead of re-resolving a stale uv.lock). Never install
+  packages or add dependencies: if the frozen environment cannot be resolved, report the
+  failure as a blocked finding rather than installing around it.
 
 For each finding include:
 - File and location (path:line) for both sides of the disagreement
