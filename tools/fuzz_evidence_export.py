@@ -252,7 +252,9 @@ def check_export_pair(tmp: pathlib.Path) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     # Each iteration writes and hashes real files twice, so this harness is far
     # slower per iteration than the in-memory ones; 300 covers every damage class
     # in about a minute.

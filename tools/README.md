@@ -96,15 +96,21 @@ Every tool here is an entry point, so all of them follow the same rules:
 
 - Exit 0 when the check passed, 1 when it failed, 2 for a usage error (an unknown
   flag, a missing argument, or an argument combination the tool rejects before it
-  starts work, such as `--dir` with no `--out`). A path that does not exist is a
-  check failure (1), not a usage error. `make` targets that only forward
-  arguments exit 2 with the same meaning.
-- A clean run prints its one-line summary to stdout. A run that found something
-  prints the report to stderr and leaves stdout empty, so `tool > report.txt`
-  records the verdict and the diagnostics stay on the terminal.
+  starts work, such as `--dir` with no `--out`, or a bare run with no mode flag).
+  A path that does not exist, and a file that cannot be parsed, are check failures
+  (1), not usage errors. `make` targets that only forward arguments exit 2 with
+  the same meaning, and their usage line goes to stderr.
+- The one-line verdict goes to stdout and the per-issue detail to stderr, whether
+  or not the run found something, so `tool > report.txt` records the verdict and
+  the diagnostics stay on the terminal. A flag that switches stdout to a data
+  channel (`--show-effective`) moves the verdict to stderr with them.
+- A usage error prints its usage or `--help` text on stderr, never stdout, so a
+  redirected run cannot capture a help dump where a verdict belongs.
 - `--help` documents every flag, including the fuzzer `--iterations` and `--seed`
-  defaults, and each tool's module docstring carries its exit codes and the exact
-  command to replay a reported fuzz failure.
+  defaults, and each tool's module docstring carries its usage examples, its exit
+  codes, and the exact command to replay a reported fuzz failure. The docstring is
+  the help description as written (`RawDescriptionHelpFormatter`), so those blocks
+  stay laid out instead of being reflowed into one paragraph.
 
 ## Host platforms
 

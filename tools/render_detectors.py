@@ -298,7 +298,9 @@ def render_manifest(detectors: list[Detector]) -> dict[str, Any]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument(
         "--check", action="store_true", help="exit 1 if the target file is stale or missing"
     )
@@ -325,7 +327,8 @@ def main() -> int:
             print(f"{MANIFEST.relative_to(ROOT)} is current")
             return 0
         if args.check:
-            print(f"{MANIFEST.relative_to(ROOT)} is stale; run `make detectors`", file=sys.stderr)
+            print(f"{MANIFEST.relative_to(ROOT)} is stale")
+            print("run `make detectors`", file=sys.stderr)
             return 1
         # newline="\n": the file is tracked with the repo's LF policy (.gitattributes),
         # and a text-mode write would translate to CRLF on a Windows host, rewriting
@@ -339,7 +342,8 @@ def main() -> int:
     if fresh != current:
         if args.check:
             state = "stale" if current is not None else "missing"
-            print(f"docs/DETECTORS.md is {state}; run `make detectors`", file=sys.stderr)
+            print(f"docs/DETECTORS.md is {state}")
+            print("run `make detectors`", file=sys.stderr)
             return 1
         REGISTRY.write_text(fresh, encoding="utf-8", newline="\n")
         print(f"regenerated {REGISTRY.relative_to(ROOT)}")

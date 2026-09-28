@@ -582,7 +582,9 @@ def _fix_fingerprint(trace: dict[str, Any], text: str) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--self-test", action="store_true", help="run the contract self-tests and exit")
     ap.add_argument(
         "--fix-fingerprint",

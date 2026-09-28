@@ -16,9 +16,9 @@ Usage:
   uv run python tools/evidence_check.py --self-test     run negative tests (tamper, genesis)
   make self-test TOOL=evidence_check                    the same, through the task runner
 
-Exit codes: 0 verified, 1 the chain failed verification, 2 usage error. A
-verification report goes to stdout when clean and to stderr when it found
-issues, so a redirected run never mixes a verdict with its diagnostics.
+Exit codes: 0 verified, 1 the chain failed verification, 2 usage error. The
+one-line verdict goes to stdout and the per-issue detail to stderr, so a
+redirected run records the verdict and never mixes it with its diagnostics.
 """
 
 from __future__ import annotations
@@ -685,13 +685,13 @@ def _index_name_test(recs: list[Record]) -> list[str]:
 def _report(label: str, errors: list[str]) -> int:
     """Print a labeled report and return the process exit code.
 
-    The whole report goes to one stream: stdout when clean, stderr when it found
-    issues, so a redirected run never mixes a verdict with its diagnostics.
+    The verdict goes to stdout and the detail to stderr, the split every tool in
+    tools/ uses, so `evidence_check.py > report.txt` records the verdict and
+    leaves the diagnostics on the terminal.
     """
-    stream = sys.stdout if not errors else sys.stderr
-    print(f"{label}: {len(errors)} issue(s)", file=stream)
+    print(f"{label}: {len(errors)} issue(s)")
     for error in errors:
-        print("  " + error, file=stream)
+        print("  " + error, file=sys.stderr)
     return 1 if errors else 0
 
 
@@ -867,7 +867,9 @@ def _reports(found: list[str], needle: str) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument(
         "--dir", type=pathlib.Path, help="evidence directory with evidence-*.jsonl segments"
@@ -894,7 +896,7 @@ def main() -> int:
         if not args.dir.is_dir():
             return _report(f"evidence chain ({args.dir})", [f"{args.dir}: no such directory"])
         return _report(f"evidence chain ({args.dir})", verify_dir(args.dir, args.index))
-    ap.print_help()
+    ap.print_help(sys.stderr)
     return 2
 
 

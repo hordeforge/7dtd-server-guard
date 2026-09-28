@@ -36,8 +36,10 @@ Exit codes: 0 the config is valid, 1 it is not, 2 usage error.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import hashlib
+import io
 import json
 import os
 import pathlib
@@ -55,6 +57,9 @@ Json = Any
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "config" / "schemas" / "config.v1.schema.json"
 EXAMPLE_PATH = ROOT / "config" / "server-guard.example.json"
+# A call the tool rejects before it starts work (tools/README.md -> Command-line
+# contract). A config that is missing or unparsable is a check failure (1).
+USAGE_ERROR = 2
 # Depth cap for the defaults walk; the shipped config schema nests four levels,
 # and a self-referential `$ref` must not turn a defaults pass into a hang.
 MAX_DEFAULTS_DEPTH = 20
@@ -387,16 +392,67 @@ def self_test() -> list[str]:
     _secret_env_self_test(example, failures)
     _effective_self_test(example, failures)
     _load_self_test(failures)
+    _main_contract_self_test(failures)
     return failures
 
 
+def _main_contract_self_test(failures: list[str]) -> None:
+    """Pin the exit codes and stream split documented in tools/README.md.
+
+    A deployment script branches on these: 0 deployable, 1 not deployable (a
+    file that is missing or unparsable included), 2 for a usage error, which
+    writes its help to stderr and leaves stdout empty so a redirected run cannot
+    capture a help dump where a verdict belongs.
+    """
+    cases = [
+        ("bare run", [], USAGE_ERROR),
+        ("missing config file", ["--config", str(ROOT / ".scratch" / "no-such-config.json")], 1),
+        ("shipped example", ["--config", str(EXAMPLE_PATH), "--skip-env"], 0),
+    ]
+    saved = sys.argv
+    for label, argv, expected in cases:
+        out, err = io.StringIO(), io.StringIO()
+        sys.argv = ["config_check.py", *argv]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main()
+        except SystemExit as exc:  # argparse rejects an unknown flag by exiting
+            code = int(exc.code or 0)
+        finally:
+            sys.argv = saved
+        if code != expected:
+            failures.append(f"{label}: exit {code}, expected {expected}")
+        if expected != USAGE_ERROR:
+            continue
+        if out.getvalue():
+            failures.append(f"{label}: usage error wrote to stdout: {out.getvalue()!r}")
+        if not err.getvalue():
+            failures.append(f"{label}: usage error wrote nothing to stderr")
+
+
+def _report(label: str, errors: list[str]) -> int:
+    """Print a labeled report and return the process exit code.
+
+    The verdict goes to stdout and the detail to stderr, the split every tool in
+    tools/ uses, so a redirected run records the verdict and leaves the
+    diagnostics on the terminal.
+    """
+    print(label)
+    for error in errors:
+        print("  " + error, file=sys.stderr)
+    return 1 if errors else 0
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--config", type=pathlib.Path, help="config file to validate")
     ap.add_argument(
         "--show-effective",
         action="store_true",
-        help="print the effective (defaulted) config and its hash to stdout",
+        help="print the effective (defaulted) config and its hash to stdout; the "
+        "validity line moves to stderr so the JSON stays the only thing on stdout",
     )
     ap.add_argument(
         "--skip-env",
@@ -408,26 +464,19 @@ def main() -> int:
 
     if args.self_test:
         errs = self_test()
-        print(f"config-check self-test: {len(errs)} failure(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
+        return _report(f"config-check self-test: {len(errs)} failure(s)", errs)
 
     if args.config is None:
-        ap.print_help()
-        return 2
+        ap.print_help(sys.stderr)
+        return USAGE_ERROR
 
     config, error = load(args.config)
     if error is not None:
-        print(f"config-check: {error}", file=sys.stderr)
-        return 2
+        return _report(f"config-check: {args.config}", [error])
 
     errs = check(config, check_env=not args.skip_env)
     if errs:
-        print(f"config-check: {len(errs)} issue(s) in {args.config}", file=sys.stderr)
-        for e in errs:
-            print("  " + e, file=sys.stderr)
-        return 1
+        return _report(f"config-check: {len(errs)} issue(s) in {args.config}", errs)
 
     unlisted = unlisted_detectors(config)
     note = f", {unlisted} detector(s) not named (observe default)" if unlisted else ""
@@ -436,6 +485,10 @@ def main() -> int:
         effective = effective_config(config, schema)
         print(json.dumps(effective, indent=2, sort_keys=True))
         print(f"config hash: {config_hash(effective)}")
+        # stdout carries the effective config for a reader that parses it, so the
+        # verdict goes to stderr with the diagnostics instead of trailing the JSON.
+        print(f"config-check: {args.config} is valid{note}", file=sys.stderr)
+        return 0
     print(f"config-check: {args.config} is valid{note}")
     return 0
 

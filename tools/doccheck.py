@@ -1292,7 +1292,9 @@ def _run_check(name: str, check: Callable[[], list[str]]) -> tuple[str, list[str
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.parse_args()
 
     checks = [

@@ -144,15 +144,15 @@ verify-evidence:
 # and a manifest of per-file sha256 is written beside it.
 # Usage: make export-evidence DIR=/path/to/evidence OUT=/path/to/archive-root
 export-evidence:
-	@test -n "$(DIR)" -a -n "$(OUT)" || { echo "usage: make export-evidence DIR=<evidence-dir> OUT=<archive-root>"; exit 2; }
+	@test -n "$(DIR)" && test -n "$(OUT)" || { echo "usage: make export-evidence DIR=<evidence-dir> OUT=<archive-root>" >&2; exit 2; }
 	$(UV) python tools/evidence_export.py --dir "$(DIR)" --out "$(OUT)"
 
 # Prove an archive is intact and restorable (the restore drill; also catches silent
 # backup corruption long before a real restore needs it).
 # Usage: make verify-archive ARCHIVE=/path/to/archive
 verify-archive:
-	@test -n "$(ARCHIVE)" || { echo "usage: make verify-archive ARCHIVE=/path/to/archive"; exit 2; }
-	$(UV) python tools/evidence_export.py --archive $(ARCHIVE)
+	@test -n "$(ARCHIVE)" || { echo "usage: make verify-archive ARCHIVE=/path/to/archive" >&2; exit 2; }
+	$(UV) python tools/evidence_export.py --archive "$(ARCHIVE)"
 
 # The scheduled backup run as one command with one exit code: archive the live
 # evidence directory, which verifies the chain first and re-verifies every copy

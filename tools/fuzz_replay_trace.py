@@ -67,7 +67,9 @@ def check(trace: object, where: str) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     add_fuzz_args(ap, default_iterations=2000)
     args = fuzz_args(ap)
     rng = random.Random(args.seed)  # noqa: S311 - seeded corpus fuzzing, not a secret

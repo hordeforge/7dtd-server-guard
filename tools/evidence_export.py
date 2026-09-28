@@ -796,14 +796,26 @@ def _report(summary: str, errs: list[str]) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--self-test", action="store_true", help="run the archive self-tests and exit")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--dir", type=pathlib.Path, help="evidence directory to archive")
     mode.add_argument("--archive", type=pathlib.Path, help="archive directory to verify")
     ap.add_argument("--out", type=pathlib.Path, help="archive root; a timestamped dir is created")
-    ap.add_argument("--index", default="segment-index.json", help="segment index file name")
+    ap.add_argument(
+        "--index",
+        default=DEFAULT_INDEX_NAME,
+        help=f"segment index file name inside --dir (default: {DEFAULT_INDEX_NAME})",
+    )
     args = ap.parse_args()
+
+    if args.index != DEFAULT_INDEX_NAME and not args.dir:
+        ap.error(
+            "--index applies to --dir only; pass --dir or drop --index "
+            f"(default {DEFAULT_INDEX_NAME})"
+        )
 
     if args.self_test:
         errs = self_test()
@@ -819,7 +831,7 @@ def main() -> int:
         errs = export(args.dir, args.out, args.index)
         return _report(f"export {args.dir}: {len(errs)} issue(s)", errs)
 
-    ap.print_help()
+    ap.print_help(sys.stderr)
     return 2
 
 
