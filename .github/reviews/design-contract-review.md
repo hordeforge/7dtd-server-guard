@@ -9,9 +9,12 @@ files, targets, numbers, and structure disagree, plus contradictions inside the 
 itself. This differs from neighbouring reviews: agentrules-review judges rule files as
 agent-facing prompt quality; doc-review judges writing quality; specs-review judges design
 documents as specifications. None of those checks whether the contract is still true of this
-tree. Where `make check` (tools/doccheck.py) already proves a property (internal links, em
-dashes, detector-registry sync, schema conformance, required docs present), treat it as
-verified and do not re-report it; this review covers what that gate cannot see.
+tree. Where `make check` (tools/doccheck.py) already proves a property, treat it as
+verified and do not re-report it; the proven set is the `checks` list in that tool's
+main() (em dashes, links, TODO checkboxes, detector spec, registry sync, detector id
+coverage, config example/schema cross-references, evidence chain and personal data,
+replay contract, folder structure, backup runbook, required docs). Read that list
+before claiming a property is unchecked; this review covers what the gate cannot see.
 
 First decide if this review applies. If AGENTS.md, docs/INDEX.md, or TODO.md is missing,
 there is no contract here; print the skip result and stop. Otherwise run `make check`
@@ -41,11 +44,13 @@ Review the following:
    matches its actual checks; instructions in AGENTS.md remain executable as written.
 6. Decision-log hygiene: docs/DECISIONS.md entries use only the documented status values;
    superseded entries point at their successor; every "Document -> Section" pointer anywhere
-   in the contract resolves to a heading in that document. Headings carry a leading number
-   and a trailing qualifier ("### 3. Calibration methodology (Phase 10)"), so a pointer
-   resolves when its target words lead the heading text, not only on an exact match; a
-   pointer naming two sections (`-> Calibration and Labeling`) is a finding, since no such
-   heading exists. Flow arrows and headings of the form "Topic -> place" are not pointers.
+   in the contract resolves to a heading in that document. Documents use two heading
+   styles, a numbered title with a trailing qualifier ("## 3. Calibration methodology
+   (Phase 10)") and a plain title ("## Movement (Phase 5)"), so a pointer resolves when
+   its target words lead the heading text after an optional leading number, not only on an
+   exact match; a heading style is never itself a finding. A pointer naming two sections
+   (`-> Calibration and Labeling`) is a finding, since no such heading exists. Flow arrows
+   and headings of the form "Topic -> place" are not pointers.
 7. External and sibling references: relative links into sibling repos (for example
    ../7dtd-engine-research) and remote URLs (MODDING_BEST_PRACTICES.md) that the link gate
    deliberately skips. `..` resolves against the checkout the agent is standing in, which is
@@ -63,7 +68,9 @@ Review the following:
 If available, use: `rg` for cross-document sweeps of repeated facts and "Document ->
 Section" pointers; `uv run --frozen python` with stdlib only (json, re, pathlib) for
 comparisons such as INDEX rows versus directory listings (`--frozen` matches what `make
-check` runs and fails loudly instead of re-resolving a stale uv.lock). Never install packages.
+check` runs and fails loudly instead of re-resolving a stale uv.lock). Never install
+packages or add dependencies: if the frozen environment cannot be resolved, report the
+failure as a blocked finding rather than installing around it.
 Re-run `make check` before finishing so your edits keep the gate green.
 
 For each finding include:
@@ -88,6 +95,10 @@ Important:
   match what DECISIONS.md and INDEX.md say is canonical.
 - Smallest edit per finding; never rewrite a document wholesale to repair one drifted
   sentence.
+- Fix order when a pass can only do part of the work: area 8 (safety-boundary echoes) and
+  area 4 (phase-gate honesty) first, then area 5 (tooling-reference rot), then the index,
+  canonical, and quantity drift of areas 1-3 and 6-7. Never close a pass on a wording
+  drift while a weakened safety promise or an unbacked checked box is still open.
 - Never delete a document, test, or checklist item to make drift disappear.
 - Cap one pass at ten changed files; finish and verify each before broadening.
 - Prefer fewer, high-value findings; a clean area stays untouched and gets reported clean.
