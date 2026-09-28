@@ -46,7 +46,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
-from fuzz_common import InvariantBroken, Mutator, add_fuzz_args, fuzz_args, nested
+from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, nested
 
 # Schemas and instances are arbitrary JSON by construction here: the harness
 # exists to feed the validator documents no static type would admit.
@@ -103,13 +103,13 @@ def load_pairs() -> list[tuple[str, Json, list[Json]]]:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
             instances = dc.load_instances(data_path)
         except (OSError, ValueError) as exc:
-            raise InvariantBroken(
+            raise InvariantBrokenError(
                 f"shipped pair {name} is unreadable or unparseable: {exc}"
             ) from exc
         for inst in instances:
             errs = dc._schema_validate(inst, schema)
             if errs:
-                raise InvariantBroken(f"pristine shipped pair {name} reports errors: {errs}")
+                raise InvariantBrokenError(f"pristine shipped pair {name} reports errors: {errs}")
         out.append((name, schema, instances))
     return out
 
@@ -119,10 +119,10 @@ def check_totality(schema: Json, instance: Json) -> list[str]:
     # are not, because the validator builds messages from mutated content.
     errs = dc._schema_validate(instance, schema)
     if not all(isinstance(e, str) for e in errs):
-        raise InvariantBroken(f"non-list-of-str result: {errs!r}")
+        raise InvariantBrokenError(f"non-list-of-str result: {errs!r}")
     again = dc._schema_validate(instance, schema)
     if again != errs:
-        raise InvariantBroken(f"nondeterministic: {errs!r} vs {again!r}")
+        raise InvariantBrokenError(f"nondeterministic: {errs!r} vs {again!r}")
     return errs
 
 
@@ -134,7 +134,7 @@ def check_sensitivity(rng: random.Random, name: str, schema: Json, instance: Jso
     bad = dict(instance)
     del bad[required[rng.randrange(len(required))]]
     if not dc._schema_validate(bad, schema):
-        raise InvariantBroken(f"{name}: deleting required key was accepted")
+        raise InvariantBrokenError(f"{name}: deleting required key was accepted")
     return True
 
 
@@ -169,20 +169,20 @@ def check_deep_nesting() -> None:
         try:
             errs = dc._schema_validate(inst, schema)
         except Exception as exc:
-            raise InvariantBroken(f"{name} raised {type(exc).__name__}") from exc
+            raise InvariantBrokenError(f"{name} raised {type(exc).__name__}") from exc
         if not isinstance(errs, list):
-            raise InvariantBroken(f"{name}: non-list result {errs!r}")
+            raise InvariantBrokenError(f"{name}: non-list result {errs!r}")
         again = dc._schema_validate(inst, schema)
         if again != errs:
-            raise InvariantBroken(f"{name}: nondeterministic")
+            raise InvariantBrokenError(f"{name}: nondeterministic")
         if name in ("cyclic schema", "deep schema"):
             if len(errs) != 1 or "nesting deeper" not in errs[0]:
-                raise InvariantBroken(f"{name}: unexpected errors {errs!r}")
+                raise InvariantBrokenError(f"{name}: unexpected errors {errs!r}")
         elif name == "shallow schema":
             if not errs:
-                raise InvariantBroken(f"{name}: pathological document accepted silently")
+                raise InvariantBrokenError(f"{name}: pathological document accepted silently")
         elif errs:  # at the bound: depth MAX_SCHEMA_DEPTH must still validate clean
-            raise InvariantBroken(f"{name}: rejected at the legal bound: {errs!r}")
+            raise InvariantBrokenError(f"{name}: rejected at the legal bound: {errs!r}")
 
 
 def check_datetime_format() -> None:
@@ -213,10 +213,10 @@ def check_datetime_format() -> None:
     for rec_type, field in field_of.items():
         pristine = records[rec_type]
         if dc._schema_validate({**pristine, field: good}, schema):
-            raise InvariantBroken(f"{rec_type}.{field}: valid instant rejected")
+            raise InvariantBrokenError(f"{rec_type}.{field}: valid instant rejected")
         for value, why in bad_values.items():
             if not dc._schema_validate({**pristine, field: value}, schema):
-                raise InvariantBroken(f"{rec_type}.{field}={value!r} accepted: {why}")
+                raise InvariantBrokenError(f"{rec_type}.{field}={value!r} accepted: {why}")
 
 
 def _with_key(record: Json, bag: str, key: str) -> Json:
@@ -244,17 +244,17 @@ def check_personal_data_denylist() -> int:
         if ln.strip() and json.loads(ln)["type"] == "finding"
     ]
     if not findings:
-        raise InvariantBroken("no finding record in the shipped evidence sample")
+        raise InvariantBrokenError("no finding record in the shipped evidence sample")
     record = findings[0]
     checks = 0
     for key in PERSONAL_DATA_KEYS:
         for bag in EVIDENCE_BAGS:
             if not dc._schema_validate(_with_key(record, bag, key), schema):
-                raise InvariantBroken(f"{bag}.{key} accepted by the evidence schema")
+                raise InvariantBrokenError(f"{bag}.{key} accepted by the evidence schema")
             checks += 1
     # The deny-list must not reject the keys the sample itself writes.
     if dc._schema_validate(record, schema):
-        raise InvariantBroken("shipped finding record rejected by its own schema")
+        raise InvariantBrokenError("shipped finding record rejected by its own schema")
     return checks
 
 
@@ -288,11 +288,11 @@ def check_evidence_bags_beyond_finding() -> None:
     ]
     for what, instance in cases[:-1]:
         if not dc._schema_validate(instance, schema):
-            raise InvariantBroken(f"{what} accepted a value that is not an id: {instance}")
+            raise InvariantBrokenError(f"{what} accepted a value that is not an id: {instance}")
     # The last case is the positive control: without it the negative cases would
     # also pass against a schema that rejected every delta item.
     if dc._schema_validate(cases[-1][1], schema):
-        raise InvariantBroken(f"{cases[-1][0]}: a well-formed delta item was rejected")
+        raise InvariantBrokenError(f"{cases[-1][0]}: a well-formed delta item was rejected")
 
 
 def check_non_finite_numbers() -> None:
@@ -316,9 +316,9 @@ def check_non_finite_numbers() -> None:
     ):
         for bad in (float("nan"), float("inf"), -float("inf")):
             if not dc._schema_validate({**records[rec_type], field: bad}, schema):
-                raise InvariantBroken(f"{rec_type}.{field}={bad!r} accepted")
+                raise InvariantBrokenError(f"{rec_type}.{field}={bad!r} accepted")
         if dc._schema_validate({**records[rec_type], field: finite}, schema):
-            raise InvariantBroken(f"{rec_type}.{field}={finite!r} rejected")
+            raise InvariantBrokenError(f"{rec_type}.{field}={finite!r} rejected")
 
 
 def check_threshold_gate() -> None:
@@ -340,10 +340,10 @@ def check_threshold_gate() -> None:
         ({"key": "burst", "range": [1, 100], "default": 5}, "missing type"),
     ]
     if dc._threshold_errors("d.test", [ok]):
-        raise InvariantBroken("well-formed threshold reported errors")
+        raise InvariantBrokenError("well-formed threshold reported errors")
     for threshold, why in bad:
         if not dc._threshold_errors("d.test", [threshold]):
-            raise InvariantBroken(f"{why} accepted")
+            raise InvariantBrokenError(f"{why} accepted")
 
 
 def check_string_length_units() -> None:
@@ -369,9 +369,9 @@ def check_string_length_units() -> None:
     for value, ok, why in cases:
         errs = dc._schema_validate(value, schema)
         if ok and errs:
-            raise InvariantBroken(f"length limits rejected {value!r}: {why}: {errs}")
+            raise InvariantBrokenError(f"length limits rejected {value!r}: {why}: {errs}")
         if not ok and not errs:
-            raise InvariantBroken(f"length limits accepted {value!r}: {why}")
+            raise InvariantBrokenError(f"length limits accepted {value!r}: {why}")
 
 
 def check_record_references() -> int:
@@ -404,19 +404,19 @@ def check_record_references() -> int:
         ):
             probe = {**record, field: [bad]}
             if not dc._schema_validate(probe, schema):
-                raise InvariantBroken(f"{rec_type}.{field} accepted {why}: {bad!r}")
+                raise InvariantBrokenError(f"{rec_type}.{field} accepted {why}: {bad!r}")
             checks += 1
         if dc._schema_validate({**record, field: []}, schema):
-            raise InvariantBroken(f"{rec_type}.{field}: empty reference list rejected")
+            raise InvariantBrokenError(f"{rec_type}.{field}: empty reference list rejected")
         if dc._schema_validate({**record, field: [good_id] * bound}, schema):
-            raise InvariantBroken(f"{rec_type}.{field}: {bound} references rejected")
+            raise InvariantBrokenError(f"{rec_type}.{field}: {bound} references rejected")
         if not dc._schema_validate({**record, field: [good_id] * (bound + 1)}, schema):
-            raise InvariantBroken(f"{rec_type}.{field}: {bound + 1} references accepted")
+            raise InvariantBrokenError(f"{rec_type}.{field}: {bound + 1} references accepted")
         checks += 3
     tombstone = records["tombstone"]
     for bad in ("not-a-record-id", good_id.upper(), good_id[:-1]):
         if not dc._schema_validate({**tombstone, "replaces": bad}, schema):
-            raise InvariantBroken(f"tombstone.replaces accepted {bad!r}")
+            raise InvariantBrokenError(f"tombstone.replaces accepted {bad!r}")
         checks += 1
     return checks
 
@@ -438,7 +438,7 @@ def main() -> int:
             mutant = mut.mutate(mut.mutate(instance))
             try:
                 errs = check_totality(schema, mutant)
-            except InvariantBroken as exc:
+            except InvariantBrokenError as exc:
                 print(f"fuzz-schema-validate: FAIL target1 ({name}): {exc}", file=sys.stderr)
                 print("input:", json.dumps(mutant)[:400], file=sys.stderr)
                 return 1
@@ -455,7 +455,7 @@ def main() -> int:
         check_string_length_units()
         check_evidence_bags_beyond_finding()
         reference_checks = check_record_references()
-    except InvariantBroken as exc:
+    except InvariantBrokenError as exc:
         print(f"fuzz-schema-validate: FAIL: {exc}", file=sys.stderr)
         return 1
 

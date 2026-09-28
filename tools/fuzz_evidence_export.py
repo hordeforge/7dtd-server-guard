@@ -36,7 +36,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
 import evidence_export as ee
-from fuzz_common import InvariantBroken, Mutator
+from fuzz_common import InvariantBrokenError, Mutator
 
 SCRATCH = ec.ROOT / ".scratch"
 
@@ -218,18 +218,18 @@ def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
         first = ee.verify(archive)
         second = ee.verify(archive)
     except Exception as exc:
-        raise InvariantBroken(f"verify() raised {type(exc).__name__}: {exc}") from exc
+        raise InvariantBrokenError(f"verify() raised {type(exc).__name__}: {exc}") from exc
     if first != second:
-        raise InvariantBroken("verify() is not deterministic on the same archive")
+        raise InvariantBrokenError("verify() is not deterministic on the same archive")
     if not all(isinstance(e, str) for e in first):
-        raise InvariantBroken("verify() returned a non-string error")
+        raise InvariantBrokenError("verify() returned a non-string error")
     if must_fail and not first:
         state = {
             "damage": damage,
             "files": sorted(p.name for p in archive.iterdir()),
             "manifest": _read_manifest(archive),
         }
-        raise InvariantBroken(f"verify() accepted damaged archive bytes: {state}")
+        raise InvariantBrokenError(f"verify() accepted damaged archive bytes: {state}")
     return must_fail
 
 
@@ -240,15 +240,15 @@ def check_export_pair(tmp: pathlib.Path) -> None:
     _valid_stream(source)
     errs = ee.export(source, out_root, ee.DEFAULT_INDEX_NAME)
     if errs:
-        raise InvariantBroken(f"export() rejected a valid chain: {errs}")
+        raise InvariantBrokenError(f"export() rejected a valid chain: {errs}")
     archives = sorted(p for p in out_root.iterdir() if p.is_dir())
     if len(archives) != 1:
-        raise InvariantBroken("export() did not produce exactly one archive")
+        raise InvariantBrokenError("export() did not produce exactly one archive")
     if ee.verify(archives[0]):
-        raise InvariantBroken("verify() rejected a fresh export")
+        raise InvariantBrokenError("verify() rejected a fresh export")
     (source / ee.MANIFEST_NAME).unlink()
     if not ee.verify(source):
-        raise InvariantBroken("verify() accepted a directory that was never archived")
+        raise InvariantBrokenError("verify() accepted a directory that was never archived")
 
 
 def main() -> int:
@@ -269,14 +269,14 @@ def main() -> int:
         for _ in range(args.iterations):
             try:
                 must_fail = check_verify(tmp / f"a{stats['verify_runs']}", rng, mut)
-            except InvariantBroken as exc:
+            except InvariantBrokenError as exc:
                 print(f"fuzz-evidence-export: FAIL verify: {exc}", file=sys.stderr)
                 return 1
             stats["verify_runs"] += 1
             stats["rejected" if must_fail else "accepted"] += 1
         try:
             check_export_pair(tmp)
-        except InvariantBroken as exc:
+        except InvariantBrokenError as exc:
             print(f"fuzz-evidence-export: FAIL pair: {exc}", file=sys.stderr)
             return 1
         stats["clean_pair"] = True

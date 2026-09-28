@@ -36,7 +36,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import replay_contract_check as rcc
-from fuzz_common import InvariantBroken, Mutator, add_fuzz_args, fuzz_args, nested
+from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, nested
 
 DETECTOR_IDS = {"inventory.stack"}
 
@@ -53,16 +53,16 @@ def check(trace: object, where: str) -> list[str]:
     try:
         errs = rcc.contract_errors(trace, DETECTOR_IDS)
     except Exception as exc:
-        raise InvariantBroken(
+        raise InvariantBrokenError(
             f"{where}: contract_errors raised {type(exc).__name__}: {exc}"
         ) from exc
     # The list-ness of the result is statically guaranteed; the element types are
     # not, because the checker builds messages from mutated content.
     if not all(isinstance(e, str) for e in errs):
-        raise InvariantBroken(f"{where}: non-list-of-str result: {errs!r}")
+        raise InvariantBrokenError(f"{where}: non-list-of-str result: {errs!r}")
     again = rcc.contract_errors(trace, DETECTOR_IDS)
     if again != errs:
-        raise InvariantBroken(f"{where}: nondeterministic: {errs!r} vs {again!r}")
+        raise InvariantBrokenError(f"{where}: nondeterministic: {errs!r} vs {again!r}")
     return errs
 
 
@@ -81,22 +81,24 @@ def main() -> int:
     current = pristine
     try:
         if check(pristine, "pristine sample"):
-            raise InvariantBroken("pristine shipped sample reported errors")
+            raise InvariantBrokenError("pristine shipped sample reported errors")
         for drop in ("detectorId", "cases", "workBudget", "determinism", "seed"):
             bad = dict(pristine)
             del bad[drop]
             if not check(bad, f"sample without {drop}"):
-                raise InvariantBroken(f"dropping {drop} was accepted")
+                raise InvariantBrokenError(f"dropping {drop} was accepted")
 
         tampered = clone(pristine)
         tampered["determinism"]["fingerprint"] = "0" * 64
         if not check(tampered, "sample with a tampered fingerprint"):
-            raise InvariantBroken("a fingerprint that does not match the projection was accepted")
+            raise InvariantBrokenError(
+                "a fingerprint that does not match the projection was accepted"
+            )
 
         skewed = clone(pristine)
         skewed["determinism"]["startUtc"] = "not-an-instant"
         if not check(skewed, "sample with an unparseable clock origin"):
-            raise InvariantBroken("an unparseable determinism.startUtc was accepted")
+            raise InvariantBrokenError("an unparseable determinism.startUtc was accepted")
 
         backwards = clone(pristine)
         first = backwards["cases"][0]["events"][0]
@@ -105,7 +107,7 @@ def main() -> int:
         backwards["determinism"]["fingerprint"] = rcc.outcome_fingerprint(backwards)
         backwards_errs = check(backwards, "case whose tick steps backwards")
         if not any("tick must not decrease" in e for e in backwards_errs):
-            raise InvariantBroken("a backwards tick was accepted")
+            raise InvariantBrokenError("a backwards tick was accepted")
 
         stats = {"rejected": 0}
         for _ in range(args.iterations):
@@ -120,7 +122,7 @@ def main() -> int:
         deep = clone(pristine)
         deep["cases"][0]["events"][0]["values"] = {"claimedDestinationQuantity": nested(64)}
         check(deep, "deep-nested value")
-    except InvariantBroken as exc:
+    except InvariantBrokenError as exc:
         print(f"fuzz-replay-trace: FAIL: {exc}", file=sys.stderr)
         print("input:", json.dumps(current)[:400], file=sys.stderr)
         return 1

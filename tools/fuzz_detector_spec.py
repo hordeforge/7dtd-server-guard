@@ -51,7 +51,7 @@ import yaml
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
 import render_detectors as rd
-from fuzz_common import InvariantBroken, Mutator
+from fuzz_common import InvariantBrokenError, Mutator
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC = rd.SPEC
@@ -110,7 +110,7 @@ def load_pristine() -> list[Any]:
             by_family.setdefault(d["family"], d)
     corpus = [copy.deepcopy(by_family[f]) for f in CORPUS_FAMILIES if f in by_family]
     if len(corpus) != CORPUS_SIZE:
-        raise InvariantBroken(
+        raise InvariantBrokenError(
             f"corpus wants {CORPUS_SIZE} detectors from {CORPUS_FAMILIES}, got {len(corpus)}"
         )
     return corpus
@@ -144,9 +144,13 @@ def check_load_spec(path: pathlib.Path, text: str, where: str) -> int:
     except rd.SpecError:
         return 0
     except Exception as exc:
-        raise InvariantBroken(f"{where}: load_spec raised {type(exc).__name__}: {exc}") from exc
+        raise InvariantBrokenError(
+            f"{where}: load_spec raised {type(exc).__name__}: {exc}"
+        ) from exc
     if not isinstance(detectors, list):
-        raise InvariantBroken(f"{where}: load_spec returned {type(detectors).__name__}, not a list")
+        raise InvariantBrokenError(
+            f"{where}: load_spec returned {type(detectors).__name__}, not a list"
+        )
     return len(detectors)
 
 
@@ -156,28 +160,28 @@ def check_consumers(path: pathlib.Path, text: str, where: str) -> list[str]:
     def run() -> list[str]:
         errs = dc.check_spec()
         if not all(isinstance(e, str) for e in errs):
-            raise InvariantBroken(f"{where}: check_spec returned non-str elements: {errs!r}")
+            raise InvariantBrokenError(f"{where}: check_spec returned non-str elements: {errs!r}")
         # Determinism: the pass must repeat identically on the same bytes.
         if dc.check_spec() != errs:
-            raise InvariantBroken(f"{where}: check_spec is nondeterministic")
+            raise InvariantBrokenError(f"{where}: check_spec is nondeterministic")
         ids = dc.spec_ids()
         if not all(isinstance(i, str) for i in ids):
-            raise InvariantBroken(f"{where}: spec_ids returned non-str elements: {ids!r}")
+            raise InvariantBrokenError(f"{where}: spec_ids returned non-str elements: {ids!r}")
         mode_errs = dc._example_mode_errors(EXAMPLE)
         if dc._example_mode_errors(EXAMPLE) != mode_errs:
-            raise InvariantBroken(f"{where}: _example_mode_errors is nondeterministic")
+            raise InvariantBrokenError(f"{where}: _example_mode_errors is nondeterministic")
         collected = [*errs, *mode_errs]
         dc._manifest_errors(EXAMPLE, collected)
         if not all(isinstance(e, str) for e in collected):
-            raise InvariantBroken(f"{where}: cross-references returned non-str elements")
+            raise InvariantBrokenError(f"{where}: cross-references returned non-str elements")
         return collected
 
     try:
         return list(with_spec(path, text, run))
-    except InvariantBroken:
+    except InvariantBrokenError:
         raise
     except Exception as exc:
-        raise InvariantBroken(
+        raise InvariantBrokenError(
             f"{where}: doccheck spec consumers raised {type(exc).__name__}: {exc}"
         ) from exc
 
@@ -192,17 +196,21 @@ def check_renderers(detectors: list[Any], where: str) -> int:
         for render in (rd.render_tables, rd.render_fixture_matrix, rd.render_seam_map):
             out = render(validated)
             if not isinstance(out, str):
-                raise InvariantBroken(f"{where}: {render.__name__} returned {type(out).__name__}")
+                raise InvariantBrokenError(
+                    f"{where}: {render.__name__} returned {type(out).__name__}"
+                )
         manifest = rd.render_manifest(validated)
         if set(manifest) != {"manifestVersion", "detectors"}:
-            raise InvariantBroken(f"{where}: manifest keys are {sorted(manifest)}")
+            raise InvariantBrokenError(f"{where}: manifest keys are {sorted(manifest)}")
         json.dumps(manifest)
-    except InvariantBroken:
+    except InvariantBrokenError:
         raise
     except Exception as exc:
-        raise InvariantBroken(f"{where}: render path raised {type(exc).__name__}: {exc}") from exc
+        raise InvariantBrokenError(
+            f"{where}: render path raised {type(exc).__name__}: {exc}"
+        ) from exc
     if rd.validate(detectors) != rd.validate(detectors):
-        raise InvariantBroken(f"{where}: validate is nondeterministic")
+        raise InvariantBrokenError(f"{where}: validate is nondeterministic")
     return len(validated)
 
 
@@ -211,16 +219,20 @@ def check_pairs(path: pathlib.Path) -> str:
     pristine = rd.load_spec()
     record = cast("dict[str, Any]", pristine[0])
     if rd.validate(pristine):
-        raise InvariantBroken(f"pristine spec fails structural validation: {rd.validate(pristine)}")
+        raise InvariantBrokenError(
+            f"pristine spec fails structural validation: {rd.validate(pristine)}"
+        )
     if dc.check_spec():
-        raise InvariantBroken(f"pristine spec reported errors: {dc.check_spec()[:3]}")
+        raise InvariantBrokenError(f"pristine spec reported errors: {dc.check_spec()[:3]}")
     if len(rd.identified(pristine)) != len(pristine):
-        raise InvariantBroken("the pristine spec has records without a usable id")
+        raise InvariantBrokenError("the pristine spec has records without a usable id")
 
     def reported(detectors: list[Any]) -> list[str]:
         text = spec_text(detectors)
         if text is None:
-            raise InvariantBroken("a corpus record does not round-trip through the YAML dumper")
+            raise InvariantBrokenError(
+                "a corpus record does not round-trip through the YAML dumper"
+            )
         return list(with_spec(path, text, dc.check_spec))
 
     report = []
@@ -233,7 +245,7 @@ def check_pairs(path: pathlib.Path) -> str:
     report.extend(threshold_sensitivity(record))
     report.extend(record_sensitivity(reported))
     if report:
-        raise InvariantBroken("; ".join(report))
+        raise InvariantBrokenError("; ".join(report))
     return f"{len(rd.REQUIRED_FIELDS)} fields + {len(rd.REQUIRED_THRESHOLD_FIELDS)} thresholds"
 
 
@@ -307,7 +319,7 @@ def main() -> int:
                 stats["consumer_errors"] += len(found)
                 if found:
                     stats["rejected_specs"] += 1
-            except InvariantBroken as exc:
+            except InvariantBrokenError as exc:
                 print(f"fuzz-detector-spec: FAIL: {exc}", file=sys.stderr)
                 print("input:", text[:400], file=sys.stderr)
                 return 1
@@ -321,7 +333,7 @@ def main() -> int:
                     mutant[field] = mut.value(mutant.get(field))
             try:
                 stats["rendered"] += check_renderers([mutant], "mutant record")
-            except InvariantBroken as exc:
+            except InvariantBrokenError as exc:
                 print(f"fuzz-detector-spec: FAIL: {exc}", file=sys.stderr)
                 print("input:", yaml.safe_dump(mutant, sort_keys=False)[:400], file=sys.stderr)
                 return 1

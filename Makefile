@@ -48,11 +48,13 @@ setup:
 check: guard-python
 	$(UV) python tools/doccheck.py
 
-# Format, lint, and type gates for the shipped Python tooling.
+# Format, lint, and type gates. The targets are the repository root, not
+# tools/: a path-scoped target silently exempts any Python added outside it,
+# and the .venv, bin/, and obj/ trees are already gitignored.
 lint: guard-python
-	$(UV) black --check tools
-	$(UV) ruff check tools
-	$(UV) mypy tools
+	$(UV) black --check .
+	$(UV) ruff check .
+	$(UV) mypy .
 
 # Regenerate the detector registry tables and the per-detector config manifest
 # from tools/detector_spec.yaml (the single source of truth).
@@ -124,7 +126,7 @@ help:
 	@echo "Targets:"
 	@echo "  make setup           materialize .venv from uv.lock (uv sync --frozen)"
 	@echo "  make check           run the docs quality gate (tools/doccheck.py)"
-	@echo "  make lint            black, ruff, and mypy over tools/"
+	@echo "  make lint            black, ruff, and mypy over the whole repository"
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"

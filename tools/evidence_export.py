@@ -182,17 +182,20 @@ def export(
     """Verify, copy, and manifest. Returns errors; empty means the archive is
     complete and verified. Nothing is written when verification fails.
 
-    `stamp` names the archive instead of reading the clock. The name carries a
-    one-second timestamp, so two exports into the same root inside one second are
-    refused as a collision; a caller that has to exercise that refusal (the
-    self-test) passes the same stamp rather than depending on where the second
-    boundary falls.
+    `stamp` names the archive and defaults to the current second. It is a
+    parameter rather than a direct utc_stamp() call so a caller that must hit
+    the overwrite refusal, which is keyed on that name, can say which name it
+    means instead of depending on where the clock happens to be. The name
+    carries a one-second timestamp, so two exports into the same root inside
+    one second are refused as a collision; a caller that has to exercise that
+    refusal (the self-test) passes the same stamp rather than depending on
+    where the second boundary falls.
     """
     members, errs = preflight(source, index_name)
     if errs:
         return errs
 
-    dest = out_root / f"evidence-{stamp or utc_stamp()}"
+    dest = out_root / f"evidence-{stamp if stamp is not None else utc_stamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
@@ -366,7 +369,9 @@ def _self_test_happy_path(
         return [*errs, "self-test: export did not produce exactly one archive"], archives
     if verify(archives[0]):
         errs.append("self-test: fresh archive did not verify")
-    # A second export under the same archive name must refuse, not overwrite.
+    # A second export under the same archive name must refuse, not overwrite. The
+    # name is pinned rather than left to the clock, or the case only runs when two
+    # exports happen to land in the same second and silently stops testing anything.
     if not export(source, out_root, DEFAULT_INDEX_NAME, stamp=stamp):
         errs.append("self-test: a same-second export overwrote a live archive")
     if sorted(p for p in out_root.iterdir() if p.is_dir()) != archives:

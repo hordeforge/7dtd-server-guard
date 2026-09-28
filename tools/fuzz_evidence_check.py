@@ -38,7 +38,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
-from fuzz_common import InvariantBroken, Mutator, add_fuzz_args, fuzz_args, weighted_choice
+from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, weighted_choice
 
 SAMPLE = ec.ROOT / "config" / "schemas" / "evidence.v1.sample.jsonl"
 # Temporary segments go to the repo's gitignored scratch dir, not the system temp
@@ -72,7 +72,7 @@ def seed_records() -> list[ec.Record]:
             if line.strip()
         ]
     except (OSError, ValueError) as exc:
-        raise InvariantBroken(f"shipped sample {SAMPLE.name} is unreadable: {exc}") from exc
+        raise InvariantBrokenError(f"shipped sample {SAMPLE.name} is unreadable: {exc}") from exc
     # synthetic genesis + chained tail so both chain positions are represented
     first = {
         "schemaVersion": 1,
@@ -114,21 +114,21 @@ def check_load_records(tmp: pathlib.Path, lines: list[bytes]) -> int:
         records = ec.load_records(path)
     except ValueError as exc:
         if not str(exc).startswith(f"{path.name}:"):
-            raise InvariantBroken(f"ValueError lacks file:line context: {exc!r}") from exc
+            raise InvariantBrokenError(f"ValueError lacks file:line context: {exc!r}") from exc
         return 0
     except Exception as exc:
-        raise InvariantBroken(f"load_records raised {type(exc).__name__}: {exc}") from exc
+        raise InvariantBrokenError(f"load_records raised {type(exc).__name__}: {exc}") from exc
     for _line_no, rec, _raw in records:
         canon = ec.canonical(rec)
         if json.loads(canon) != rec:
-            raise InvariantBroken(f"canonical round-trip failed: {rec!r}")
+            raise InvariantBrokenError(f"canonical round-trip failed: {rec!r}")
         digest = ec.record_hash(rec)
         if (
             len(digest) != ec.SHA256_HEX_LEN
             or digest != digest.lower()
             or not all(c in string.hexdigits for c in digest)
         ):
-            raise InvariantBroken(f"bad digest shape: {digest!r}")
+            raise InvariantBrokenError(f"bad digest shape: {digest!r}")
     return len(records)
 
 
@@ -150,14 +150,14 @@ def check_verify_dir(tmp: pathlib.Path, files: dict[str, bytes], index: bytes | 
         try:
             errs = ec.verify_dir(run, "segment-index.json")
         except Exception as exc:
-            raise InvariantBroken(f"verify_dir raised {type(exc).__name__}: {exc}") from exc
+            raise InvariantBrokenError(f"verify_dir raised {type(exc).__name__}: {exc}") from exc
         # The list-ness of the result is statically guaranteed; the element types are
         # not, because the verifier builds messages from mutated content.
         if not all(isinstance(e, str) for e in errs):
-            raise InvariantBroken(f"verify_dir returned non-list-of-str: {errs!r}")
+            raise InvariantBrokenError(f"verify_dir returned non-list-of-str: {errs!r}")
         again = ec.verify_dir(run, "segment-index.json")
         if again != errs:
-            raise InvariantBroken(f"verify_dir nondeterministic: {errs!r} vs {again!r}")
+            raise InvariantBrokenError(f"verify_dir nondeterministic: {errs!r} vs {again!r}")
         return errs
 
 
@@ -182,7 +182,7 @@ def check_clean_chain_pair(tmp: pathlib.Path) -> None:
     index = json.dumps({"segments": [{"file": "evidence-1.jsonl"}]}).encode("utf-8")
     errs = check_verify_dir(tmp, files, index)
     if errs:
-        raise InvariantBroken(f"pair assertion: valid chain reported broken: {errs}")
+        raise InvariantBrokenError(f"pair assertion: valid chain reported broken: {errs}")
 
 
 def load_seeds() -> list[ec.Record]:
@@ -193,7 +193,7 @@ def load_seeds() -> list[ec.Record]:
     """
     try:
         return seed_records()
-    except InvariantBroken as exc:
+    except InvariantBrokenError as exc:
         print(f"fuzz-evidence-check: FAIL: {exc}", file=sys.stderr)
         sys.exit(1)
 
@@ -221,7 +221,7 @@ def main() -> int:
                 lines.append(mutate_line_bytes(rng, raw.encode("utf-8")))
             try:
                 got = check_load_records(tmp, lines)
-            except InvariantBroken as exc:
+            except InvariantBrokenError as exc:
                 print(f"fuzz-evidence-check: FAIL target1: {exc}", file=sys.stderr)
                 print("input:", b"\n".join(lines)[:400], file=sys.stderr)
                 return 1
@@ -250,14 +250,14 @@ def main() -> int:
                     index = mutate_line_bytes(rng, index)
             try:
                 check_verify_dir(tmp, files, index)
-            except InvariantBroken as exc:
+            except InvariantBrokenError as exc:
                 print(f"fuzz-evidence-check: FAIL target2: {exc}", file=sys.stderr)
                 return 1
             stats["t2_runs"] += 1
 
         try:
             check_clean_chain_pair(tmp)
-        except InvariantBroken as exc:
+        except InvariantBrokenError as exc:
             print(f"fuzz-evidence-check: FAIL {exc}", file=sys.stderr)
             return 1
         stats["clean_chain_ok"] = True

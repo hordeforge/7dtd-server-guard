@@ -19,7 +19,7 @@ Nothing is installed globally: `make setup` materializes `.venv/` inside the clo
 ```
 make setup      # uv sync --frozen, once per clone
 make check      # docs quality gate: run before opening a change
-make lint       # black, ruff, mypy over tools/
+make lint       # black, ruff, mypy over the whole repository
 make ci         # everything CI runs, in one local step
 ```
 

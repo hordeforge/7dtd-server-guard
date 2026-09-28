@@ -104,6 +104,23 @@ above reserves minor bumps for that.
   variable unset is a load failure rather than a feature that stays off. Path keys
   resolve against the host's mod data root, not against a data root "the operator sets
   in the config", which no schema key sets.
+- `make lint` runs black, ruff, and mypy over the repository root rather than
+  `tools/`. The tools are the only Python shipped today, so the gate is
+  unchanged, but a path-scoped target exempts every Python file added outside
+  it from black, ruff, and mypy without any visible failure.
+- `ruff.toml` selects the `N`, `PIE`, `TID`, `FA`, `ERA`, and `TD` rule groups on
+  top of the existing set. They catch a mis-signed method argument and an
+  unconventional error-class name, commented-out code that hides unmerged work
+  behind a green gate, and a `TODO` with no owner. The fuzzer error class is
+  renamed `InvariantBrokenError` to satisfy `N818`.
+- `mypy.ini` adds `possibly-undefined` to the enabled error codes, so a name read
+  after a guard that may not have assigned it is an error.
+- The archive self-test no longer depends on two exports landing in the same
+  wall-clock second. The overwrite refusal is keyed on the destination archive
+  name, and `utc_stamp()` resolves to one second, so the case it exercises ran
+  only when the clock happened not to tick between the two exports. `export()`
+  takes an optional `stamp` naming the archive, the self-test passes the first
+  archive's name, and the case runs every time.
 - `ruff.toml` selects the `SIM` and `S` rule groups, so `make lint` now covers
   control-flow simplification and the suspicious-construct checks (bandit's
   subprocess and weak-PRNG rules included). The five seeded fuzzer `random.Random`

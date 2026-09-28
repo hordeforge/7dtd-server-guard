@@ -26,4 +26,10 @@ select = [
     "RSE", # unnecessary parens on raise
     "SIM", # flake8-simplify: control flow and comprehension clarity
     "S",   # flake8-bandit: suspicious constructs
+    "N",   # pep8-naming: signatures, cases, and error-class names
+    "PIE", # flake8-pie: misc correctness and simplification traps
+    "TID", # banned relative imports, so a module always names its real import path
+    "FA",  # future-annotations consistency with the pinned target version
+    "ERA", # commented-out code, which hides unmerged work behind a passing gate
+    "TD",  # TODO/FIXME must name an owner or a tracking issue
 ]

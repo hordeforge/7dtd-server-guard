@@ -104,7 +104,7 @@ Loop:
 - `make check`: docs quality gate (em dashes, internal links, detector spec and ceiling
   rule, registry sync, JSON Schemas, config/schema cross-references). Run before opening
   any change.
-- `make lint`: black, ruff, and mypy over `tools/`.
+- `make lint`: black, ruff, and mypy over the whole repository.
 - `make detectors`: re-render the detector registry tables and the per-detector config
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
 - `make exercise`: validate the design-time replay contract against the sample trace.

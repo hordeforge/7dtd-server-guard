@@ -91,7 +91,7 @@ RANDOM_TEXT_MAX_LEN = 48
 ADDED_KEYS = ["extra", "", "\x00", "a" * 200]
 
 
-class InvariantBroken(AssertionError):
+class InvariantBrokenError(AssertionError):
     """A fuzzer invariant failed."""
 
 
