@@ -394,16 +394,27 @@ def secrets_errors(
                 f"a path relative to the runtime root, or run the drill on that host."
             )
             continue
-        if not path.is_file():
+        # The path is a string an operator typed, and the filesystem refuses some
+        # of them outright: a name longer than NAME_MAX raises rather than
+        # answering the question. That is a finding about the config, not a
+        # reason to end the drill with a traceback naming no archive.
+        try:
+            present = path.is_file()
+            stat = path.stat() if present else None
+        except OSError as exc:
+            errs.append(
+                f"{section}: {path} cannot be opened ({exc.strerror or exc}); "
+                f"the drill cannot confirm that {section} was copied"
+            )
+            continue
+        if not present or stat is None:
             errs.append(f"{section}: {path} is missing; a restore cannot resolve pseudonyms")
             continue
-        info = path.stat()
-        size = info.st_size
-        if size == 0:
+        if stat.st_size == 0:
             errs.append(f"{section}: {path} is zero bytes; an empty key is not a key")
             continue
-        errs += _mode_errors(section, path, block, info)
-        age_hours = (ee.as_utc(now, "now").timestamp() - info.st_mtime) / 3600
+        errs += _mode_errors(section, path, block, stat)
+        age_hours = (ee.as_utc(now, "now").timestamp() - stat.st_mtime) / 3600
         if age_hours < 0:
             # An mtime later than now means the clock stepped, or the file came
             # back from a copy with its timestamps preserved. A negative age is

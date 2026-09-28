@@ -116,8 +116,8 @@ Loop:
   replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
   (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
-  checker, detector spec consumers, operator config validator). It takes minutes; while
-  editing a single tool, run its two halves on their own.
+  checker, detector spec consumers, operator config validator, restore drill, backup RPO
+  check). It takes minutes; while editing a single tool, run its two halves on their own.
 - `make self-test TOOL=doccheck|evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom|report_text`:
   one tool's negative self-tests, the half of `make test-tools` a `make fuzz FUZZ=` run
   does not cover.

@@ -106,14 +106,18 @@
   schemas through `schema_validate.validate`, so it is neither tool's private helper, and
   `fuzz_schema_validate.py` fuzzes it as a module in its own right.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`,
-  `fuzz_evidence_export.py`, `fuzz_detector_spec.py`, `fuzz_config_check.py`: seeded,
+  `fuzz_evidence_export.py`, `fuzz_detector_spec.py`, `fuzz_config_check.py`,
+  `fuzz_restore_drill.py`, `fuzz_backup_status.py`: seeded,
   deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator
   in schema_validate.py, the replay-trace contract checker, the archive verifier, the detector spec
   (`detector_spec.yaml`) with both of its consumers (doccheck's spec pass and the renderers in
-  render_detectors.py), and the operator config validator with its file entry point
+  render_detectors.py), the operator config validator with its file entry point, and the
+  restore drill over a damaged archive and a hand-edited config, and the backup RPO
+  check over damaged archive manifests and the spacing of a dated series
   (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a
   single harness from the Makefile's FUZZERS list at a short run). Temporary segments, spec
-  files, and config files go under `.scratch/`, never the system temp dir.
+  files, archives, archive roots, work directories, and config files go under `.scratch/`,
+  never the system temp dir.
 - The Makefile's `SELF_TESTS` list is the registry of tools reachable through
   `make self-test` (`evidence_check`, `evidence_export`, `restore_drill`, `backup_status`,
   `config_check`, `sbom`, `report_text`): `make test-tools` runs every entry, and
@@ -121,7 +125,7 @@
   is the only edit needed to put its self-tests in the CI run. `replay_contract_check.py`
   also carries `--self-test` but runs it under `make exercise` rather than through this
   list.
-- `fuzz_common.py`: the mutation engine all six fuzzers share, so their mutation policies
+- `fuzz_common.py`: the mutation engine all eight fuzzers share, so their mutation policies
   cannot drift apart. Not an entry point.
 - `self_test_common.py`: the exit-code and stream assertions `config_check.py`, `restore_drill.py`,
   and `backup_status.py` share, so the three self-tests cannot drift apart. Not an entry point.

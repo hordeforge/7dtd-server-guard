@@ -149,13 +149,41 @@ above reserves minor bumps for that.
   under key order. Pair assertions pin the enabled-sink verdicts, the unlisted
   detector count, and a file round trip that must not change the hash. Run by
   `make test-tools` and `make fuzz FUZZ=config_check`.
+- `tools/fuzz_restore_drill.py`: a seeded, structure-aware fuzzer over
+  `tools/restore_drill.py`, the monthly recovery run. The drill is the one tool
+  here that reads three untrusted inputs at once (an archive whose manifest and
+  segments were written by an older exporter or edited during an incident, an
+  operator config hand-edited on the Windows host that runs the server, and the
+  record stream inside the restored copy), and it indexes content nothing upstream
+  narrows: the manifest's index name, a config's `identityMap.path`, the
+  `configHash` a record carries. It damages the archive six ways and the config
+  five, and asserts that `drill` never raises on any of them, is deterministic on
+  the same inputs, restores nothing at all from an archive that does not verify,
+  and that `config_match_errors`, `secrets_errors`, `_resolve`, `work_dir_errors`,
+  and `readback` return findings rather than raising. Pair assertions pin a valid
+  archive drilled with the config its records were written under, a config from
+  another deployment, a missing HMAC key, and a config that is valid JSON but not
+  an object. Run by `make test-tools` and `make fuzz FUZZ=restore_drill`.
 - The archive manifest carries `manifestSha256`, a digest over its own remaining
   fields, and `manifestVersion` is 2. The per-file SHA-256s proved the archived
   bytes; the self-digest proves the attestation describing them, so a manifest
   edited in place no longer verifies clean. A version 1 manifest has no
   self-digest and is reported as an unsupported version by
   `make verify-archive`.
-- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec|evidence_export|config_check>
+- `tools/fuzz_backup_status.py`: a seeded, structure-aware fuzzer over
+  `tools/backup_status.py`, the scheduled RPO check. Every number it reaches comes
+  from outside this repo: the `createdUtc` an exporter wrote into each archive
+  manifest, the JSON around it, the directory names a root holds, and the
+  `--max-age-hours` a scheduler passes, which `float` accepts as `nan` or `inf`. It
+  damages the manifest five ways and the archives behind them, and asserts that
+  `created_utc` returns a UTC instant or nothing and never raises, that `check` is
+  deterministic, counts exactly the archive directories the root holds, and never
+  calls an archive that does not verify the fresh backup, and that `gap_errors` and
+  `report` return findings rather than raising. Pair assertions pin a current
+  archive, a stale one, an unreadable manifest (undated, not dated at some other
+  value), and a hole in the series that only the spacing exposes. Run by
+  `make test-tools` and `make fuzz FUZZ=backup_status`.
+- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec|evidence_export|config_check|restore_drill|backup_status>
   [ITERATIONS=N] [SEED=S]`
   runs one fuzzer at a short iteration count, with a usage error naming the valid
   harnesses. Every harness already took `--iterations` and `--seed`.
@@ -346,11 +374,23 @@ above reserves minor bumps for that.
 
 ### Fixed
 
+- The restore drill no longer aborts with a traceback on a configured
+  `identityMap.path` or `hmacKey.path` the filesystem refuses. A path longer than
+  the filesystem's name limit raises `OSError` out of the stat, ending the run with
+  a traceback that names no archive, which reads as a drill that never ran. Such a
+  path is now reported by name, the way a missing one already was.
+- The restore drill no longer aborts with a traceback on a config file that holds
+  valid JSON that is not an object. `make drill-restore --config <file>` loaded
+  the file, passed it to the identity-map and HMAC-key checks, and each indexed it
+  as an object, so a file holding a JSON array or a bare string ended the run with
+  an `AttributeError` naming no archive, which reads as a drill that never ran.
+  Such a file is now refused by name, the way an unreadable one already was.
 - `make ci` runs green again. `tools/restore_drill.py` raised ruff's ISC004 on two
-  finding messages, so `make lint` failed on the committed tree and every gate that
-  runs after it (`check`, `exercise`, `test-tools`, `sbom`) never executed. The two
-  messages are now parenthesized, which is what the rule asks for; the text is
-  unchanged.
+  finding messages, and `tools/doccheck.py` raised it on one self-test changelog
+  document, so `make lint` failed on the committed tree and every gate that runs
+  after it (`check`, `exercise`, `test-tools`, `sbom`) never executed. The messages
+  and the document are now parenthesized, which is what the rule asks for; the text
+  is unchanged.
 - The restore drill resolves a configured `identityMap.path` or `hmacKey.path` with
   either separator. The config is hand-edited on the Windows host that runs the
   server, so `keys\hmac.key` is a nested path to that editor and a single filename

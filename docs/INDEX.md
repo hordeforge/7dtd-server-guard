@@ -99,8 +99,12 @@ bug to fix in the same change.
     │                            (make test-tools)
     ├── fuzz_config_check.py     seeded fuzzer over the operator config validator and
     │                            its file entry point (make test-tools)
+    ├── fuzz_restore_drill.py    seeded fuzzer over the restore drill, its config
+    │                            consumers, and its path resolution (make test-tools)
+    ├── fuzz_backup_status.py    seeded fuzzer over the backup RPO check, the archive
+    │                            manifest stamp, and the series gap (make test-tools)
     ├── fuzz_common.py           mutation engine and shared --iterations/--seed flags for
-    │                            the six fuzzers
+    │                            the eight fuzzers
     ├── self_test_common.py      exit-code and stream assertions shared by the three tool
     │                            self-tests that pin the command-line contract
     ├── guard_python.py          enforces the .python-version pin before any tool runs
