@@ -12,9 +12,10 @@ mutations at it:
   target 2  deep-nesting probe: instances nested far past any legitimate document
 
 Fixed probes: RFC 3339 offsets on timestamp fields, non-finite numbers
-(NaN, +/-Infinity) on bounded and unbounded numeric fields, the cross-record
-reference fields (a record ID, and a bounded count of them), and the detector
-spec's threshold range/default gate.
+(NaN, +/-Infinity) on bounded and unbounded numeric fields, a boolean never
+matching a numeric `const` or `enum`, the cross-record reference fields (a
+record ID, and a bounded count of them), and the detector spec's threshold
+range/default gate.
 
 Invariants asserted per iteration:
   - Totality: no exception (RecursionError included) escapes the validator.
@@ -421,6 +422,36 @@ def check_record_references() -> int:
     return checks
 
 
+def check_bool_is_not_a_number() -> None:
+    """A boolean never satisfies a numeric `const` or `enum`.
+
+    Python compares `True == 1` and `False == 0`, so a plain `==` lets a record
+    declaring `"schemaVersion": true` pass `{"const": 1}` and let a `1` pass
+    `{"enum": [true]}`. JSON keeps booleans and numbers apart, and the version
+    field is where a false match would be least visible.
+    """
+    cases: list[tuple[Json, Json, bool]] = [
+        (1, {"const": 1}, True),
+        (1.0, {"const": 1}, True),
+        (True, {"const": 1}, False),
+        (False, {"const": 0}, False),
+        (0, {"const": False}, False),
+        (1, {"enum": [True, False]}, False),
+        (0, {"enum": [True, False]}, False),
+        (True, {"enum": [0, 1]}, False),
+        (1, {"enum": [0, 1]}, True),
+        (True, {"enum": [True, False]}, True),
+    ]
+    for instance, schema, ok in cases:
+        errs = dc._schema_validate(instance, schema)
+        if ok and errs:
+            raise InvariantBrokenError(
+                f"{instance!r} against {schema}: valid value rejected: {errs}"
+            )
+        if not ok and not errs:
+            raise InvariantBrokenError(f"{instance!r} against {schema}: boolean matched a number")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_fuzz_args(ap, default_iterations=1500)
@@ -453,6 +484,7 @@ def main() -> int:
         check_non_finite_numbers()
         check_threshold_gate()
         check_string_length_units()
+        check_bool_is_not_a_number()
         check_evidence_bags_beyond_finding()
         reference_checks = check_record_references()
     except InvariantBrokenError as exc:
@@ -465,7 +497,7 @@ def main() -> int:
         f"sensitivity_checks={stats['sensitivity']} denylist_checks={denylist_checks} "
         f"id_array_probe=ok reference_checks={reference_checks} deep_probe=ok "
         f"datetime_probe=ok non_finite_probe=ok threshold_gate_probe=ok "
-        f"length_units_probe=ok"
+        f"length_units_probe=ok bool_vs_number_probe=ok"
     )
     return 0
 

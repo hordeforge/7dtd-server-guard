@@ -209,8 +209,11 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
         raise ValueError(f"{name}:{line_no}: chainPrev must be a string")
     if not isinstance(rec["eventId"], str):
         raise ValueError(f"{name}:{line_no}: eventId must be a string")
-    if rec["schemaVersion"] != 1:
-        raise ValueError(f"{name}:{line_no}: unsupported schemaVersion {rec['schemaVersion']}")
+    if rec["schemaVersion"] != 1 or isinstance(rec["schemaVersion"], bool):
+        # A bool is an int subclass, so `True != 1` is False and a record
+        # declaring `"schemaVersion": true` would otherwise be read as a version-1
+        # record, canonicalized to `true`, and hashed into the chain.
+        raise ValueError(f"{name}:{line_no}: unsupported schemaVersion {rec['schemaVersion']!r}")
     return rec
 
 
@@ -546,11 +549,36 @@ def self_test() -> list[str]:
         pass
     else:
         errs.append("self-test: canonical serialized a NaN")
+    errs += _schema_version_test()
     errs += _dir_self_test(recs)
     errs += _index_name_test(recs)
     errs += _sample_chain_test()
     errs += _verify_dir_tests()
     _unicode_self_test(errs)
+    return errs
+
+
+def _schema_version_test() -> list[str]:
+    """Only a JSON number 1 is schemaVersion 1.
+
+    A bool is an int subclass, so `True != 1` is False: a record declaring
+    `"schemaVersion": true` would be read as a version-1 record, canonicalized to
+    `true`, and hashed into the chain. A float 1.0 is a different spelling of the
+    same JSON number and stays valid.
+    """
+    errs: list[str] = []
+    for bad in (True, False, "1", None, [1], {"v": 1}):
+        rec: Record = {
+            "schemaVersion": bad,
+            "type": "health",
+            "eventId": "a",
+            "chainPrev": GENESIS,
+        }
+        try:
+            _parse_line("seg.jsonl", 1, canonical(rec))
+        except ValueError:
+            continue
+        errs.append(f"self-test: schemaVersion {bad!r} was accepted as version 1")
     return errs
 
 

@@ -721,6 +721,19 @@ def _matches_schema(path: str, patterns: list[re.Pattern[str]]) -> bool:
     return any(p.match(path) for p in patterns)
 
 
+def _json_equal(instance: Json, expected: Json) -> bool:
+    """JSON equality, where a boolean is never a number and never a string.
+
+    Python's `==` says `True == 1` and `False == 0`, so a plain comparison lets a
+    record declaring `"schemaVersion": true` satisfy `{"const": 1}` and a `1` in an
+    instance satisfy `{"enum": [true]}`. JSON keeps booleans and numbers in
+    separate types, and a version field is exactly the place a false match hides.
+    """
+    if isinstance(instance, bool) != isinstance(expected, bool):
+        return False
+    return bool(instance == expected)
+
+
 def _schema_type_ok(instance: Json, t: Json) -> bool:
     if isinstance(t, list):
         return any(_schema_type_ok(instance, tt) for tt in t)
@@ -902,7 +915,7 @@ def _fast_path(
         target, ref_errors = _ref_target(schema, path, root)
         return ref_errors or _schema_validate(instance, target, path, depth + 1, root), root
     if "const" in schema:
-        if instance != schema["const"]:
+        if not _json_equal(instance, schema["const"]):
             return [f"{path}: expected const {schema['const']!r}, got {instance!r}"], root
         return [], root
     return None, root
@@ -916,7 +929,7 @@ def _schema_validate(
     if fast is not None:
         return fast
     errs = []
-    if "enum" in schema and instance not in schema["enum"]:
+    if "enum" in schema and not any(_json_equal(instance, e) for e in schema["enum"]):
         errs.append(f"{path}: {instance!r} not in {schema['enum']}")
     if "type" in schema and not _schema_type_ok(instance, schema["type"]):
         errs.append(f"{path}: expected type {schema['type']}, got {type(instance).__name__}")

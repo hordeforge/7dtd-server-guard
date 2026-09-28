@@ -59,6 +59,10 @@ MANIFEST_VERSION = 2
 # SHA-256s prove the archived bytes; this proves the attestation describing them.
 MANIFEST_DIGEST_FIELD = "manifestSha256"
 SEGMENT_GLOB = "evidence-*.jsonl"
+# A raw line separator inside a record's text. `str.splitlines()` treats it as a
+# line break and the chain reader's line iteration does not, which is the whole
+# reason the record count is not computed with splitlines (see _record_count).
+RAW_LINE_SEP = "\u2028"
 DEFAULT_INDEX_NAME = ec.DEFAULT_INDEX
 # Read/write block size for copying and hashing, so archive size does not set the
 # process's memory ceiling.
@@ -81,12 +85,22 @@ def file_digest(path: pathlib.Path) -> tuple[str, int]:
 
 
 def _record_count(path: pathlib.Path) -> int:
-    """Non-empty lines in a segment. Streamed, not slurped, so a large segment
-    does not set this process's memory ceiling (the property file_digest keeps).
-    Text-mode iteration splits on the newline every writer of a JSONL segment
-    uses, and a truncated final line still counts as the record it was."""
-    with path.open("r", encoding="utf-8") as fh:
-        return sum(1 for line in fh if line.strip())
+    """The record count the chain verifier would see in this segment.
+
+    The count was `str.splitlines()` over the whole text, which breaks on more
+    boundaries than the chain reader's line iteration does: `\x0c`, `\u2028`, and
+    friends. A record carrying one of those inside a string (a hand-edited note)
+    parses as one record for `iter_records` but counted as two, so the manifest
+    attested a count the stream did not hold. Reading the file the way the
+    verifier does, counting the lines it would keep, is one definition of a
+    record.
+
+    Streamed, not slurped, so a large segment does not set this process's
+    memory ceiling (the property file_digest keeps). A truncated final line
+    still counts as the record it was.
+    """
+    with path.open(encoding="utf-8") as handle:
+        return sum(1 for raw in handle if raw.strip())
 
 
 def archive_members(source: pathlib.Path, index_name: str) -> list[pathlib.Path]:
@@ -556,6 +570,34 @@ def _self_test_manifest_bytes() -> list[str]:
     return errs
 
 
+def _self_test_record_count() -> list[str]:
+    """A record count is the count the chain verifier sees.
+
+    `str.splitlines()` breaks on more boundaries than the line iteration the chain
+    reader uses, so a record holding a raw U+2028 in a string (a hand-edited note)
+    is one record to the verifier and two to a splitlines count. The manifest
+    would then attest a record count the stream does not hold.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-count"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        _write_sample_stream(scratch)
+        seg = scratch / "evidence-2026-07-21-000000.jsonl"
+        rec = json.loads(seg.read_text(encoding="utf-8").splitlines()[0])
+        rec["note"] = f"a{RAW_LINE_SEP}b"
+        seg.write_text(ec.canonical(rec).replace(r"\u2028", RAW_LINE_SEP) + "\n", encoding="utf-8")
+        counted = _record_count(seg)
+        if counted != 1:
+            errs.append(
+                f"self-test: a segment with one record counted as {counted}: "
+                "the manifest would attest a count the stream does not hold"
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     """Exercise the paths that decide whether a backup is trustworthy."""
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test"
@@ -567,6 +609,7 @@ def self_test() -> list[str]:
     errs += _self_test_refusal(scratch, source, out_root)
     errs += _self_test_member_names()
     errs += _self_test_manifest_bytes()
+    errs += _self_test_record_count()
     if archives:
         errs += _self_test_case_variant_name(archives[0])
         errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)

@@ -49,7 +49,10 @@ def non_finite_paths(value: object, path: str = "trace") -> list[str]:
     Bare NaN and Infinity are not JSON, and the fingerprint and per-record
     hashes are computed by json.dumps with allow_nan=False, so a trace carrying
     one cannot be canonicalized, sealed, or replayed. The walk is iterative so
-    a deeply nested trace cannot turn this check into a RecursionError.
+    a deeply nested trace cannot turn this check into a RecursionError, and each
+    node's children are pushed in reverse so the visit order is the document's
+    own: the reported cap names the earliest occurrences, not whichever paths
+    happen to sort first.
     """
     found: list[str] = []
     stack: list[tuple[object, str]] = [(value, path)]
@@ -58,10 +61,10 @@ def non_finite_paths(value: object, path: str = "trace") -> list[str]:
         if isinstance(node, float) and not math.isfinite(node):
             found.append(node_path)
         elif isinstance(node, dict):
-            stack.extend((v, f"{node_path}.{k}") for k, v in node.items())
+            stack.extend((v, f"{node_path}.{k}") for k, v in reversed(list(node.items())))
         elif isinstance(node, list):
-            stack.extend((v, f"{node_path}[{i}]") for i, v in enumerate(node))
-    return sorted(found)
+            stack.extend((v, f"{node_path}[{i}]") for i, v in reversed(list(enumerate(node))))
+    return found
 
 
 def non_finite_errors(value: object) -> list[str]:
