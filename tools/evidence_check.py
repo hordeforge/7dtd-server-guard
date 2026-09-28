@@ -300,9 +300,18 @@ def self_test() -> list[str]:
             f"{tail_errors}"
         )
 
-    # non-first-segment links are checked by the caller (verify_dir); exercise the skip
-    # branch so it keeps running without raising.
-    verify_chain([(1, dict(recs[0]), "")], first_of_stream=False)
+    # non-first-segment links are checked by the caller (verify_dir); the skip branch
+    # must leave the boundary record unchecked internally while still reporting the
+    # link the caller needs: its chainPrev as first_prev, its own hash as last_hash.
+    boundary = verify_chain([(1, dict(recs[0]), "")], first_of_stream=False)
+    if boundary.errors:
+        errs.append(f"self-test: a non-first segment's first record was checked: {boundary.errors}")
+    if (boundary.record_count, boundary.first_prev, boundary.last_hash) != (
+        1,
+        GENESIS,
+        record_hash(recs[0]),
+    ):
+        errs.append(f"self-test: boundary link not reported to the caller: {boundary}")
     # Segment order decides which chain link crosses the segment boundary, so an
     # unpadded <seq> past 9 must sort after 2, not before it.
     names = [pathlib.Path(f"evidence-2026-09-28-{i}.jsonl") for i in (2, 10, 1, 11)]
@@ -339,6 +348,8 @@ def self_test() -> list[str]:
     else:
         errs.append("self-test: canonical serialized a NaN")
     errs += _dir_self_test(recs)
+    errs += _sample_chain_test()
+    errs += _verify_dir_tests()
     return errs
 
 
@@ -386,6 +397,177 @@ def _report(label: str, errors: list[str]) -> int:
     for error in errors:
         print("  " + error, file=stream)
     return 1 if errors else 0
+
+
+def _sample_chain_test() -> list[str]:
+    """The shipped sample is the chain operators are told to copy, so it must verify."""
+    failures = verify_sample()
+    return [f"self-test: shipped sample chain is invalid: {failures}"] if failures else []
+
+
+def _stream(count: int) -> list[Record]:
+    """`count` records chaining from genesis, one eventId and payload per position."""
+    recs: list[Record] = []
+    for i in range(count):
+        recs.append(
+            {
+                "schemaVersion": 1,
+                "type": "health",
+                "eventId": f"e{i}",
+                "chainPrev": GENESIS if not recs else record_hash(recs[-1]),
+                "x": i,
+            }
+        )
+    return recs
+
+
+def _write_segment(directory: pathlib.Path, name: str, records: list[Record]) -> None:
+    (directory / name).write_text(
+        "".join(f"{json.dumps(rec)}\n" for rec in records), encoding="utf-8"
+    )
+
+
+def _verify_dir_tests() -> list[str]:
+    """Pin the directory walk: the cross-segment link, the genesis link, and the index.
+
+    verify_dir is what `make verify-evidence` runs, and the cross-segment link is the
+    property the tool exists for, yet nothing deterministic covered it. Each case gets
+    its own directory, so no case can leave a segment behind for the next one.
+    """
+    scratch = ROOT / ".scratch"
+    scratch.mkdir(exist_ok=True)
+    cases = (
+        _case_well_formed,
+        _case_unlinked,
+        _case_detached,
+        _case_empty_segment,
+        _case_index_mismatch,
+        _case_unreadable_index,
+        _case_absent_index,
+        _case_no_segments,
+    )
+    with tempfile.TemporaryDirectory(prefix="evidence-self-test-", dir=scratch) as td:
+        root = pathlib.Path(td)
+        return [errs for i, case in enumerate(cases) for errs in case(f"{root}/{i}")]
+
+
+def _segment_dir(root: str) -> pathlib.Path:
+    directory = pathlib.Path(root)
+    directory.mkdir(parents=True)
+    return directory
+
+
+def _expect_reported(found: list[str], needle: str, what: str) -> list[str]:
+    if not _reports(found, needle):
+        return [f"self-test: {what} went unreported: {found}"]
+    return []
+
+
+def _case_well_formed(root: str) -> list[str]:
+    """Positive control. Without it every negative case would also pass against a
+    verify_dir that rejects everything."""
+    directory = _segment_dir(root)
+    stream = _stream(3)
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", stream[:2])
+    _write_segment(directory, "evidence-2026-09-28-2.jsonl", stream[2:])
+    found = verify_dir(directory, "segment-index.json")
+    return [f"self-test: a well-formed two-segment stream was rejected: {found}"] if found else []
+
+
+def _case_unlinked(root: str) -> list[str]:
+    """A second segment re-linking to genesis breaks the stream even though every
+    segment verifies internally."""
+    directory = _segment_dir(root)
+    stream = _stream(3)
+    stream[2] = {**stream[2], "chainPrev": GENESIS}
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", stream[:2])
+    _write_segment(directory, "evidence-2026-09-28-2.jsonl", stream[2:])
+    return _expect_reported(
+        verify_dir(directory, "segment-index.json"),
+        "chain to previous segment",
+        "a segment not chaining to its predecessor",
+    )
+
+
+def _case_detached(root: str) -> list[str]:
+    """A first segment off genesis is a self-consistent stream that is not on the chain."""
+    directory = _segment_dir(root)
+    stream = _stream(3)
+    stream[0] = {**stream[0], "chainPrev": record_hash(stream[0])}
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", stream[:2])
+    _write_segment(directory, "evidence-2026-09-28-2.jsonl", stream[2:])
+    return _expect_reported(
+        verify_dir(directory, "segment-index.json"),
+        "chain to genesis",
+        "a stream not starting at genesis",
+    )
+
+
+def _case_empty_segment(root: str) -> list[str]:
+    """An empty segment is skipped, so its successor has no hash to chain to and must
+    say so rather than silently verify."""
+    directory = _segment_dir(root)
+    stream = _stream(3)
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", [])
+    _write_segment(directory, "evidence-2026-09-28-2.jsonl", stream[2:])
+    found = verify_dir(directory, "segment-index.json")
+    return [
+        *_expect_reported(found, "empty segment", "an empty segment"),
+        *_expect_reported(found, "yielded no records", "an empty predecessor segment"),
+    ]
+
+
+def _case_index_mismatch(root: str) -> list[str]:
+    """The index is what names a segment the chain cannot see."""
+    directory = _segment_dir(root)
+    stream = _stream(3)
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", stream[:2])
+    (directory / "segment-index.json").write_text(
+        json.dumps({"segments": [{"file": "evidence-2026-09-28-9.jsonl"}]}), encoding="utf-8"
+    )
+    return _expect_reported(
+        verify_dir(directory, "segment-index.json"),
+        "does not match files on disk",
+        "an index naming a segment that is not on disk",
+    )
+
+
+def _case_unreadable_index(root: str) -> list[str]:
+    """An index that cannot be read is an error, not a silent "no index"."""
+    directory = _segment_dir(root)
+    stream = _stream(2)
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", stream)
+    index = directory / "segment-index.json"
+    errs: list[str] = []
+    for body, needle, what in (
+        ("{", "unparseable", "an unparseable index"),
+        ("[]", "must be a JSON object", "a non-object index"),
+    ):
+        index.write_text(body, encoding="utf-8")
+        errs += _expect_reported(verify_dir(directory, "segment-index.json"), needle, what)
+    return errs
+
+
+def _case_absent_index(root: str) -> list[str]:
+    """No index is the normal case and must stay quiet."""
+    directory = _segment_dir(root)
+    index, load_errs = load_index(directory / "segment-index.json")
+    if index is not None or load_errs:
+        return [f"self-test: a missing index was not reported as absent: {index} {load_errs}"]
+    return []
+
+
+def _case_no_segments(root: str) -> list[str]:
+    directory = _segment_dir(root)
+    return _expect_reported(
+        verify_dir(directory, "segment-index.json"),
+        "no evidence-*.jsonl",
+        "a directory with no segments",
+    )
+
+
+def _reports(found: list[str], needle: str) -> bool:
+    return any(needle in error for error in found)
 
 
 def main() -> int:
