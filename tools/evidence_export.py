@@ -55,6 +55,7 @@ from typing import Any
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import evidence_check as ec
 import report_text
+from self_test_common import main_contract_errors
 
 Record = dict[str, Any]
 # One archived file: the manifest entry, keyed by file name.
@@ -62,6 +63,9 @@ ManifestFile = dict[str, Any]
 
 MANIFEST_NAME = "archive-manifest.json"
 MANIFEST_VERSION = 2
+# The code main returns for an argument combination it refuses before it starts
+# work. argparse exits 2 on its own for a bad flag, so the two agree.
+USAGE_ERROR = 2
 # The archive-name stamp: the format the writer emits and the two readers that
 # read a stamp back out of a manifest have to agree on, so it is stated once.
 STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
@@ -1242,12 +1246,52 @@ def self_test() -> list[str]:
         errs += _self_test_manifest_bytes()
         errs += _self_test_record_count()
         errs += _self_test_unreadable_files()
+        errs += _self_test_main_contract(scratch)
         if archives:
             errs += _self_test_error_cap(archives[0])
             errs += _self_test_case_variant_name(archives[0])
             errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
+def _self_test_main_contract(scratch: pathlib.Path) -> list[str]:
+    """Pin the exit codes and stream split documented in tools/README.md.
+
+    The scheduler branches on these: 0 archived or verified, 1 the run failed (an
+    archive or evidence directory that is not there included), 2 for an argument
+    combination refused before any work started. A usage error that printed its
+    report to stdout would land a help dump in the scheduler's captured log, and
+    `--dir` with no `--out` is exactly the argument a half-finished deploy script
+    passes, so both refusals and both stream directions are pinned here rather
+    than left to the caller's log to reveal.
+    """
+    source = scratch / "contract-source"
+    out_root = scratch / "contract-archives"
+    write_sample_stream(source)
+    cases: list[tuple[str, list[str], int]] = [
+        ("bare run", [], USAGE_ERROR),
+        ("--index with no --dir", ["--index", "other-index.json"], USAGE_ERROR),
+        ("--dir with no --out", ["--dir", str(source)], USAGE_ERROR),
+        ("missing archive", ["--archive", str(scratch / "no-such-archive")], 1),
+        ("missing evidence dir", ["--dir", str(scratch / "no-such-dir"), "--out", str(out_root)], 1),
+        ("archive", ["--dir", str(source), "--out", str(out_root)], 0),
+    ]
+    errs = main_contract_errors(
+        cases, script="evidence_export.py", run=main, usage_error=USAGE_ERROR
+    )
+    # The export the last case ran is the archive a `--archive` run has to accept,
+    # so the 0 above is pinned against the directory it actually wrote.
+    archives = [p for p in sorted(out_root.iterdir()) if p.is_dir()]
+    if len(archives) != 1:
+        return errs + [f"the self-test's own export wrote {len(archives)} archive(s), not one"]
+    errs += main_contract_errors(
+        [("verify the archive just written", ["--archive", str(archives[0])], 0)],
+        script="evidence_export.py",
+        run=main,
+        usage_error=USAGE_ERROR,
+    )
     return errs
 
 
@@ -1297,7 +1341,7 @@ def main() -> int:
         return _report(f"export {args.dir}: {len(errs)} issue(s)", errs)
 
     ap.print_help(sys.stderr)
-    return 2
+    return USAGE_ERROR
 
 
 if __name__ == "__main__":

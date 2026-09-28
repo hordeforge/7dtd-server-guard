@@ -36,6 +36,7 @@ from collections.abc import Iterable, Iterator
 from typing import Any, NamedTuple
 
 import report_text
+from self_test_common import main_contract_errors
 
 # An evidence record as parsed from a segment line. Fields are validated by
 # _parse_line and the evidence.v1 JSON Schema, not by the type.
@@ -122,6 +123,9 @@ class RecentEventIds:
 
 # Segment index file name inside --dir when --index is not given.
 DEFAULT_INDEX = "segment-index.json"
+# The code main returns for an argument combination it refuses before it starts
+# work. argparse exits 2 on its own for a bad flag, so the two agree.
+USAGE_ERROR = 2
 # Longest file name accepted from a directory or a manifest. The limit is in bytes,
 # which is what the filesystem counts, and the ASCII allowlist below makes a
 # character count and a byte count the same number, so a hostile name cannot reach
@@ -672,7 +676,27 @@ def self_test() -> list[str]:
     errs += _verify_dir_tests()
     errs += _untrusted_text_test()
     _unicode_self_test(errs)
+    errs += _main_contract_self_test()
     return errs
+
+
+def _main_contract_self_test() -> list[str]:
+    """Pin the exit codes and stream split documented in tools/README.md.
+
+    A monitoring job runs `--dir` on a schedule and reads the exit code, and the
+    doccheck gate runs `--sample`, so both verdicts matter: 0 the chain verified,
+    1 it did not (a directory that is not there included), 2 for a usage error.
+    The bare run and the `--index`-without-`--dir` refusal are the two a
+    half-written wrapper produces, and a usage error that printed on stdout would
+    put a help dump where a report belongs.
+    """
+    cases: list[tuple[str, list[str], int]] = [
+        ("bare run", [], USAGE_ERROR),
+        ("--index with no --dir", ["--index", "other-index.json"], USAGE_ERROR),
+        ("sample chain", ["--sample"], 0),
+        ("missing directory", ["--dir", str(SCRATCH / "no-such-evidence-dir")], 1),
+    ]
+    return main_contract_errors(cases, script="evidence_check.py", run=main, usage_error=USAGE_ERROR)
 
 
 def _untrusted_text_test() -> list[str]:
@@ -1077,7 +1101,7 @@ def main() -> int:
             return _report(f"evidence chain ({args.dir})", [f"{args.dir}: no such directory"])
         return _report(f"evidence chain ({args.dir})", verify_dir(args.dir, args.index))
     ap.print_help(sys.stderr)
-    return 2
+    return USAGE_ERROR
 
 
 if __name__ == "__main__":

@@ -870,6 +870,7 @@ def _main_contract_self_test() -> list[str]:
     ]
     return main_contract_errors(cases, script="restore_drill.py", run=main, usage_error=USAGE_ERROR)
 
+
 def _self_test_unencodable_report() -> list[str]:
     """A record whose text no stream can encode is reported, not crashed on.
 
