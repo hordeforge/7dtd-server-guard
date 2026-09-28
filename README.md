@@ -113,10 +113,11 @@ Loop:
   replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
   (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
-  checker, detector spec consumers). It takes minutes; while editing a single tool, run its
-  two halves on their own.
-- `make self-test TOOL=evidence_check|evidence_export|config_check`: one tool's negative
-  self-tests, the half of `make test-tools` a `make fuzz FUZZ=` run does not cover.
+  checker, detector spec consumers, operator config validator). It takes minutes; while
+  editing a single tool, run its two halves on their own.
+- `make self-test TOOL=evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom`:
+  one tool's negative self-tests, the half of `make test-tools` a `make fuzz FUZZ=` run
+  does not cover.
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
   iteration count, for editing a single tool. Seeds are deterministic, so a reported
   `seed=` reproduces the failure.

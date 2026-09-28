@@ -166,6 +166,16 @@ above reserves minor bumps for that.
   bounds that already existed. These are the fields a writer fills by
   interpolating whatever the game handed it; an unbounded string there is where a
   name or a quoted line would sit in a record for its whole retention window.
+- The `ci` workflow runs on `push` to `main` and on `pull_request`, not on a push to
+  every branch. A branch with an open pull request fired both events for the same
+  commit, so each push spent a second runner repeating the same gate.
+- The operator-facing make targets (`verify-config`, `verify-evidence`,
+  `export-evidence`, `verify-archive`, `backup`, `backup-status`, `drill-restore`)
+  now depend on `guard-python` like every other target, so a scheduled backup run
+  refuses an interpreter other than the pinned one instead of archiving evidence
+  under a drifting toolchain. `backup` and `drill-restore` report a missing argument
+  on stderr with exit 2, matching the other targets, and drop the deprecated
+  `test -a`.
 - `docs/SCHEMAS.md` states the two config rules the file alone cannot enforce: a
   detector id or threshold key outside the registry and the manifest is rejected
   rather than loaded as an `observe` default, and a sink enabled with its environment

@@ -132,27 +132,27 @@ sbom: guard-python
 # registry, per-detector manifest thresholds, and the env vars an enabled webhook
 # or dashboard names. --skip-env checks the file alone, with no environment.
 # Usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1]
-verify-config:
+verify-config: guard-python
 	@test -n "$(FILE)" || { echo "usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1]" >&2; exit 2; }
 	$(UV) python tools/config_check.py --config "$(FILE)" $(if $(SKIP_ENV),--skip-env,)
 
 # Verify an evidence directory's hash chain (append-only segments).
 # Usage: make verify-evidence DIR=/path/to/evidence
-verify-evidence:
+verify-evidence: guard-python
 	@test -n "$(DIR)" || { echo "usage: make verify-evidence DIR=/path/to/evidence" >&2; exit 2; }
 	$(UV) python tools/evidence_check.py --dir "$(DIR)"
 
 # Archive an evidence directory: the chain is verified before and after the copy,
 # and a manifest of per-file sha256 is written beside it.
 # Usage: make export-evidence DIR=/path/to/evidence OUT=/path/to/archive-root
-export-evidence:
+export-evidence: guard-python
 	@test -n "$(DIR)" && test -n "$(OUT)" || { echo "usage: make export-evidence DIR=<evidence-dir> OUT=<archive-root>" >&2; exit 2; }
 	$(UV) python tools/evidence_export.py --dir "$(DIR)" --out "$(OUT)"
 
 # Prove an archive is intact and restorable (the restore drill; also catches silent
 # backup corruption long before a real restore needs it).
 # Usage: make verify-archive ARCHIVE=/path/to/archive
-verify-archive:
+verify-archive: guard-python
 	@test -n "$(ARCHIVE)" || { echo "usage: make verify-archive ARCHIVE=/path/to/archive" >&2; exit 2; }
 	$(UV) python tools/evidence_export.py --archive "$(ARCHIVE)"
 
@@ -162,8 +162,8 @@ verify-archive:
 # window is open, so the scheduler has to alert on it; copy the archive off the
 # server afterwards (docs/OPERATIONS.md -> Schedule).
 # Usage: make backup DIR=/path/to/evidence OUT=/path/to/archive-root
-backup:
-	@test -n "$(DIR)" -a -n "$(OUT)" || { echo "usage: make backup DIR=<evidence-dir> OUT=<archive-root>"; exit 2; }
+backup: guard-python
+	@test -n "$(DIR)" && test -n "$(OUT)" || { echo "usage: make backup DIR=<evidence-dir> OUT=<archive-root>" >&2; exit 2; }
 	$(UV) python tools/evidence_export.py --dir "$(DIR)" --out "$(OUT)"
 
 # Is the archive root still meeting its RPO? Read-only: it verifies the
@@ -172,7 +172,7 @@ backup:
 # holds none. This is the check that catches a scheduler that stopped running,
 # which no amount of verifying an old archive can.
 # Usage: make backup-status ROOT=/path/to/archive-root [MAX_AGE_HOURS=24]
-backup-status:
+backup-status: guard-python
 	@test -n "$(ROOT)" || { echo "usage: make backup-status ROOT=<archive-root> [MAX_AGE_HOURS=24]" >&2; exit 2; }
 	$(UV) python tools/backup_status.py --root "$(ROOT)" $(if $(MAX_AGE_HOURS),--max-age-hours "$(MAX_AGE_HOURS)",)
 
@@ -182,8 +182,8 @@ backup-status:
 # archive cannot restore are present and inside the backup cycle. WORK must be
 # empty or absent; a non-empty work directory is refused, never merged into.
 # Usage: make drill-restore ARCHIVE=/path/to/archive WORK=/path/to/scratch [CONFIG=/path/to/server-guard.json]
-drill-restore:
-	@test -n "$(ARCHIVE)" -a -n "$(WORK)" || { echo "usage: make drill-restore ARCHIVE=<archive> WORK=<empty-dir> [CONFIG=<config>]"; exit 2; }
+drill-restore: guard-python
+	@test -n "$(ARCHIVE)" && test -n "$(WORK)" || { echo "usage: make drill-restore ARCHIVE=<archive> WORK=<empty-dir> [CONFIG=<config>]" >&2; exit 2; }
 	$(UV) python tools/restore_drill.py --archive "$(ARCHIVE)" --work "$(WORK)" $(if $(CONFIG),--config "$(CONFIG)",)
 
 help:
@@ -197,7 +197,7 @@ help:
 	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, restore_drill, backup_status, config_check)"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec, config_check)"
 	@echo "  make sbom [OUT=<file>]  render the CycloneDX 1.6 inventory from uv.lock"
-	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
+	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools + sbom)"
 	@echo "  make guard-python    interpreter pin gate every other target depends on"
 	@echo "  make verify-config FILE=<file> [SKIP_ENV=1]   validate a config file before deploying it"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"

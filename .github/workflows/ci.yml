@@ -1,11 +1,20 @@
 name: ci
-on: [push, pull_request]
+# push is scoped to main: a push to a branch that also has an open PR fires
+# pull_request for the same commit, and running both spends a second runner on
+# the same gate. Branches without a PR still gate on their own push event.
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 # Workflows get a read-only token by default; nothing here needs write access.
 permissions:
   contents: read
 
-# Push and pull_request both fire for PR branches; cancel superseded runs.
+# Cancel superseded runs of the same ref. github.ref differs between the two
+# triggers (refs/heads/... against refs/pull/N/merge), so a push and its PR run
+# do not cancel each other; they are the same gate on the same commit, so the
+# PR run is the one that reports.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
