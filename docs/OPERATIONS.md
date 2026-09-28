@@ -18,13 +18,21 @@ instructions for a shipped product.
 
 1. Post the monitoring notice ([PRIVACY.md](../PRIVACY.md)) in the server rules/MOTD/Discord
    and substitute the operator's own contact.
-2. Verify the config hash and hook manifest hash against the release notes. No command
+2. Validate the config file before it reaches the server:
+   `make verify-config FILE=config/server-guard.local.json`. It rejects unknown keys, a
+   misspelled detector id, a threshold outside the manifest's declared range, and an
+   enabled webhook or dashboard whose environment variable is unset, then prints the
+   effective config's hash. A non-zero exit means the file is not deployable; the mod
+   would refuse the same file at startup ([SCHEMAS.md](SCHEMAS.md) -> Config schema).
+3. Verify the config hash and hook manifest hash against the release notes. No command
    does this yet: `make check` is a repository docs and schema gate, and the release-artifact
    verifier is a Phase 9 requirement (this runbook is a requirements document, see the
-   preamble). Until it exists, compare the values the health report prints by hand.
-3. Start in observe mode. Confirm the health report shows every detector `active` and the
+   preamble). Until it exists, compare the values the health report prints by hand. The
+   config hash `make verify-config` prints is the one the evidence records and the health
+   report carry, so the two can be compared directly.
+4. Start in observe mode. Confirm the health report shows every detector `active` and the
    hook manifest resolved fully on the pinned build.
-4. For each detector to raise: run its legal-context matrix (TEST_PLAN.md Layer 5), review
+5. For each detector to raise: run its legal-context matrix (TEST_PLAN.md Layer 5), review
    the dry-run diff (what *would* have happened), then enable with explicit opt-in
    ([POLICY.md](POLICY.md) -> Enforcement gates). One corrective invariant per run.
 
@@ -49,6 +57,7 @@ instructions for a shipped product.
 | Evidence queue full / drops | Soft observations dropped first by design; check `serverguard.queue.*` metrics | Review flood config and evidence writer throughput |
 | Suspected anti-cheat weaponization (induced findings) | Check attribution: findings must name the initiating connection, never the victim (POLICY.md -> Enforcement gates) | Review container-race and impulse fixtures; verify victim accrued nothing |
 | Emergency | `sg emergency-disable` reverts all detectors to observe without restart | Audit log records actor, timestamp, reason; investigate before re-enabling |
+| Server refuses to start on a config change | Startup rejected the file whole, so nothing ran under a relaxed config; the log names the first violations | `make verify-config FILE=<same file>` reproduces the verdict off-server, or `sg config check` on a live server |
 | Evidence tampering suspected | Verify the hash chain from segment start to end; a broken link names the first tampered record | If keyholder is suspected, the chain cannot prove against them (ARCHITECTURE.md -> Evidence model); rotate key and identity map |
 
 ## Appeal flow
@@ -80,6 +89,8 @@ never prints secrets or raw identities (pseudonyms only).
 | `sg review <evidenceId> <disposition> [reason]` | Record appeal disposition; `benign`/`detector bug` export to the regression corpus | yes |
 | `sg dry-run <id>` | Show what *would* have happened in the target mode without changing mode | no |
 | `sg purge <evidenceId>` | Tombstone a record; requires a review disposition | yes |
+| `sg config show` | The effective config as loaded, under the `configHash` every evidence record carries. Secret env var names, never their values | no |
+| `sg config check [path]` | Validate the deployed file without reloading; reports exactly what startup would refuse | no |
 | `sg config reload` | Strict reload with the same validation as startup | yes |
 | `sg emergency-disable` / `sg emergency-enable` | Revert all detectors to observe / restore configured modes | yes |
 
@@ -112,7 +123,7 @@ archives is the operator's choice and must be named in the deployment notes.
 |---|---|---|
 | Evidence: 24 h | 4 h | Worst case: evidence written since the last successful archive is lost, and recovery takes one archive restore plus a chain verification |
 | Identity map and HMAC key: per backup cycle, never longer than 7 days | 1 h | A pseudonym epoch whose key is lost can never be resolved again; the affected evidence becomes permanently unattributable |
-| Config: per upgrade | minutes | `server-guard.json` and the local override are copied on every upgrade |
+| Config: per upgrade | minutes | The deployed `server-guard.json` and the gitignored working copy (`config/server-guard.local.json`) are copied on every upgrade |
 
 An archive counts as existing only when `make verify-archive ARCHIVE=<dir>` exits 0.
 A scheduled copy whose exit code nobody checks is not a backup.

@@ -3,7 +3,7 @@
 # Docs quality gate: run before opening a docs change. Checks em dashes, internal
 # links, TODO checkbox format, detector spec + ceiling rule, registry sync, JSON
 # Schemas, config/schema cross-references, evidence chain, replay contract.
-.PHONY: setup check ci lint detectors exercise test-tools fuzz verify-evidence export-evidence verify-archive guard-python help
+.PHONY: setup check ci lint detectors exercise test-tools fuzz verify-config verify-evidence export-evidence verify-archive guard-python help
 
 # Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
 # `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
@@ -70,6 +70,7 @@ exercise: guard-python
 test-tools: guard-python
 	$(UV) python tools/evidence_check.py --self-test
 	$(UV) python tools/evidence_export.py --self-test
+	$(UV) python tools/config_check.py --self-test
 	$(UV) python tools/fuzz_evidence_check.py
 	$(UV) python tools/fuzz_schema_validate.py
 	$(UV) python tools/fuzz_replay_trace.py
@@ -90,6 +91,14 @@ fuzz: guard-python
 # CI entry point: everything CI runs, runnable locally as one step.
 # C# build + test layers 1-4 are added here in Phase 2 (TODO.md).
 ci: lint check exercise test-tools
+
+# Validate an operator's config file before it is deployed: schema, detector
+# registry, per-detector manifest thresholds, and the env vars an enabled webhook
+# or dashboard names. --skip-env checks the file alone, with no environment.
+# Usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1]
+verify-config:
+	@test -n "$(FILE)" || { echo "usage: make verify-config FILE=/path/to/server-guard.json [SKIP_ENV=1]" >&2; exit 2; }
+	$(UV) python tools/config_check.py --config "$(FILE)" $(if $(SKIP_ENV),--skip-env,)
 
 # Verify an evidence directory's hash chain (append-only segments).
 # Usage: make verify-evidence DIR=/path/to/evidence
@@ -121,6 +130,7 @@ help:
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, detector_spec, evidence_export)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
+	@echo "  make verify-config FILE=<file> [SKIP_ENV=1]   validate a config file before deploying it"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"
 	@echo "  make verify-archive ARCHIVE=<dir>   re-verify an archive against its manifest"

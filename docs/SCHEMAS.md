@@ -22,9 +22,13 @@ Rules that apply to every schema in this document:
   schema's `definitions`, and every bag `$ref`s it, so a newly denied key is added in
   one place. `make check` fails when an open object drops the ref or inlines its own
   copy.
-- The file paths below are relative to the mod's data root, which the operator sets in the
-  config. Defaults live under the server's `UserDataFolder`-adjacent `ServerGuard/` tree;
-  the exact default location is confirmed in Phase 2.
+- Paths in the config table (`evidence.dir`, `identityMap.path`, `hmacKey.path`) are the
+  one place this schema names the filesystem. Nothing in the table sets a data root: the
+  host does, and the loader resolves a relative path against the mod's data root beside
+  the server executable, using an absolute path as given. A path that escapes that root
+  through `..`, or an empty one, is rejected at load; the identity map and the HMAC key
+  are created with the `permissions` the table names. The default `ServerGuard/` tree
+  below the data root is confirmed in Phase 2.
 
 ## Config schema (config v1)
 
@@ -41,11 +45,28 @@ the same checks. The machine form of this table is the JSON Schema at
 `config/schemas/config.v1.schema.json`; the doccheck gate validates the example config
 against it, and the strict loader in Phase 2 is generated from the same schema.
 
+Two classes of violation are checked against more than the file, and both are failures at
+load time rather than a feature that quietly does nothing:
+
+- Detector keys. A `modes` key that is not a registered detector id, and a `thresholds` key
+  that the per-detector manifest does not declare for that detector, are rejected. A typo
+  would otherwise load as the `observe` default and read as a detector that never fires.
+- Dependent secrets. A `webhook` or `dashboard` that is `enabled` while the environment
+  variable its `urlEnv` or `secretEnv` names is unset or empty is rejected, so a sink
+  enabled in the file cannot stay off at runtime. Secret values are never read into a
+  finding, a log line, or a report; only the presence of the variable is.
+
+An operator runs the same checks before deploying, on the machine that will run the mod:
+`make verify-config FILE=<path>` ([tools/README.md](../tools/README.md) -> `config_check.py`).
+It prints the effective config's hash, the digest every evidence record, the health report,
+and the hook manifest carry. `--skip-env` checks the file alone, for a config being reviewed
+where the serving environment is not the one running the check.
+
 | Key | Type | Default | Range / enum | Meaning |
 |---|---|---|---|---|
 | `schemaVersion` | int | 1 | exactly 1 | Reject otherwise |
 | `enabled` | bool | true | - | Master switch; `false` behaves like emergency disable at startup |
-| `emergencyDisable` | bool | false | - | Revert every detector to observe without restart; operator-only, audited |
+| `emergencyDisable` | bool | false | - | Loaded true, every detector starts at `observe`. At runtime the same state is reached with `sg emergency-disable`, which is operator-only and audited |
 | `buildPin.buildId` | string | `3.2.0-b9` | exact match | Pinned game build; other builds load with all failing hooks disabled (observe-only) |
 | `buildPin.policy` | string | `observe-else` | `observe-else` only in v1 | Behavior on build mismatch |
 | `modes.<detectorId>` | string | `observe` | `observe` / `correct` / `enforce` | Per-detector mode; raising requires the phase gates in POLICY.md, never just config editing |

@@ -22,6 +22,14 @@
   and HMAC key are backed up separately. Self-tests run under `make test-tools`.
 - `replay_contract_check.py`: semantic contract checks over design-time replay traces;
   `make exercise` runs it on the shipped inventory stack vector.
+- `config_check.py`: validates an operator's own config file the way the strict Phase 2
+  loader is specified to: JSON Schema contract (unknown keys, types, enums, ranges),
+  `modes` keys against the detector registry, `thresholds` keys and values against
+  `config/detector-config-manifest.json`, and an enabled `webhook` or `dashboard` whose
+  named environment variable is unset. `--show-effective` prints the effective (defaulted)
+  config and the SHA-256 written into evidence records, the health report, and the hook
+  manifest. Secret values are never read: the config names the env var, the tool checks only
+  that it is set. `make verify-config FILE=...`; self-tests run under `make test-tools`.
 - `doccheck.py`: docs quality gate (`make check`): em dashes, internal links, TODO checkbox
   format, detector-spec validity (including the D-07/D-15 ceiling rule), registry sync,
   config-example/schema/manifest cross-checks, JSON Schema validation of the shipped

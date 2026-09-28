@@ -13,10 +13,12 @@
       "const": 1
     },
     "enabled": {
+      "description": "Master switch; false loads every detector at observe, the config-file equivalent of emergencyDisable.",
       "type": "boolean",
       "default": true
     },
     "emergencyDisable": {
+      "description": "Loaded true, every detector starts at observe; the audited runtime equivalent is the sg emergency-disable console command.",
       "type": "boolean",
       "default": false
     },

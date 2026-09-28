@@ -505,7 +505,7 @@ def _thresholds_by_key(thresholds: object) -> dict[str, Json]:
     }
 
 
-def _manifest_errors(example: Json, out: list[str]) -> None:
+def _manifest_errors(example: Json, out: list[str], label: str = "example config") -> None:
     """Manifest metadata must track the spec, and both must cover the example config.
 
     Like every check here, a hand-edited manifest or spec is reported into the
@@ -556,7 +556,7 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
     for did, keys in example.get("thresholds", {}).items():
         known = manifest_keys.get(did, {})
         out.extend(
-            f"example config threshold {did}.{key} not in generated manifest"
+            f"{label} threshold {did}.{key} not in generated manifest"
             for key in keys
             if key not in known
         )
@@ -564,19 +564,20 @@ def _manifest_errors(example: Json, out: list[str]) -> None:
             error
             for key, value in keys.items()
             if (threshold := known.get(key)) is not None
-            for error in _threshold_value_errors(did, key, value, threshold)
+            for error in _threshold_value_errors(did, key, value, threshold, label)
         )
 
 
-def _threshold_value_errors(did: str, key: str, value: Json, threshold: Json) -> list[str]:
-    """A threshold in the example config must satisfy the type and range its manifest entry
-    declares.
+def _threshold_value_errors(
+    did: str, key: str, value: Json, threshold: Json, label: str = "example config"
+) -> list[str]:
+    """A configured threshold must satisfy the type and range its manifest entry declares.
 
     The strict Phase 2 loader enforces exactly this rule (SCHEMAS.md -> Per-detector config
     manifest); the gate enforces it now, so an out-of-range value never ships in the example
-    an operator copies.
+    an operator copies. tools/config_check.py runs it over an operator's own config file.
     """
-    path = f"example config threshold {did}.{key}"
+    path = f"{label} threshold {did}.{key}"
     ttype = threshold.get("type")
     if ttype == "int" and (not isinstance(value, int) or isinstance(value, bool)):
         return [f"{path}: {value!r} is not an int"]

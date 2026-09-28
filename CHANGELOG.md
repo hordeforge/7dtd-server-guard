@@ -36,6 +36,22 @@ above reserves minor bumps for that.
 
 ### Added
 
+- `tools/config_check.py`, driven by `make verify-config FILE=<file> [SKIP_ENV=1]`:
+  validates an operator's own config file before it is deployed, with the same rules
+  the strict Phase 2 loader is specified from. It rejects unknown keys, types, enums,
+  and ranges from `config.v1.schema.json`, a `modes` key that is not a registered
+  detector id, a `thresholds` key the generated manifest does not declare for that
+  detector, a threshold value outside its declared range, and a `webhook` or
+  `dashboard` that is `enabled` while the environment variable its `urlEnv` or
+  `secretEnv` names is unset or empty. `--show-effective` prints the effective
+  (defaulted) config and the SHA-256 that evidence records, the health report, and the
+  hook manifest carry. Secret values are never read: only the presence of the named
+  variable. Self-tests run under `make test-tools`. The shipped example was gated by
+  `make check`; an operator's file was gated by nothing.
+- `sg config show` and `sg config check [path]` in `docs/OPERATIONS.md`: the effective
+  config as loaded, under the recorded `configHash`, and a validation pass that reports
+  what startup would refuse without reloading.
+
 - `tools/fuzz_detector_spec.py`: a seeded, structure-aware fuzzer over
   `tools/detector_spec.yaml` and both of its consumers (doccheck's spec pass and the
   renderers in `render_detectors.py`). It mutates the spec into YAML documents and
@@ -82,6 +98,12 @@ above reserves minor bumps for that.
 
 ### Changed
 
+- `docs/SCHEMAS.md` states the two config rules the file alone cannot enforce: a
+  detector id or threshold key outside the registry and the manifest is rejected
+  rather than loaded as an `observe` default, and a sink enabled with its environment
+  variable unset is a load failure rather than a feature that stays off. Path keys
+  resolve against the host's mod data root, not against a data root "the operator sets
+  in the config", which no schema key sets.
 - `ruff.toml` selects the `SIM` and `S` rule groups, so `make lint` now covers
   control-flow simplification and the suspicious-construct checks (bandit's
   subprocess and weak-PRNG rules included). The five seeded fuzzer `random.Random`
