@@ -42,6 +42,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import pathlib
 import shutil
 import sys
@@ -60,6 +61,11 @@ MANIFEST_VERSION = 2
 # The archive-name stamp: the format the writer emits and the two readers that
 # read a stamp back out of a manifest have to agree on, so it is stated once.
 STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+# The name an archive directory carries in its root, before the stamp. Every
+# staging directory is named from it, so the sweep below can match the leftovers
+# of a run that died at any second rather than only at this export's own.
+ARCHIVE_DIR_PREFIX = "evidence-"
+STAGING_PREFIX = f".staging-{ARCHIVE_DIR_PREFIX}"
 # The manifest's self-digest field, and the canonicalization the digest covers:
 # every field except the digest itself, so a byte edited anywhere in the manifest
 # (a source path, the creation stamp, a count) is detectable. The per-file
@@ -279,16 +285,21 @@ def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
     return []
 
 
-def _sweep_stale_staging(out_root: pathlib.Path, prefix: str, keep: pathlib.Path) -> None:
+def _sweep_stale_staging(out_root: pathlib.Path, keep: pathlib.Path) -> None:
     """Remove staging directories a dead run left behind, this run's excepted.
 
     Each export stages into its own directory, so a concurrent export cannot
     delete a copy in progress. The leftovers of a killed run would otherwise
-    accumulate in the archive root, so a run older than
-    STALE_STAGING_AGE_SECONDS is swept before the next export claims the name.
+    accumulate in the archive root, each holding a full copy of the evidence
+    stream, so a run older than STALE_STAGING_AGE_SECONDS is swept.
+
+    The match is on STAGING_PREFIX alone, not on one archive's name: an archive
+    name carries a one-second stamp, so a match on it would only ever see the
+    leftovers of a run that died in the same second as this one, and every other
+    killed run would stay in the archive root forever.
     """
     cutoff = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS
-    for path in out_root.glob(f"{prefix}*"):
+    for path in out_root.glob(f"{STAGING_PREFIX}*"):
         if path == keep or not path.is_dir():
             continue
         try:
@@ -318,16 +329,22 @@ def export(
     if errs:
         return errs
 
-    dest = out_root / f"evidence-{stamp if stamp is not None else utc_stamp()}"
+    dest = out_root / f"{ARCHIVE_DIR_PREFIX}{stamp if stamp is not None else utc_stamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         return redo_errors(dest, members)
-    prefix = f".staging-{dest.name}-"
-    staging = pathlib.Path(tempfile.mkdtemp(prefix=prefix, dir=out_root))
-    _sweep_stale_staging(out_root, prefix, keep=staging)
+    # The stamp is kept in the directory name so a human reading the root can tell
+    # which run a leftover belongs to; the sweep matches on STAGING_PREFIX, which
+    # carries no stamp, so it reaches the leftovers of every earlier run.
+    staging = pathlib.Path(
+        tempfile.mkdtemp(
+            prefix=f"{STAGING_PREFIX}{dest.name.removeprefix(ARCHIVE_DIR_PREFIX)}-", dir=out_root
+        )
+    )
+    _sweep_stale_staging(out_root, keep=staging)
     try:
         staging_errors = stage(
-            staging, source, members, index_name, dest.name.removeprefix("evidence-")
+            staging, source, members, index_name, dest.name.removeprefix(ARCHIVE_DIR_PREFIX)
         )
         if staging_errors:
             return staging_errors
@@ -801,23 +818,69 @@ def _self_test_unreadable_files() -> list[str]:
     return errs
 
 
+def _self_test_stale_staging(source: pathlib.Path) -> list[str]:
+    """A killed run's staging copy is swept by the next export, whatever second it
+    died in, and a concurrent run's is not.
+
+    The staging directory holds a full copy of the evidence stream, so one left in
+    the archive root per killed run is a per-death leak in a root that is otherwise
+    only ever read. A run that dies in the same second as a later export is swept by
+    a name-keyed match; a run that dies in any other second never is.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-staging"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        out_root = scratch / "archives"
+        out_root.mkdir(parents=True, exist_ok=True)
+        stale = out_root / f"{STAGING_PREFIX}20260719T000000Z-abc"
+        stale.mkdir()
+        (stale / "half-copied-segment.jsonl").write_text('{"partial": true}\n', encoding="utf-8")
+        # A second whose name no later export will ask for again, aged past the
+        # window the sweep compares against.
+        old = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS - 60
+        os.utime(stale, (old, old))
+        running = out_root / f"{STAGING_PREFIX}20991231T235959Z-live"
+        running.mkdir()
+        # A concurrent export stages right now, so its directory is younger than
+        # the window and has to survive the sweep.
+        os.utime(running)
+
+        if errs_found := export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
+            errs.append(
+                f"self-test: could not export into a root with staging leftovers: {errs_found}"
+            )
+        if stale.exists():
+            errs.append(f"self-test: a dead run's staging directory {stale.name} was not swept")
+        if not running.exists():
+            errs.append(
+                f"self-test: the sweep deleted the staging directory of a live run: {running}"
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     """Exercise the paths that decide whether a backup is trustworthy."""
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test"
     shutil.rmtree(scratch, ignore_errors=True)
-    source = scratch / "source"
-    out_root = scratch / "archives"
-    seg2 = write_sample_stream(source)
-    errs, archives = _self_test_happy_path(source, out_root)
-    errs += _self_test_refusal(scratch, source, out_root)
-    errs += _self_test_member_names()
-    errs += _self_test_manifest_bytes()
-    errs += _self_test_record_count()
-    errs += _self_test_unreadable_files()
-    if archives:
-        errs += _self_test_case_variant_name(archives[0])
-        errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
-    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        source = scratch / "source"
+        out_root = scratch / "archives"
+        seg2 = write_sample_stream(source)
+        errs, archives = _self_test_happy_path(source, out_root)
+        errs += _self_test_refusal(scratch, source, out_root)
+        errs += _self_test_stale_staging(source)
+        errs += _self_test_member_names()
+        errs += _self_test_manifest_bytes()
+        errs += _self_test_record_count()
+        errs += _self_test_unreadable_files()
+        if archives:
+            errs += _self_test_case_variant_name(archives[0])
+            errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
     return errs
 
 

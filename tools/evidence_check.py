@@ -68,6 +68,14 @@ SEGMENT_DIGITS = re.compile(r"(\d+)")
 # horizon's memory cost and nothing more. A repeat older than the window is not
 # reported, which is why the window is stated rather than implied.
 DUPLICATE_WINDOW_RECORDS = 65536
+# How many chain errors one segment reports. The walk is streamed so a segment of
+# any size costs one record of memory, and an error list with no bound would take
+# that back: a segment whose links are all wrong yields one message per record, so
+# a large tampered segment would be held in memory and printed in full by the tool
+# an operator runs during an incident. Past the cap the walk continues and counts,
+# and the report says how many findings it left out rather than implying it read
+# everything.
+MAX_REPORTED_CHAIN_ERRORS = 50
 
 
 class RecentEventIds:
@@ -260,13 +268,28 @@ def verify_chain(
     Consumes the iterable once, so a segment can be streamed from disk.
     """
     errs: list[str] = []
+    hidden = 0
+
+    def report(message: str) -> None:
+        """Keep the first MAX_REPORTED_CHAIN_ERRORS findings and count the rest.
+
+        The walk does not stop at the cap: the record count and the last hash are
+        what the cross-segment link is checked against, so a capped walk that gave
+        up early would report a break that is not there.
+        """
+        nonlocal hidden
+        if len(errs) < MAX_REPORTED_CHAIN_ERRORS:
+            errs.append(message)
+        else:
+            hidden += 1
+
     prev_hash: str | None = None
     first_prev: str | None = None
     count = 0
     for line_no, rec, _raw in records:
         count += 1
         if seen.seen_before(rec["eventId"]):
-            errs.append(
+            report(
                 f"line {line_no}: eventId {rec['eventId']} was already appended earlier in the "
                 f"stream; the same event was written twice (a retry or a replayed append)"
             )
@@ -280,12 +303,16 @@ def verify_chain(
         expected = prev_hash if prev_hash is not None else GENESIS
         actual = rec["chainPrev"]
         if actual != expected:
-            errs.append(
+            report(
                 f"line {line_no}: chainPrev mismatch; expected {expected[:16]}... ("
                 + ("previous record" if prev_hash else "genesis")
                 + f"), got {actual[:16]}..."
             )
         prev_hash = record_hash(rec)
+    if hidden:
+        errs.append(
+            f"{hidden} further chain error(s) not shown (capped at {MAX_REPORTED_CHAIN_ERRORS})"
+        )
     return SegmentChain(errs, count, first_prev, prev_hash)
 
 
@@ -737,6 +764,7 @@ def _verify_dir_tests() -> list[str]:
         _case_unlinked,
         _case_detached,
         _case_empty_segment,
+        _case_error_cap,
         _case_index_mismatch,
         _case_unreadable_index,
         _case_absent_index,
@@ -811,6 +839,31 @@ def _case_empty_segment(root: str) -> list[str]:
         *_expect_reported(found, "empty segment", "an empty segment"),
         *_expect_reported(found, "yielded no records", "an empty predecessor segment"),
     ]
+
+
+def _case_error_cap(root: str) -> list[str]:
+    """A segment whose every link is wrong reports a bounded number of findings.
+
+    Evidence segments have no size bound and the chain walk is streamed, so an
+    error list without a bound would put one message per record in memory and in
+    the report. The walk still runs to the end of the segment (the cross-segment
+    link is checked against its last hash), and the report names how many findings
+    it left out instead of reading as a complete account.
+    """
+    directory = _segment_dir(root)
+    stream = _stream(MAX_REPORTED_CHAIN_ERRORS + 20)
+    # Every record after the first points at nothing, so every line mismatches.
+    stream[1:] = [{**rec, "chainPrev": "0" * SHA256_HEX_LEN} for rec in stream[1:]]
+    _write_segment(directory, "evidence-2026-09-28-1.jsonl", stream)
+    found = verify_dir(directory, "segment-index.json")
+    if len(found) > MAX_REPORTED_CHAIN_ERRORS + 1:
+        return [
+            f"self-test: a wholly broken segment reported {len(found)} findings, "
+            f"which is not bounded: {found[:3]}"
+        ]
+    return _expect_reported(
+        found, "further chain error", "a fully broken segment's hidden findings"
+    )
 
 
 def _case_index_mismatch(root: str) -> list[str]:
