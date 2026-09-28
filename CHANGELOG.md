@@ -36,6 +36,13 @@ above reserves minor bumps for that.
 
 ### Added
 
+- A doccheck rule that the Makefile's test registries cover the tree: every
+  `tools/fuzz_*.py` is in `FUZZERS` and run by `make test-tools` in that order, and every
+  `tools/*.py` exposing `--self-test` is run by `make test-tools` or `make exercise`. A
+  harness added to `tools/` without joining `FUZZERS` used to pass `make ci` without ever
+  running, and `make fuzz FUZZ=` could not address a seed the full run never produced.
+  `tools/doccheck.py --self-test` covers the rule and joins `SELF_TESTS`, so the gate now
+  carries a self-test like every other tool in the registry.
 - `tools/sbom.py`, driven by `make sbom [OUT=dist/sbom.cdx.json]`: renders `uv.lock` as a
   CycloneDX 1.6 bill of materials, so a vulnerability scanner or an auditor can read what
   a release contains without running uv. One component per locked package, carrying the

@@ -31,6 +31,8 @@ Checks:
       a detector-supplied value bag.
   14. The backup and restore path stays wired: the archive targets exist in the Makefile,
       run under test-tools, and docs/OPERATIONS.md states RPO/RTO and a restore drill.
+  15. Every shipped fuzzer and every tool exposing `--self-test` is reachable from a
+      make target, and the FUZZERS registry matches the order `make test-tools` runs.
 
 Exit code 0 when clean; 1 otherwise. The one-line summary goes to stdout and the
 per-check failure detail to stderr, so a redirected run keeps the verdict on one
@@ -62,6 +64,9 @@ import render_detectors
 Json = Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# tools/fuzz_common.py is the harness library the fuzzers import, not a harness
+# the Makefile runs, so it is the one tools/fuzz_*.py that is not a registry entry.
+FUZZ_SHARED_MODULES = frozenset({"fuzz_common"})
 # Directories that hold nothing this repo ships: version control, the local
 # environment, tool caches, and the scratch tree the workspace rules tell
 # contributors to work in. Their contents are not docs and must not fail the gate.
@@ -1402,6 +1407,18 @@ def check_required_docs() -> list[str]:
     return [d for d in REQUIRED_DOCS if not (ROOT / d).exists()]
 
 
+def _makefile_registry(makefile: str, name: str) -> list[str]:
+    """The whitespace-separated entries of a `NAME := a b c` Makefile variable."""
+    match = re.search(rf"^{name}\s*:?=\s*(.*(?:\n[ \t]+.*)*)", makefile, re.MULTILINE)
+    return match.group(1).split() if match else []
+
+
+def _makefile_target(makefile: str, target: str) -> str:
+    """A target and its recipe: every line up to the next `name:` line."""
+    match = re.search(rf"^{target}:.*(?:\n(?![\w-]+:).*)*", makefile, re.MULTILINE)
+    return match.group(0) if match else ""
+
+
 def _makefile_runs_self_test(makefile: str, tool: str) -> bool:
     """Whether `make test-tools` runs the given tool's `--self-test`.
 
@@ -1409,11 +1426,69 @@ def _makefile_runs_self_test(makefile: str, tool: str) -> bool:
     test-tools iterates it, so a tool that is in neither, or in a registry the
     target no longer loops over, is a self-test that silently stopped running in CI.
     """
-    registry = re.search(r"^SELF_TESTS\s*:?=\s*(.*(?:\n[ \t]+.*)*)", makefile, re.MULTILINE)
-    if registry is None or tool not in registry.group(1).split():
-        return False
-    target = re.search(r"^test-tools:.*(?:\n(?![\w-]+:).*)*", makefile, re.MULTILINE)
-    return target is not None and "$(SELF_TESTS)" in target.group(0)
+    return tool in _makefile_registry(makefile, "SELF_TESTS") and (
+        "$(SELF_TESTS)" in _makefile_target(makefile, "test-tools")
+    )
+
+
+def _harness_registry_issues(
+    makefile: str, harnesses: list[str], self_test_tools: list[str]
+) -> list[str]:
+    """Whether every shipped harness and self-test is reachable from a make target.
+
+    `make test-tools` names its fuzzers one line at a time and `FUZZERS` is the
+    registry `make fuzz FUZZ=` addresses, so the two drift apart silently: a new
+    harness added to `tools/` and not to the registry passes `make check` and
+    `make ci` without ever running, and a fuzzer dropped from the recipe keeps a
+    registry entry that re-runs a name the gate no longer covers. A tool that
+    grows a `--self-test` flag lands in the same silence when no target calls it.
+    """
+    registered = _makefile_registry(makefile, "FUZZERS")
+    out = [
+        f"tools/fuzz_{name}.py is in no FUZZERS registry, so no target runs it"
+        for name in harnesses
+        if name not in registered
+    ]
+    out += [
+        f"Makefile: FUZZERS lists '{name}', which has no tools/fuzz_{name}.py"
+        for name in registered
+        if name not in harnesses
+    ]
+    run_order = re.findall(r"tools/fuzz_(\w+)\.py", _makefile_target(makefile, "test-tools"))
+    if run_order != registered:
+        out.append(
+            "Makefile: `make test-tools` runs "
+            f"[{' '.join(run_order) or 'nothing'}] "
+            f"against a FUZZERS registry of [{' '.join(registered)}]"
+        )
+    exercise = _makefile_target(makefile, "exercise")
+    out += [
+        f"tools/{name}.py exposes --self-test but no target runs it"
+        for name in self_test_tools
+        if not _makefile_runs_self_test(makefile, name)
+        and f"tools/{name}.py --self-test" not in exercise
+    ]
+    return out
+
+
+def check_test_harness_registry() -> list[str]:
+    """The Makefile's test registries must cover every harness and self-test on disk.
+
+    Read from the tree rather than from a list, so a harness added to `tools/` is
+    covered the moment it lands. `fuzz_common.py` is the shared harness library
+    the others import, not a runnable harness, so it is not a registry entry.
+    """
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    tools = ROOT / "tools"
+    harnesses = sorted(
+        p.stem.removeprefix("fuzz_")
+        for p in tools.glob("fuzz_*.py")
+        if p.stem not in FUZZ_SHARED_MODULES
+    )
+    self_test_tools = sorted(
+        p.stem for p in tools.glob("*.py") if '"--self-test"' in p.read_text(encoding="utf-8")
+    )
+    return _harness_registry_issues(makefile, harnesses, self_test_tools)
 
 
 def check_backup_runbook() -> list[str]:
@@ -1472,11 +1547,85 @@ def _run_check(name: str, check: Callable[[], list[str]]) -> tuple[str, list[str
         return name, [f"{type(exc).__name__}: {exc} (check aborted; its input may be malformed)"]
 
 
+def _harness_registry_self_test() -> list[str]:
+    """The registry check must fire on each drift it exists to catch.
+
+    A gate that only ever sees the clean tree proves nothing, so each case below
+    breaks one way a registry can drift from the tree and names the issue the
+    check is expected to raise for it.
+    """
+    clean = (
+        "FUZZERS := a b\n"
+        "SELF_TESTS := t\n"
+        "test-tools: guard-python\n"
+        "\t@set -e; for tool in $(SELF_TESTS); do \\\n"
+        "\t  $(UV) python tools/$$tool.py --self-test; \\\n"
+        "\tdone\n"
+        "\t$(UV) python tools/fuzz_a.py\n"
+        "\t$(UV) python tools/fuzz_b.py\n"
+        "\n"
+        "exercise: guard-python\n"
+        "\t$(UV) python tools/replay_contract_check.py --self-test\n"
+    )
+    errs: list[str] = []
+    # The passing case: both harnesses are registered and run in registry order,
+    # and both self-tests are reached, one through the loop and one via exercise.
+    if issues := _harness_registry_issues(clean, ["a", "b"], ["t", "replay_contract_check"]):
+        errs.append(f"self-test: a consistent registry was reported broken: {issues}")
+    # Each case is a label, the makefile it runs against, the harnesses and
+    # self-test tools it claims the tree holds, and a fragment the raised issue
+    # must carry.
+    cases: tuple[tuple[str, str, list[str], list[str], str], ...] = (
+        ("a harness in no FUZZERS registry", clean, ["a", "b", "c"], [], "fuzz_c.py"),
+        (
+            "a FUZZERS entry with no harness",
+            clean.replace("a b\n", "a b c\n", 1),
+            ["a", "b"],
+            [],
+            "c",
+        ),
+        (
+            "a fuzzer run out of registry order",
+            clean.replace(
+                "fuzz_a.py\n\t$(UV) python tools/fuzz_b.py",
+                "fuzz_b.py\n\t$(UV) python tools/fuzz_a.py",
+            ),
+            ["a", "b"],
+            [],
+            "registry of [a b]",
+        ),
+        (
+            "a --self-test no target runs",
+            clean,
+            ["a", "b"],
+            ["t", "replay_contract_check", "orphan"],
+            "orphan",
+        ),
+    )
+    for label, makefile, harnesses, self_tests, expected in cases:
+        issues = _harness_registry_issues(makefile, harnesses, self_tests)
+        if not any(expected in issue for issue in issues):
+            errs.append(f"self-test: {label} went unreported, got {issues}")
+    if live := check_test_harness_registry():
+        errs.append(f"self-test: this repository's own registry is inconsistent: {live}")
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.parse_args()
+    ap.add_argument(
+        "--self-test", action="store_true", help="run the docs gate self-tests and exit"
+    )
+    args = ap.parse_args()
+
+    if args.self_test:
+        errs = _harness_registry_self_test()
+        print(f"doccheck self-test: {len(errs)} issue(s)")
+        for err in errs:
+            print("  " + err, file=sys.stderr)
+        return 1 if errs else 0
 
     checks = [
         ("em dashes", check_em_dashes),
@@ -1495,6 +1644,7 @@ def main() -> int:
         ("replay contract", check_replay_contract),
         ("folder structure", check_folder_structure),
         ("backup runbook", check_backup_runbook),
+        ("test harness registry", check_test_harness_registry),
         ("required docs", check_required_docs),
     ]
     failures = dict(_run_check(name, check) for name, check in checks)

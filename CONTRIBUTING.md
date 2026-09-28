@@ -22,6 +22,8 @@ Nothing is installed globally: `make setup` materializes `.venv/` inside the clo
 make setup      # uv sync --frozen, once per clone
 make check      # docs quality gate: run before opening a change
 make lint       # black, ruff, mypy over the whole repository
+make exercise   # replay contract self-tests plus the design-time trace
+make test-tools # self-tests and fuzzers for the shipped tooling (takes minutes)
 make sbom       # CycloneDX 1.6 inventory rendered from uv.lock
 make ci         # everything CI runs, in one local step
 ```
@@ -39,6 +41,29 @@ The two targets are the two halves of `make test-tools`; a fuzzer run covers onl
 fuzzer, so a change to a tool's self-tests needs `make self-test`. Fuzzers are seeded, so
 the `seed=` and `iterations=` a failure reported reproduce it exactly. `make help` lists
 every target.
+
+## Adding a tool, a self-test, or a fuzzer
+
+`make test-tools` names its fuzzers one line at a time and reaches its self-tests through
+the `SELF_TESTS` list, so a new harness has to be registered or it never runs. Both
+registries are the Makefile's `FUZZERS` and `SELF_TESTS` variables:
+
+- A new fuzzer is `tools/fuzz_<name>.py`. Add `<name>` to `FUZZERS` and add
+  `$(UV) python tools/fuzz_<name>.py` to the `test-tools` recipe, in the same position, so
+  `make fuzz FUZZ=<name>` and the CI run address the same harness. `FUZZERS` is ordered
+  because the short-run loop re-runs what the full run reported; a different order in the
+  recipe and the registry is a gate failure.
+- A new negative self-test is a `--self-test` flag on an existing `tools/*.py`. Add the
+  tool's stem to `SELF_TESTS`, which is all the `test-tools` loop needs. `replay_contract_check`
+  is the one tool the `exercise` recipe runs instead, and that placement is accepted.
+
+`make check` reads `tools/` and the Makefile rather than a hand-copied list, so a harness
+or a `--self-test` flag that no target reaches fails the gate instead of passing CI dark.
+`tools/fuzz_common.py` is the shared harness library, not a harness, and is exempt.
+
+Copy the structure of an existing one (`tools/fuzz_evidence_check.py` for a fuzzer,
+`tools/evidence_check.py --self-test` for a self-test); the shape of both is fixed by the
+above and by the arguments the Makefile passes.
 
 ## Generated files
 

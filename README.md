@@ -115,7 +115,7 @@ Loop:
   (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
   checker, detector spec consumers, operator config validator). It takes minutes; while
   editing a single tool, run its two halves on their own.
-- `make self-test TOOL=evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom`:
+- `make self-test TOOL=doccheck|evidence_check|evidence_export|restore_drill|backup_status|config_check|sbom`:
   one tool's negative self-tests, the half of `make test-tools` a `make fuzz FUZZ=` run
   does not cover.
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
@@ -131,7 +131,8 @@ Loop:
   of one commit report the same thing.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the full path, including generated-file
-regeneration and what a change is expected to include.
+regeneration, the `FUZZERS` and `SELF_TESTS` registries a new harness has to join, and what
+a change is expected to include.
 
 The detector spec, data schemas, and methodology are the design contract; see
 [docs/INDEX.md](docs/INDEX.md) for who owns what.

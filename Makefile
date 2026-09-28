@@ -12,8 +12,10 @@ FUZZERS := evidence_check schema_validate replay_trace evidence_export detector_
 
 # Tools carrying negative self-tests, addressable by `make self-test TOOL=<name>`.
 # This list is the registry: `make test-tools` runs every entry, so adding a
-# self-test here is enough to put it in the CI run.
-SELF_TESTS := evidence_check evidence_export restore_drill backup_status config_check sbom
+# self-test here is enough to put it in the CI run. `make check` fails when a
+# tools/*.py exposes --self-test that neither this list nor the exercise recipe
+# runs, so a new self-test cannot be added and left dark.
+SELF_TESTS := doccheck evidence_check evidence_export restore_drill backup_status config_check sbom
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -194,7 +196,7 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        run the replay contract self-tests and validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
-	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, restore_drill, backup_status, config_check)"
+	@echo "  make self-test TOOL=<name>   one tool's negative self-tests ($(SELF_TESTS))"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec, config_check)"
 	@echo "  make sbom [OUT=<file>]  render the CycloneDX 1.6 inventory from uv.lock"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools + sbom)"
