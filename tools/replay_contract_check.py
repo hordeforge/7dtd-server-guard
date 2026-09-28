@@ -1,7 +1,7 @@
 """Exercise design-time replay contracts before the Phase 4 replay harness exists.
 
 Usage:
-  uv run python tools/replay_contract_check.py [--fix-fingerprint]
+  uv run python tools/replay_contract_check.py [--self-test | --fix-fingerprint]
 
 Exit codes: 0 the vector satisfies the contract, 1 the contract failed or a
 fixture could not be read, 2 usage error. The summary goes to stdout and
@@ -17,6 +17,7 @@ import math
 import pathlib
 import re
 import sys
+from collections.abc import Callable
 from typing import Any, NamedTuple, TypeGuard
 
 from evidence_check import record_hash
@@ -321,14 +322,277 @@ def seal_fingerprint(trace: dict[str, Any], text: str) -> str | None:
     return FINGERPRINT_FIELD.sub(rf"\g<1>{digest}\g<2>", text, count=1)
 
 
+def _pristine() -> tuple[dict[str, Any], str]:
+    """The shipped fixture, parsed and as text, the two forms every case starts from."""
+    text = TRACE.read_text(encoding="utf-8")
+    return json.loads(text), text
+
+
+def _put(trace: dict[str, Any], path: tuple[Any, ...], value: Any) -> None:
+    """Assign at a path of dict keys and list indices, so a case reads as the edit it makes."""
+    node: Any = trace
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = value
+
+
+def _reseal(trace: dict[str, Any]) -> None:
+    trace["determinism"]["fingerprint"] = outcome_fingerprint(trace)
+
+
+def self_test() -> list[str]:
+    """Negative cases: every rejection rule, fired once from a mutation of the fixture.
+
+    The default run verifies the shipped fixture, so it proves only that one trace
+    satisfies the contract. A checker that returned no errors for every input would
+    pass it, and so would one whose comparison is inverted. Each case here mutates
+    the real fixture and names the message its rule must produce.
+
+    `reseal` is False for the cases that edit the determinism block or the shape
+    of the trace, where a reseal would raise or mask the message. Everywhere else
+    the mutant is resealed first, so a fingerprint mismatch cannot stand in for
+    the rule under test.
+    """
+    failures: list[str] = []
+    try:
+        trace, text = _pristine()
+    except (OSError, ValueError) as exc:
+        return [f"self-test: shipped fixture unreadable: {exc}"]
+    if errs := contract_errors(trace, {"inventory.stack"}):
+        failures.append(f"self-test: shipped fixture reported errors: {errs}")
+
+    normal_findings = ("cases", 0, "expect", "findingDetectorIds")
+    violation_findings = ("cases", 1, "expect", "findingDetectorIds")
+    cases: tuple[tuple[str, Callable[[dict[str, Any]], None], str, bool], ...] = (
+        (
+            "an unknown detector id",
+            lambda t: _put(t, ("detectorId",), "inventory.stak"),
+            "unknown detector: inventory.stak",
+            True,
+        ),
+        (
+            "a class the sample does not exercise both ways",
+            lambda t: t.__setitem__("cases", [c for c in t["cases"] if c["class"] != "violation"]),
+            "sample must exercise normal and violation classes",
+            True,
+        ),
+        (
+            "an event sequence that repeats",
+            lambda t: t["cases"][0]["events"].append(dict(t["cases"][0]["events"][0], tick=101)),
+            "sequence values must be unique and increasing",
+            True,
+        ),
+        (
+            "a normal case claiming over the stack limit but expecting no finding",
+            lambda t: _put(
+                t, ("cases", 0, "events", 0, "values", "claimedDestinationQuantity"), 51
+            ),
+            "expectation disagrees with stack invariant",
+            True,
+        ),
+        (
+            "a normal case expecting a finding",
+            lambda t: _put(t, normal_findings, ["inventory.stack"]),
+            "normal case must expect no findings",
+            True,
+        ),
+        (
+            "a violation case expecting nothing",
+            lambda t: _put(t, violation_findings, []),
+            "violation must expect exactly inventory.stack",
+            True,
+        ),
+        (
+            "an expectation of operator actions in observe mode",
+            lambda t: _put(t, ("cases", 0, "expect", "actions"), ["warn"]),
+            "observe-mode contract must expect no actions",
+            True,
+        ),
+        (
+            "a work budget one event short",
+            lambda t: _put(t, ("workBudget", "maxEvents"), 1),
+            "trace exceeds maxEvents",
+            True,
+        ),
+        (
+            "a work budget one unit short",
+            lambda t: _put(t, ("workBudget", "maxWorkUnits"), 15),
+            "trace exceeds maxWorkUnits",
+            True,
+        ),
+        (
+            "a work budget of the wrong shape",
+            lambda t: _put(t, ("workBudget",), 32),
+            "trace: workBudget must be an object",
+            True,
+        ),
+        (
+            "a seed that is a bool, not an integer",
+            lambda t: _put(t, ("seed",), True),
+            "trace: seed must be a non-negative integer",
+            True,
+        ),
+        (
+            "a non-finite number in the trace",
+            lambda t: _put(t, ("build",), float("nan")),
+            "non-finite number at trace.build",
+            False,
+        ),
+        (
+            "a trace with no cases",
+            lambda t: t.pop("cases"),
+            "trace: cases must be an array of objects",
+            False,
+        ),
+        (
+            "a case whose events are not objects",
+            lambda t: _put(t, ("cases", 0, "events"), ["not-an-event"]),
+            "events must be an array of objects",
+            True,
+        ),
+        (
+            "a clock origin that matches the instant shape but is not a date",
+            lambda t: _put(t, ("determinism", "startUtc"), "2026-13-45T12:00:00.000Z"),
+            "is not a valid instant",
+            False,
+        ),
+        (
+            "a clock origin without milliseconds",
+            lambda t: _put(t, ("determinism", "startUtc"), "2026-07-21T12:00:00Z"),
+            "must be an ISO-8601 UTC instant with milliseconds",
+            False,
+        ),
+        (
+            "a negative monotonic origin",
+            lambda t: _put(t, ("determinism", "startMonotonicMs"), -1),
+            "determinism.startMonotonicMs must be a non-negative integer",
+            False,
+        ),
+        (
+            "a fingerprint that is not a SHA-256 digest",
+            lambda t: _put(t, ("determinism", "fingerprint"), "not-a-digest"),
+            "64-character lowercase SHA-256 hex digest",
+            False,
+        ),
+        (
+            "a fingerprint that does not match the projection",
+            lambda t: _put(t, ("determinism", "fingerprint"), "0" * 64),
+            "does not match the replay outcome projection",
+            False,
+        ),
+    )
+    for what, mutate, fragment, reseal in cases:
+        mutant = json.loads(json.dumps(trace))
+        mutate(mutant)
+        if reseal:
+            _reseal(mutant)
+        found = contract_errors(mutant, {"inventory.stack"})
+        if not any(fragment in e for e in found):
+            failures.append(f"self-test: {what} went unreported: {found}")
+
+    # The boundary itself: a budget met exactly is a budget that covers the run.
+    exact = json.loads(json.dumps(trace))
+    exact["workBudget"]["maxEvents"] = sum(len(c["events"]) for c in exact["cases"])
+    exact["workBudget"]["maxWorkUnits"] = sum(c["expect"]["maxWorkUnits"] for c in exact["cases"])
+    _reseal(exact)
+    if errs := contract_errors(exact, {"inventory.stack"}):
+        failures.append(f"self-test: a work budget met exactly was rejected: {errs}")
+
+    failures += _non_finite_self_test()
+    failures += _seal_self_test(trace, text)
+    return failures
+
+
+def _non_finite_self_test() -> list[str]:
+    """The non-finite report is capped, and says how many it did not print."""
+    failures: list[str] = []
+    trace: dict[str, Any] = {"cases": [float("nan"), float("inf"), float("-inf")]}
+    for i in range(6):
+        trace[f"k{i}"] = float("nan")
+    found = non_finite_errors(trace)
+    if len([e for e in found if "non-finite number" in e]) != MAX_REPORTED_NON_FINITE:
+        failures.append(f"self-test: non-finite report was not capped: {found}")
+    if not any("4 further non-finite value(s)" in e for e in found):
+        failures.append(f"self-test: the hidden non-finite count was not reported: {found}")
+    if non_finite_errors({}) or non_finite_errors({"a": [1, {"b": 2.0}]}):
+        failures.append("self-test: a finite trace reported non-finite numbers")
+    return failures
+
+
+def _seal_self_test(trace: dict[str, Any], text: str) -> list[str]:
+    """`--fix-fingerprint` replaces the recorded digest and nothing else."""
+    failures: list[str] = []
+    digest = outcome_fingerprint(trace)
+    sealed = seal_fingerprint(trace, text)
+    if sealed is None:
+        return ["self-test: the shipped fixture could not be resealed"]
+    if sealed != text:
+        failures.append("self-test: resealing an up-to-date fixture changed its bytes")
+    # A stale digest is the case the flag exists for: it is replaced in place, and
+    # the result records the current projection.
+    stale = FINGERPRINT_FIELD.sub(r"\g<1>" + "0" * 64 + r"\g<2>", text, count=1)
+    fixed = seal_fingerprint(trace, stale)
+    if fixed is None or fixed != sealed:
+        failures.append("self-test: a stale fingerprint was not resealed to the projection")
+    if fixed is not None and digest not in fixed:
+        failures.append("self-test: the resealed fixture records no digest")
+    if fixed is not None and FINGERPRINT_FIELD.sub("digest", fixed) != FINGERPRINT_FIELD.sub(
+        "digest", text
+    ):
+        failures.append("self-test: resealing changed more than the recorded digest")
+    # A file holding no digest, or more than one, leaves the choice to a human.
+    for body, what in (
+        (FINGERPRINT_FIELD.sub("", text), "a fixture with no fingerprint field"),
+        (text + text, "a fixture with two fingerprint fields"),
+    ):
+        if seal_fingerprint(trace, body) is not None:
+            failures.append(f"self-test: {what} was resealed anyway")
+    return failures
+
+
+def _run_self_test() -> int:
+    """Report the self-test the way a plain run reports a contract failure."""
+    failures = self_test()
+    stream = sys.stdout if not failures else sys.stderr
+    print(f"replay-contract self-test: {len(failures)} issue(s)", file=stream)
+    for failure in failures:
+        print("  " + failure, file=stream)
+    return 1 if failures else 0
+
+
+def _fix_fingerprint(trace: dict[str, Any], text: str) -> int:
+    """`--fix-fingerprint`: reseal the fixture in place, touching only the digest."""
+    if not isinstance(trace.get("determinism"), dict):
+        print("replay-contract: trace has no determinism block to seal", file=sys.stderr)
+        return 1
+    sealed = seal_fingerprint(trace, text)
+    if sealed is None:
+        print(
+            f"replay-contract: {TRACE.relative_to(ROOT)} must hold exactly one "
+            f"fingerprint field to reseal",
+            file=sys.stderr,
+        )
+        return 1
+    # newline="\n": the fixture is tracked with the repo's LF policy
+    # (.gitattributes), so a text-mode write must not re-terminate every line
+    # on a host whose default differs.
+    TRACE.write_text(sealed, encoding="utf-8", newline="\n")
+    print(f"replay-contract: resealed {TRACE.relative_to(ROOT)}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--self-test", action="store_true", help="run the contract self-tests and exit")
     ap.add_argument(
         "--fix-fingerprint",
         action="store_true",
         help="reseal the fixture's determinism.fingerprint from its current projection",
     )
     args = ap.parse_args()
+
+    if args.self_test:
+        return _run_self_test()
 
     try:
         text = TRACE.read_text(encoding="utf-8")
@@ -341,23 +605,7 @@ def main() -> int:
         return 1
 
     if args.fix_fingerprint:
-        if not isinstance(trace.get("determinism"), dict):
-            print("replay-contract: trace has no determinism block to seal", file=sys.stderr)
-            return 1
-        sealed = seal_fingerprint(trace, text)
-        if sealed is None:
-            print(
-                f"replay-contract: {TRACE.relative_to(ROOT)} must hold exactly one "
-                "fingerprint field to reseal",
-                file=sys.stderr,
-            )
-            return 1
-        # newline="\n": the fixture is tracked with the repo's LF policy
-        # (.gitattributes), so a text-mode write must not re-terminate every line
-        # on a host whose default differs.
-        TRACE.write_text(sealed, encoding="utf-8", newline="\n")
-        print(f"replay-contract: resealed {TRACE.relative_to(ROOT)}")
-        return 0
+        return _fix_fingerprint(trace, text)
 
     errors = contract_errors(trace, detector_ids)
     if errors:

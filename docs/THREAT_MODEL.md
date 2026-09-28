@@ -35,7 +35,7 @@ webhook, and no IPC in the tree.
 | `tools/evidence_export.py:342` (`--dir`, `--archive`, `--out`, `--index`, `--self-test`) | Evidence segments, an archive manifest, and the member names inside it | `tools/evidence_export.py:80`, `:216` | `tools/evidence_export.py:139`, `:156`, `:171`, `:181` |
 | `tools/doccheck.py:845` (no flags) | The repository tree itself, treated as content to lint rather than as instructions | `tools/doccheck.py:57`, `:64` | none |
 | `tools/render_detectors.py:197` (`--check`, `--manifest`) | `tools/detector_spec.yaml`, parsed with the safe loader | `tools/render_detectors.py:78` | `tools/render_detectors.py:209`, `:220` |
-| `tools/replay_contract_check.py:244` (no flags; paths are fixed constants) | A committed sample trace | `tools/replay_contract_check.py:26`, `:27`, `:250` | none |
+|  `tools/replay_contract_check.py:581` (`--self-test`, `--fix-fingerprint`; paths are fixed constants) | A committed sample trace | `tools/replay_contract_check.py:31`, `:32`, `:597` | none |
 | `tools/guard_python.py` (no flags) | `.python-version` | `tools/guard_python.py:15` | none |
 | `tools/fuzz_evidence_check.py`, `tools/fuzz_evidence_export.py`, `tools/fuzz_schema_validate.py`, `tools/fuzz_replay_trace.py` (`--iterations`, `--seed`) | Seeds, then self-generated mutations | see each harness | `.scratch` only (`tools/fuzz_evidence_check.py:197`) |
 | `.github/workflows/ci.yml` | The repository and the pull-request diff | `runs on: [push, pull_request]`, `.github/workflows/ci.yml:2` | none |
@@ -46,7 +46,7 @@ These are the properties a reader is most likely to assume and that no shipped c
 
 - No network I/O. There is no `socket`, `urllib`, `requests`, or `http` use in `tools/`.
 - No deserialization of untrusted data. No `pickle`, no `eval`, no `exec`; both YAML readers use
-  the safe loader (`tools/render_detectors.py:78`, `tools/replay_contract_check.py:250`).
+  the safe loader (`tools/render_detectors.py:78`, `tools/replay_contract_check.py:597`).
 - No archive extraction. No `tarfile` or `zipfile`, so the zip-slip class does not exist; the
   archive format is a manifest plus a flat directory, and every member name is validated against
   `[A-Za-z0-9._-]` with `.` and `..` rejected before any filesystem use

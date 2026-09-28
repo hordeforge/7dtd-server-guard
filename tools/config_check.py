@@ -296,17 +296,30 @@ def _secret_env_self_test(example: Json, failures: list[str]) -> None:
     if not any("SERVERGUARD_WEBHOOK_URL" in e for e in errs):
         failures.append(f"webhook enabled with no env var: expected a refusal, got {errs}")
     expect_clean("webhook enabled, env set", webhook, env={"SERVERGUARD_WEBHOOK_URL": "u"})
+    expect_clean("webhook enabled, env pass skipped", webhook, env={}, check_env=False)
     expect_error_empty = check(webhook, env={"SERVERGUARD_WEBHOOK_URL": ""})
     if not expect_error_empty:
         failures.append("webhook enabled with an empty env var: expected a refusal")
-    if any("SERVERGUARD_WEBHOOK_URL" in e for e in check(webhook, env={}, check_env=False)):
-        failures.append("--skip-env: reported a missing environment variable anyway")
 
     dashboard = copy.deepcopy(example)
     dashboard["dashboard"][ENABLED_KEY] = True
     errs = check(dashboard, env={})
     if not any("SERVERGUARD_DASHBOARD_SECRET" in e for e in errs):
         failures.append(f"dashboard enabled with no env var: expected a refusal, got {errs}")
+    expect_clean("dashboard enabled, env set", dashboard, env={"SERVERGUARD_DASHBOARD_SECRET": "s"})
+
+    # The variable name is the operator's to choose, so the report has to name the one
+    # the file asks for: a sink pointed at an unset custom name is refused by that name.
+    renamed = copy.deepcopy(webhook)
+    renamed["webhook"]["urlEnv"] = "OPERATOR_WEBHOOK_URL"
+    errs = check(renamed, env={"SERVERGUARD_WEBHOOK_URL": "u"})
+    if not any("OPERATOR_WEBHOOK_URL" in e for e in errs):
+        failures.append(f"a renamed env var was not named in the refusal: {errs}")
+    expect_clean("renamed env var set", renamed, env={"OPERATOR_WEBHOOK_URL": "u"})
+    undeclared = copy.deepcopy(webhook)
+    undeclared["webhook"]["urlEnv"] = 42
+    if not check(undeclared, env={}):
+        failures.append("a non-string env var name was accepted")
 
 
 def _effective_self_test(example: Json, failures: list[str]) -> None:

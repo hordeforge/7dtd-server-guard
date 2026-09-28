@@ -182,6 +182,11 @@ above reserves minor bumps for that.
 
 ### Added
 
+- `tools/replay_contract_check.py --self-test`, run first by `make exercise`, fires every
+  contract rule from a mutation of the shipped trace and names the message each must
+  produce. The plain run only proves the shipped trace satisfies the contract, so a
+  checker that accepted every trace passed it, as did one whose budget comparison or
+  stack-invariant rule was inverted.
 - `tools/replay_contract_check.py --fix-fingerprint` reseals a trace's recorded
   `determinism.fingerprint` from its current outcome projection, rewriting only the
   digest. Editing a trace without resealing it failed the gate with two digests and no

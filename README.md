@@ -109,7 +109,8 @@ Loop:
 - `make lint`: black, ruff, and mypy over the whole repository.
 - `make detectors`: re-render the detector registry tables and the per-detector config
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
-- `make exercise`: validate the design-time replay contract against the sample trace.
+- `make exercise`: run the replay contract self-tests, then validate the design-time
+  replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
   (evidence parser, archive verifier and exporter, schema validator, replay-trace contract
   checker, detector spec consumers). It takes minutes; while editing a single tool, run its

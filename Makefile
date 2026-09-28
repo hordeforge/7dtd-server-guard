@@ -69,7 +69,10 @@ detectors: guard-python
 	$(UV) python tools/render_detectors.py --manifest
 
 # Exercise the pre-implementation replay contract and representative vertical-slice vector.
+# The self-test runs first: the plain run only proves the shipped trace satisfies the
+# contract, which a checker that accepted every trace would also do.
 exercise: guard-python
+	$(UV) python tools/replay_contract_check.py --self-test
 	$(UV) python tools/replay_contract_check.py
 
 # Tests for the shipped Python tooling: evidence hash-chain and archive
@@ -147,7 +150,7 @@ help:
 	@echo "  make check           run the docs quality gate (tools/doccheck.py)"
 	@echo "  make lint            black, ruff, and mypy over the whole repository"
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
-	@echo "  make exercise        validate the design-time inventory stack replay contract"
+	@echo "  make exercise        run the replay contract self-tests and validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
 	@echo "  make self-test TOOL=<name>   one tool's negative self-tests (evidence_check, evidence_export, config_check)"
 	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, evidence_export, detector_spec)"

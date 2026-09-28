@@ -77,7 +77,8 @@ bug to fix in the same change.
     ├── evidence_export.py       evidence archiver and archive verifier, with the
     │                            restore drill (make export-evidence, make
     │                            verify-archive)
-    ├── replay_contract_check.py replay-trace semantic contract gate (make exercise)
+    ├── replay_contract_check.py replay-trace semantic contract gate and its
+    │                            self-tests (make exercise)
     ├── fuzz_evidence_check.py   seeded fuzzer over the evidence parser (make test-tools)
     ├── fuzz_evidence_export.py  seeded fuzzer over the archive verifier and exporter
     │                            (make test-tools)

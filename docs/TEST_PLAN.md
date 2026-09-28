@@ -100,8 +100,10 @@ asserts correction.
 Exit: every planned detector has its full fixture set; replay is bit-reproducible for a fixed
 seed; the mutation suite is green.
 
-Before the Phase 4 harness exists, `make exercise` validates and semantically exercises the
-inventory-stack contract vector. This proves the fixture contract and expected invariant, not
+Before the Phase 4 harness exists, `make exercise` runs the replay contract self-tests, then
+validates and semantically exercises the inventory-stack contract vector. The self-test fires
+every contract rule from a mutation of the shipped trace, so a checker that accepted every
+trace fails the gate. Together they prove the fixture contract and expected invariant, not
 the live hook or detector implementation.
 
 ### 5. Integration tests
