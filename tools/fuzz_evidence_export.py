@@ -76,6 +76,30 @@ def _write_manifest(archive: pathlib.Path, manifest: object) -> None:
     (archive / ee.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True), "utf-8")
 
 
+def _verifier_view(manifest: object) -> object:
+    """The part of a manifest verify() actually reads: the version, the index file
+    name, and each entry's name, digest, and byte count. The rest (sourceDir,
+    createdUtc, canonicalization, the record counts) is provenance verify() never
+    looks at, so byte damage confined to it leaves the archive exactly as
+    verifiable as it was before."""
+    if not isinstance(manifest, dict):
+        return manifest
+    entries = manifest.get("files")
+    return (
+        manifest.get("manifestVersion"),
+        manifest.get("indexFile"),
+        (
+            [
+                (e.get("name"), e.get("sha256"), e.get("bytes"))
+                for e in entries
+                if isinstance(e, dict)
+            ]
+            if isinstance(entries, list)
+            else entries
+        ),
+    )
+
+
 def _mutate_segment_bytes(rng: random.Random, data: bytes) -> bytes:
     """Damage bytes for certain: a no-op mutation would make the harness assert
     detection of damage that never happened."""
@@ -87,24 +111,6 @@ def _mutate_segment_bytes(rng: random.Random, data: bytes) -> bytes:
     if replacement == data[pos]:
         replacement = (replacement + 1) % 256
     return data[:pos] + bytes([replacement]) + data[pos + 1 :]
-
-
-def _flip_digest_byte(rng: random.Random, data: bytes) -> bytes | None:
-    """Flip one hex digit of the manifest's first `sha256` value, or None if absent.
-
-    A flip anywhere in the manifest can land in a descriptive string (the
-    canonicalization note, the source path) and leave a manifest verify()
-    rightly accepts; inside the digest, any change disagrees with the archive
-    bytes and must be caught.
-    """
-    key = data.find(b'"sha256"')
-    if key == -1:
-        return None
-    value = data.find(b'"', key + 8)
-    if value == -1:
-        return None
-    pos = value + 1 + rng.randrange(64)
-    return data[:pos] + bytes([data[pos] ^ 0x01]) + data[pos + 1 :]
 
 
 def _damage_archive(
@@ -121,10 +127,15 @@ def _damage_archive(
         _write_manifest(archive, mut.mutate(_read_manifest(archive)))
     elif rng.random() < P_MUTATE_MANIFEST_BYTES:
         path = archive / ee.MANIFEST_NAME
-        flipped = _flip_digest_byte(rng, path.read_bytes())
-        if flipped is not None:
-            path.write_bytes(flipped)
-            must_fail = True
+        before = _read_manifest(archive)
+        path.write_bytes(_mutate_segment_bytes(rng, path.read_bytes()))
+        # A flipped byte inside a field verify() never reads (the source path, the
+        # canonicalization note) leaves the archive exactly as verifiable as it
+        # was, so there is nothing for verify() to detect. Only damage that
+        # changes what the manifest says about the archive, or that makes it
+        # unreadable, is damage the verifier is required to catch.
+        must_fail = _verifier_view(_read_manifest(archive)) != _verifier_view(before)
+        if must_fail:
             damage.append("manifest-bytes")
 
     seg = archive / "evidence-2026-07-21-000000.jsonl"
@@ -172,8 +183,11 @@ def check_verify(tmp: pathlib.Path, rng: random.Random, mut: Mutator) -> bool:
     _valid_stream(archive)
     must_fail, damage = _damage_archive(archive, rng, mut)
 
-    first = ee.verify(archive)
-    second = ee.verify(archive)
+    try:
+        first = ee.verify(archive)
+        second = ee.verify(archive)
+    except Exception as exc:
+        raise InvariantBroken(f"verify() raised {type(exc).__name__}: {exc}") from exc
     if first != second:
         raise InvariantBroken("verify() is not deterministic on the same archive")
     if not all(isinstance(e, str) for e in first):

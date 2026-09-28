@@ -101,6 +101,33 @@ class RecentEventIds:
 
 # Segment index file name inside --dir when --index is not given.
 DEFAULT_INDEX = "segment-index.json"
+# Longest file name accepted from a directory or a manifest. The limit is in bytes,
+# which is what the filesystem counts, and the ASCII allowlist below makes a
+# character count and a byte count the same number, so a hostile name cannot reach
+# the filesystem as a path the OS rejects (ENAMETOOLONG) instead of being reported.
+MAX_FILE_NAME_LEN = 128
+# The characters a name may be built from. `str.isalnum()` is not this: it accepts
+# every Unicode letter, digit, and numeric form, so a fullwidth or Arabic-Indic
+# spelling of a segment name would pass a check that reads as ASCII and resolve to
+# a different file from the one the operator sees. Every name this repo writes is
+# ASCII, so nothing legitimate is lost.
+FILE_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+
+def valid_file_name(name: object) -> bool:
+    """True when `name` is a plain file name that can be joined onto a directory.
+
+    A name reaching the filesystem from a CLI flag or a manifest is untrusted text:
+    `directory / name` resolves an absolute name to itself and walks out of the
+    directory on a `..` segment, so both are rejected here rather than joined.
+    The allowlist admits no path separator, which is what makes both impossible.
+    """
+    return (
+        isinstance(name, str)
+        and 0 < len(name) <= MAX_FILE_NAME_LEN
+        and name not in (".", "..")
+        and all(c in FILE_NAME_CHARS for c in name)
+    )
 
 
 def _reject_non_finite(token: str) -> float:
@@ -136,13 +163,11 @@ def _parse_line(name: str, line_no: int, line: str) -> Record:
     try:
         rec = json.loads(line, parse_constant=_reject_non_finite)
     except ValueError as exc:
-        # JSONDecodeError and the non-finite hook both land here. The hook runs
-        # inside json.loads, so it cannot know which segment line it came from.
+        # ValueError, not just JSONDecodeError: the parse_constant hook runs
+        # inside json.loads, so it cannot know which segment line it came from,
+        # and a NaN/Infinity literal must be reported with the same file:line
+        # context as any other bad line rather than escaping uncontextualized.
         raise ValueError(f"{name}:{line_no}: unparseable JSON: {exc}") from exc
-    except ValueError as exc:
-        # The parse_constant hook raises a bare ValueError; every error out of a
-        # segment line names file:line, so re-wrap it with that context.
-        raise ValueError(f"{name}:{line_no}: {exc}") from exc
     if not isinstance(rec, dict):
         raise ValueError(f"{name}:{line_no}: record is not an object")
     for field in ("schemaVersion", "type", "eventId", "chainPrev"):
@@ -230,7 +255,8 @@ def verify_chain(
 
 def load_index(index_path: pathlib.Path) -> tuple[dict[str, Any] | None, list[str]]:
     """Read the optional segment index. Returns (index, errors); index is None when absent
-    or unusable."""
+    or unusable. The caller owns the join onto the evidence directory and is
+    responsible for the name; see verify_dir."""
     if not index_path.exists():
         return None, []
     name = index_path.name
@@ -267,6 +293,11 @@ def _index_errors(
 
 
 def verify_dir(evidence_dir: pathlib.Path, index_name: str) -> list[str]:
+    # The index name is joined onto the evidence directory below, and a name that
+    # is absolute or walks up with `..` resolves outside it: the verifier would
+    # then read, or archive, a file that is not part of this evidence stream.
+    if not valid_file_name(index_name):
+        return [f"--index {index_name!r} is not a plain file name inside the evidence directory"]
     segments = sorted(evidence_dir.glob("evidence-*.jsonl"), key=segment_sort_key)
     if not segments:
         return [f"no evidence-*.jsonl segments found in {evidence_dir}"]
@@ -479,6 +510,7 @@ def self_test() -> list[str]:
     else:
         errs.append("self-test: canonical serialized a NaN")
     errs += _dir_self_test(recs)
+    errs += _index_name_test(recs)
     errs += _sample_chain_test()
     errs += _verify_dir_tests()
     _unicode_self_test(errs)
@@ -553,6 +585,34 @@ def _dir_self_test(recs: list[Record]) -> list[str]:
             errs.append(f"self-test: malformed index segments was not reported: {found}")
         if any("does not match files on disk" in e for e in found):
             errs.append(f"self-test: malformed index was reported as a file mismatch: {found}")
+    return errs
+
+
+def _index_name_test(recs: list[Record]) -> list[str]:
+    """--index names a file inside --dir, so a name that resolves outside it is refused.
+
+    `dir / name` resolves an absolute name to itself and walks out of the directory
+    on a `..` segment, so an unchecked name would have the verifier read, and the
+    exporter archive, a file that is not part of this evidence stream.
+    """
+    errs: list[str] = []
+    SCRATCH.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="evidence-self-test-", dir=SCRATCH) as td:
+        run = pathlib.Path(td) / "run"
+        run.mkdir()
+        _write_segment(run, "evidence-2026-09-28-1.jsonl", [recs[0]])
+        outside = pathlib.Path(td) / "not-the-index.json"
+        outside.write_text(json.dumps({"segments": []}), encoding="utf-8")
+        for name, what in (
+            ("../not-the-index.json", "a parent-relative index name"),
+            (str(outside), "an absolute index name"),
+        ):
+            found = verify_dir(run, name)
+            if not any("not a plain file name" in e for e in found):
+                errs.append(f"self-test: {what} was accepted: {found}")
+        # The default name is a plain file name, and the same run with it verifies.
+        if found := verify_dir(run, DEFAULT_INDEX):
+            errs.append(f"self-test: a directory with no index was rejected: {found}")
     return errs
 
 

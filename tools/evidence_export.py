@@ -47,19 +47,7 @@ ManifestFile = dict[str, Any]
 MANIFEST_NAME = "archive-manifest.json"
 MANIFEST_VERSION = 1
 SEGMENT_GLOB = "evidence-*.jsonl"
-DEFAULT_INDEX_NAME = "segment-index.json"
-# Longest file name accepted from a manifest, so a hostile name cannot reach the
-# filesystem as a path the OS rejects (ENAMETOOLONG) instead of being reported.
-# The limit is in bytes, which is what the filesystem counts, and the ASCII
-# allowlist below makes a character count and a byte count the same number.
-MAX_MEMBER_NAME_LEN = 128
-# The characters a manifest may name a member with. `str.isalnum()` is not this:
-# it accepts every Unicode letter, digit, and numeric form, so a fullwidth or
-# Arabic-Indic spelling of a segment name would pass a check that reads as
-# ASCII and reach the filesystem as a different file from the one the operator
-# sees. Members are written by this tool with ASCII names, so nothing legitimate
-# is lost.
-MEMBER_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+DEFAULT_INDEX_NAME = ec.DEFAULT_INDEX
 # Read/write block size for copying and hashing, so archive size does not set the
 # process's memory ceiling.
 COPY_CHUNK_BYTES = 1 << 20
@@ -199,17 +187,14 @@ def valid_member_name(name: object) -> bool:
     """A manifest names its files by plain file name. The name comes from an
     untrusted manifest and reaches the filesystem, so only a bounded,
     separator-free, ASCII name is accepted; anything else is reported, never
-    passed to open(). The bound is on bytes, not characters, and the ASCII
-    allowlist makes the two the same count: a name of multi-byte characters
-    passes a character count and still exceeds what the filesystem accepts for
-    one path component."""
-    return (
-        isinstance(name, str)
-        and 0 < len(name) <= MAX_MEMBER_NAME_LEN
-        and name.isascii()
-        and name not in (".", "..")
-        and all(c in MEMBER_NAME_CHARS for c in name)
-    )
+    passed to open(). The rule itself is evidence_check's, so a name the chain
+    verifier accepts is a name the archive verifier accepts."""
+    return ec.valid_file_name(name)
+
+
+def _is_size(value: object) -> bool:
+    """A byte count is a non-negative integer. bool is excluded: `true` is not 1 byte."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _is_int(value: object) -> bool:
@@ -265,6 +250,19 @@ def verify(archive: pathlib.Path) -> list[str]:
     errs: list[str] = []
     listed: set[str] = set()
     for entry in entries:
+        if (
+            isinstance(entry, dict)
+            and valid_member_name(entry.get("name"))
+            and not _is_size(entry.get("bytes"))
+        ):
+            # The manifest is untrusted text, so a byte count that is not a
+            # non-negative integer is reported as a malformed entry. Summing it
+            # would raise out of the verifier instead of naming the bad entry.
+            errs.append(
+                f"{MANIFEST_NAME}: file entry for {entry['name']} has no integer byte count"
+            )
+            listed.add(entry["name"])
+            continue
         errs += _member_errors(archive, entry)
         if isinstance(entry, dict) and isinstance(entry.get("name"), str):
             listed.add(entry["name"])
@@ -392,6 +390,42 @@ def _self_test_member_names() -> list[str]:
     return errs
 
 
+def _self_test_manifest_bytes() -> list[str]:
+    """A manifest byte count that is not a non-negative integer is reported, not summed.
+
+    A manifest is untrusted text, so its byte counts reach `int()` and the totals
+    check. Summing a value that is not a number raises out of the verifier instead
+    of naming the entry that is wrong.
+    """
+    errs: list[str] = []
+    scratch = ec.ROOT / ".scratch" / "evidence-export-self-test-bytes"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        _write_sample_stream(scratch)
+        manifest = build_manifest(scratch, scratch, "20260721T000000Z", DEFAULT_INDEX_NAME)
+        (scratch / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
+        for bad, what in (
+            (True, "a bool"),
+            ("12", "a string"),
+            (None, "null"),
+            (-1, "a negative count"),
+        ):
+            manifest["files"][0]["bytes"] = bad
+            (scratch / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
+            try:
+                found = verify(scratch)
+            except Exception as exc:
+                errs.append(
+                    f"self-test: verify raised {type(exc).__name__} on {what} byte count: {exc}"
+                )
+                continue
+            if not any("integer byte count" in e for e in found):
+                errs.append(f"self-test: {what} byte count went unreported: {found}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return errs
+
+
 def self_test() -> list[str]:
     """Exercise the paths that decide whether a backup is trustworthy."""
     scratch = ec.ROOT / ".scratch" / "evidence-export-self-test"
@@ -402,6 +436,7 @@ def self_test() -> list[str]:
     errs, archives = _self_test_happy_path(source, out_root)
     errs += _self_test_refusal(scratch, source, out_root)
     errs += _self_test_member_names()
+    errs += _self_test_manifest_bytes()
     if archives:
         errs += _self_test_corrupt_archive(archives[0], archives[0] / seg2.name)
     shutil.rmtree(scratch, ignore_errors=True)

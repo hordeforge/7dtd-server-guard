@@ -188,17 +188,35 @@ above reserves minor bumps for that.
   date-times. The schema now declares `format: date-time` and the gate rejects a
   value carrying no offset, which names no instant and is read in the reader's own
   local zone, so two readers of the same record could disagree on when it happened.
-- The evidence parser's rejection of a non-finite literal lost the `file:line`
-  prefix every other parse error carries, so a segment with a `NaN` anywhere was
-  reported without saying which line to look at.
-- The replay contract checker raised `ValueError` on a trace carrying a non-finite
-  number instead of reporting it, which broke its own contract to return an error
-  list for any input, and made a hand-edited trace a traceback rather than a
-  diagnosis.
+- The evidence segment parser reports a bare `NaN`/`Infinity` literal with its
+  `file:line` context like any other unparseable line. The non-finite hook raised a
+  bare `ValueError` that escaped the `JSONDecodeError` handler uncontextualized, so
+  a segment with a `NaN` anywhere was reported without saying which line to look at.
+  `fuzz_evidence_check.py` caught this on the default seed.
+- The replay contract checker reports a trace whose outcome projection is not
+  serializable (a non-finite number where the projection reads one) instead of
+  raising, which broke its own contract to return an error list for any input and
+  made a hand-edited trace a traceback rather than a diagnosis. `fuzz_replay_trace.py`
+  caught this on the default seed.
+- `--index` is checked to be a plain ASCII file name before it is joined onto the
+  evidence directory, on both tools that take it. `directory / name` resolves an
+  absolute name to itself and walks out of the directory on a `..` segment, so a
+  crafted value read a file outside the evidence directory, and `evidence_export.py`
+  copied that file into the archive. The exporter already applied this rule to the
+  member names a manifest carries; the check is now one shared predicate
+  (`evidence_check.valid_file_name`) both tools use.
+- A manifest file entry whose `bytes` is not a non-negative integer is reported as a
+  malformed entry instead of raising out of the archive verifier, which summed it
+  while checking `totalBytes`.
 - `make verify-archive` checks the per-file and total record counts the manifest
   records, not only the sha256 and byte count. An archive whose manifest misstated
   how many records it holds verified clean, and the restore drill would have
   accepted it.
+- `fuzz_evidence_export.py` asserts that `verify()` never raises, which its docstring
+  claimed and the harness never checked, and requires manifest byte damage to be
+  detected only when it changes a field `verify()` reads. Byte damage inside a field
+  it ignores (the source path, the canonicalization note) left a verifiable archive
+  verifiable, and the harness reported that correct verdict as a failure.
 - The CI job is bounded by a 20-minute timeout, so a wedged fuzzer fails the run
   instead of holding a runner for the 6h default, and the checkout token is not
   persisted into `.git/config` between steps, since nothing pushes from CI.
