@@ -4,6 +4,15 @@ Server Guard is a security tool. A flaw in it can be worse than its absence: a f
 can deny legitimate play, and a bypass can give a false sense of protection. Report issues
 privately.
 
+## Status of the code today
+
+The in-game runtime does not exist yet. `src/ServerGuard/` holds only directory READMEs, and the
+phase ledger is at the Phase 0 exit review ([TODO.md](TODO.md)). The shipped executable code is
+the Python tooling under `tools/` plus the CI workflow, so the evidence, archive, and replay
+tooling is what can actually be attacked today; the in-game classes below describe the runtime as
+designed. [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) ranks the current surface and names the
+location of every threat.
+
 ## Reporting a vulnerability
 
 - **Contact:** maci (maci.stgn@gmail.com).
@@ -12,6 +21,14 @@ privately.
   proof-of-concept, and the impact (false reject, evidence tampering, bypass, resource abuse).
 
 ## In scope
+
+Shipped today: the Python tooling under `tools/` (evidence chain verification, evidence
+archiving and restore drill, replay-trace contract checking) and the CI workflow. In particular
+path handling in `tools/evidence_check.py` and `tools/evidence_export.py`, and anything that
+weakens or forges an evidence hash chain.
+
+Planned runtime, not yet built: in-game detectors and the review surface. The classes below
+describe that design.
 
 - Bypasses of a Hard invariant that let an impossible action through.
 - False hard-rejects that deny legitimate play.

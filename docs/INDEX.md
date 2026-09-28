@@ -9,7 +9,7 @@ bug to fix in the same change.
 | Document | Owns | Canonical for |
 |---|---|---|
 | [POLICY.md](POLICY.md) | Decision vocabulary: modes, actions, severity, confidence, gates, override, appeals, roles, glossary | `Hard`/`Strong`/`Weak`, mode ladder, action set, enforcement gates, appeal dispositions, glossary terms |
-| [THREAT_MODEL.md](THREAT_MODEL.md) | What we protect, who attacks, attack scenarios, trust boundaries, out of scope | Protected outcomes, adversaries, trust boundaries, introduced attack surface |
+| [THREAT_MODEL.md](THREAT_MODEL.md) | What we protect, who attacks, attack scenarios, trust boundaries, out of scope; the risk-ranked view of shipped vs planned attack surface, assets, and mitigations | Protected outcomes, adversaries, trust boundaries, introduced attack surface, risk ranking, mitigation mapping |
 | [SIGNALS.md](SIGNALS.md) | Shared validation primitives: capabilities, conservation, envelopes, state machines, geometry, cost, correlation | Reusable validation mechanics and composition rules |
 | [DETECTORS.md](DETECTORS.md) | Stable detector IDs and per-detector ceilings, contexts, lifecycle | The canonical detector list; config/evidence/fixtures reference IDs from here |
 | [PROPOSALS.md](PROPOSALS.md) | Non-binding detector idea incubator, promotion gate, rejected ideas | Candidate status only; never detector identity or enforcement behavior |
