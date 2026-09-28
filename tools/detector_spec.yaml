@@ -16,8 +16,6 @@
 # enumerated-or-seam condition (for example "all teleport origins enumerated") or when a
 # client-declared observed quantity is checked against server state that must be complete.
 
-schema_version: 1
-
 detectors:
   # ---------------------------------------------------------------- protocol (phase 4)
   - id: protocol.stage_order

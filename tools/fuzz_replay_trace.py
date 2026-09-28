@@ -34,8 +34,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import replay_contract_check as rcc
 from fuzz_common import InvariantBroken, Mutator, nested
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-SAMPLE = ROOT / "tools" / "fixtures" / "traces" / "inventory" / "stack.v1.sample.json"
 DETECTOR_IDS = {"inventory.stack"}
 
 # Strings the contract checker branches on, so mutants land on both sides of its rules.
@@ -67,7 +65,7 @@ def main() -> int:
     rng = random.Random(args.seed)
     mut = Mutator(rng, weird_strings=DOMAIN_STRINGS, max_depth=4)
 
-    pristine = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    pristine = json.loads(rcc.TRACE.read_text(encoding="utf-8"))
     current = pristine
     try:
         if check(pristine, "pristine sample"):

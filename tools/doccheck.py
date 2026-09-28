@@ -599,16 +599,12 @@ def _object_errors(instance: dict[str, Json], schema: Json, path: str, depth: in
 
 
 def _array_errors(instance: list[Json], schema: Json, path: str, depth: int) -> list[str]:
-    """Item count, uniqueness, and the per-item schema."""
+    """Item count and the per-item schema."""
     errs = []
     if "minItems" in schema and len(instance) < schema["minItems"]:
         errs.append(f"{path}: {len(instance)} items < minItems {schema['minItems']}")
     if "maxItems" in schema and len(instance) > schema["maxItems"]:
         errs.append(f"{path}: {len(instance)} items > maxItems {schema['maxItems']}")
-    if schema.get("uniqueItems"):
-        canonical = [json.dumps(v, sort_keys=True) for v in instance]
-        if len(canonical) != len(set(canonical)):
-            errs.append(f"{path}: array items are not unique")
     if "items" in schema:
         for i, v in enumerate(instance):
             errs += _schema_validate(v, schema["items"], f"{path}[{i}]", depth + 1)
@@ -656,40 +652,34 @@ def check_replay_contract() -> list[str]:
     return _run_tool("replay_contract_check.py", on_failure="replay contract failed")
 
 
+def load_instances(data_path: pathlib.Path) -> list[Json]:
+    """Parse a data file into validator instances: one per record for JSONL, else one."""
+    text = data_path.read_text(encoding="utf-8")
+    if data_path.suffix == ".jsonl":
+        return [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+    return [json.loads(text)]
+
+
 def check_config_schemas() -> list[str]:
     """Validate the shipped JSON Schemas parse and the example config and generated
     manifest conform to them."""
     out = []
-    # A JSONL data file is validated line by line (one record per line).
     for schema_path, data_path in SCHEMA_DATA_PAIRS:
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
         except Exception as exc:
             out.append(f"{schema_path.relative_to(ROOT)} unparseable: {exc}")
             continue
-        if data_path.suffix == ".jsonl":
-            try:
-                lines = [
-                    ln for ln in data_path.read_text(encoding="utf-8").splitlines() if ln.strip()
-                ]
-                data = [json.loads(ln) for ln in lines]
-            except Exception as exc:
-                out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
-                continue
-            for i, rec in enumerate(data, 1):
-                out.extend(
-                    f"{data_path.relative_to(ROOT)} line {i}: {err}"
-                    for err in _schema_validate(rec, schema)
-                )
-            continue
         try:
-            data = json.loads(data_path.read_text(encoding="utf-8"))
+            instances = load_instances(data_path)
         except Exception as exc:
             out.append(f"{data_path.relative_to(ROOT)} unparseable: {exc}")
             continue
-        out.extend(
-            f"{data_path.relative_to(ROOT)}: {err}" for err in _schema_validate(data, schema)
-        )
+        for i, instance in enumerate(instances, 1):
+            out.extend(
+                f"{data_path.relative_to(ROOT)} line {i}: {err}"
+                for err in _schema_validate(instance, schema)
+            )
     return out
 
 

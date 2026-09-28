@@ -77,11 +77,7 @@ def load_pairs() -> list[tuple[str, Json, list[Json]]]:
     out = []
     for schema_path, data_path in dc.SCHEMA_DATA_PAIRS:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        text = data_path.read_text(encoding="utf-8")
-        if data_path.suffix == ".jsonl":
-            instances = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
-        else:
-            instances = [json.loads(text)]
+        instances = dc.load_instances(data_path)
         name = f"{schema_path.name} vs {data_path.name}"
         for inst in instances:
             errs = dc._schema_validate(inst, schema)

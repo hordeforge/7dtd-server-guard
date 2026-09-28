@@ -267,6 +267,14 @@ def self_test() -> list[str]:
     return errs
 
 
+def report(label: str, errs: list[str]) -> int:
+    """Print a labeled report and return the process exit code."""
+    print(f"{label}: {len(errs)} issue(s)")
+    for e in errs:
+        print("  " + e)
+    return 1 if errs else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     mode = ap.add_mutually_exclusive_group()
@@ -281,30 +289,13 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.self_test:
-        errs = self_test()
-        print(f"evidence-check self-test: {len(errs)} failure(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
-
+        return report("evidence-check self-test", self_test())
     if args.sample:
-        errs = verify_sample()
-        print(f"sample chain: {len(errs)} issue(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
-
+        return report("sample chain", verify_sample())
     if args.dir:
         if not args.dir.is_dir():
-            print(f"evidence chain ({args.dir}): 1 issue(s)")
-            print(f"  {args.dir}: no such directory")
-            return 1
-        errs = verify_dir(args.dir, args.index)
-        print(f"evidence chain ({args.dir}): {len(errs)} issue(s)")
-        for e in errs:
-            print("  " + e)
-        return 1 if errs else 0
-
+            return report(f"evidence chain ({args.dir})", [f"{args.dir}: no such directory"])
+        return report(f"evidence chain ({args.dir})", verify_dir(args.dir, args.index))
     ap.print_help()
     return 2
 
