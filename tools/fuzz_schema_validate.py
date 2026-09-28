@@ -47,6 +47,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
+import schema_validate as sv
 from fuzz_common import InvariantBrokenError, Mutator, add_fuzz_args, fuzz_args, nested
 
 # Schemas and instances are arbitrary JSON by construction here: the harness
@@ -153,7 +154,7 @@ def load_pairs() -> list[tuple[str, Json, list[Json]]]:
                 f"shipped pair {name} is unreadable or unparseable: {exc}"
             ) from exc
         for inst in instances:
-            errs = dc._schema_validate(inst, schema)
+            errs = sv.validate(inst, schema)
             if errs:
                 raise InvariantBrokenError(f"pristine shipped pair {name} reports errors: {errs}")
         out.append((name, schema, instances))
@@ -163,10 +164,10 @@ def load_pairs() -> list[tuple[str, Json, list[Json]]]:
 def check_totality(schema: Json, instance: Json) -> list[str]:
     # The list-ness of the result is now statically guaranteed; the element types
     # are not, because the validator builds messages from mutated content.
-    errs = dc._schema_validate(instance, schema)
+    errs = sv.validate(instance, schema)
     if not all(isinstance(e, str) for e in errs):
         raise InvariantBrokenError(f"non-list-of-str result: {errs!r}")
-    again = dc._schema_validate(instance, schema)
+    again = sv.validate(instance, schema)
     if again != errs:
         raise InvariantBrokenError(f"nondeterministic: {errs!r} vs {again!r}")
     return errs
@@ -179,7 +180,7 @@ def check_sensitivity(rng: random.Random, name: str, schema: Json, instance: Jso
         return False
     bad = dict(instance)
     del bad[required[rng.randrange(len(required))]]
-    if not dc._schema_validate(bad, schema):
+    if not sv.validate(bad, schema):
         raise InvariantBrokenError(f"{name}: deleting required key was accepted")
     return True
 
@@ -192,33 +193,33 @@ def check_deep_nesting() -> None:
     # Deep linear schema walked by a matching deep instance.
     deep: dict[str, Any] = {"type": "object"}
     node = deep
-    for _ in range(4 * dc.MAX_SCHEMA_DEPTH):
+    for _ in range(4 * sv.MAX_SCHEMA_DEPTH):
         child = {"type": "object"}
         node["properties"] = {"a": child}
         node = child
     deep_inst: dict[str, Any] = {}
     cur = deep_inst
-    for _ in range(4 * dc.MAX_SCHEMA_DEPTH):
+    for _ in range(4 * sv.MAX_SCHEMA_DEPTH):
         cur["a"] = {}
         cur = cur["a"]
     cases = [
-        ("cyclic schema", cyclic, nested(4 * dc.MAX_SCHEMA_DEPTH)),
+        ("cyclic schema", cyclic, nested(4 * sv.MAX_SCHEMA_DEPTH)),
         ("deep schema", deep, deep_inst),
         (
             "shallow schema",
             {"type": "array", "items": {"type": "integer"}},
-            nested(dc.MAX_SCHEMA_DEPTH + 1),
+            nested(sv.MAX_SCHEMA_DEPTH + 1),
         ),
-        ("at the bound", cyclic, nested(dc.MAX_SCHEMA_DEPTH)),
+        ("at the bound", cyclic, nested(sv.MAX_SCHEMA_DEPTH)),
     ]
     for name, schema, inst in cases:
         try:
-            errs = dc._schema_validate(inst, schema)
+            errs = sv.validate(inst, schema)
         except Exception as exc:
             raise InvariantBrokenError(f"{name} raised {type(exc).__name__}") from exc
         if not isinstance(errs, list):
             raise InvariantBrokenError(f"{name}: non-list result {errs!r}")
-        again = dc._schema_validate(inst, schema)
+        again = sv.validate(inst, schema)
         if again != errs:
             raise InvariantBrokenError(f"{name}: nondeterministic")
         if name in ("cyclic schema", "deep schema"):
@@ -261,10 +262,10 @@ def check_datetime_format() -> None:
     for rec_type, field in field_of.items():
         pristine = records[rec_type]
         for good in good_values:
-            if dc._schema_validate({**pristine, field: good}, schema):
+            if sv.validate({**pristine, field: good}, schema):
                 raise InvariantBrokenError(f"{rec_type}.{field}: valid instant {good!r} rejected")
         for value, why in bad_values.items():
-            if not dc._schema_validate({**pristine, field: value}, schema):
+            if not sv.validate({**pristine, field: value}, schema):
                 raise InvariantBrokenError(f"{rec_type}.{field}={value!r} accepted: {why}")
 
 
@@ -292,11 +293,11 @@ def check_personal_data_denylist() -> int:
     checks = 0
     for key in PERSONAL_DATA_KEYS:
         for bag in EVIDENCE_BAGS:
-            if not dc._schema_validate(_with_key(record, bag, key), schema):
+            if not sv.validate(_with_key(record, bag, key), schema):
                 raise InvariantBrokenError(f"{bag}.{key} accepted by the evidence schema")
             checks += 1
     # The deny-list must not reject the keys the sample itself writes.
-    if dc._schema_validate(record, schema):
+    if sv.validate(record, schema):
         raise InvariantBrokenError("shipped finding record rejected by its own schema")
     # Nor the keys a detector names a value for. A deny-list broad enough to
     # reject `dx` is not a control, it is an outage: the next stem added for
@@ -304,7 +305,7 @@ def check_personal_data_denylist() -> int:
     # pinned here next to the denied ones.
     for key in ALLOWED_BAG_KEYS:
         for bag in EVIDENCE_BAGS:
-            if dc._schema_validate(_with_key(record, bag, key), schema):
+            if sv.validate(_with_key(record, bag, key), schema):
                 raise InvariantBrokenError(f"{bag}.{key} rejected by the evidence schema")
             checks += 1
     return checks
@@ -378,11 +379,11 @@ def check_evidence_bags_beyond_finding() -> None:
         ),
     ]
     for what, instance in cases[:-1]:
-        if not dc._schema_validate(instance, schema):
+        if not sv.validate(instance, schema):
             raise InvariantBrokenError(f"{what} accepted a value that is not an id: {instance}")
     # The last case is the positive control: without it the negative cases would
     # also pass against a schema that rejected every delta item.
-    if dc._schema_validate(cases[-1][1], schema):
+    if sv.validate(cases[-1][1], schema):
         raise InvariantBrokenError(f"{cases[-1][0]}: a well-formed delta item was rejected")
 
 
@@ -403,9 +404,9 @@ def check_non_finite_numbers() -> None:
         ("cause", "delta", -1.25),
     ):
         for bad in (float("nan"), float("inf"), -float("inf")):
-            if not dc._schema_validate({**records[rec_type], field: bad}, schema):
+            if not sv.validate({**records[rec_type], field: bad}, schema):
                 raise InvariantBrokenError(f"{rec_type}.{field}={bad!r} accepted")
-        if dc._schema_validate({**records[rec_type], field: finite}, schema):
+        if sv.validate({**records[rec_type], field: finite}, schema):
             raise InvariantBrokenError(f"{rec_type}.{field}={finite!r} rejected")
 
 
@@ -455,7 +456,7 @@ def check_string_length_units() -> None:
         ("ab", False, "two code points are under minLength"),
     ]
     for value, ok, why in cases:
-        errs = dc._schema_validate(value, schema)
+        errs = sv.validate(value, schema)
         if ok and errs:
             raise InvariantBrokenError(f"length limits rejected {value!r}: {why}: {errs}")
         if not ok and not errs:
@@ -488,19 +489,19 @@ def check_record_references() -> int:
             (good_id[:-1], "a truncated record ID"),
         ):
             probe = {**record, field: [bad]}
-            if not dc._schema_validate(probe, schema):
+            if not sv.validate(probe, schema):
                 raise InvariantBrokenError(f"{rec_type}.{field} accepted {why}: {bad!r}")
             checks += 1
-        if dc._schema_validate({**record, field: []}, schema):
+        if sv.validate({**record, field: []}, schema):
             raise InvariantBrokenError(f"{rec_type}.{field}: empty reference list rejected")
-        if dc._schema_validate({**record, field: [good_id] * bound}, schema):
+        if sv.validate({**record, field: [good_id] * bound}, schema):
             raise InvariantBrokenError(f"{rec_type}.{field}: {bound} references rejected")
-        if not dc._schema_validate({**record, field: [good_id] * (bound + 1)}, schema):
+        if not sv.validate({**record, field: [good_id] * (bound + 1)}, schema):
             raise InvariantBrokenError(f"{rec_type}.{field}: {bound + 1} references accepted")
         checks += 3
     tombstone = records["tombstone"]
     for bad in ("not-a-record-id", good_id.upper(), good_id[:-1]):
-        if not dc._schema_validate({**tombstone, "replaces": bad}, schema):
+        if not sv.validate({**tombstone, "replaces": bad}, schema):
             raise InvariantBrokenError(f"tombstone.replaces accepted {bad!r}")
         checks += 1
     return checks
@@ -527,7 +528,7 @@ def check_bool_is_not_a_number() -> None:
         (True, {"enum": [True, False]}, True),
     ]
     for instance, schema, ok in cases:
-        errs = dc._schema_validate(instance, schema)
+        errs = sv.validate(instance, schema)
         if ok and errs:
             raise InvariantBrokenError(
                 f"{instance!r} against {schema}: valid value rejected: {errs}"
@@ -606,12 +607,12 @@ def check_personal_data_values() -> int:
     ]
     checks = 0
     for what, instance in leaks:
-        if not dc._schema_validate(instance, schema):
+        if not sv.validate(instance, schema):
             raise InvariantBrokenError(f"{what} was accepted: {instance}")
         checks += 1
     for what, instances in accepted:
         for instance in instances:
-            errs = dc._schema_validate(instance, schema)
+            errs = sv.validate(instance, schema)
             if errs:
                 raise InvariantBrokenError(f"the value deny-list rejected {what}: {errs}")
         checks += 1

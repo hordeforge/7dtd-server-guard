@@ -101,10 +101,14 @@
   section, the dated sections in descending order, and one `###` change type per release
   with no breaking entry in a patch bump. `--self-test` fires the changelog rules from
   changelogs written in the test; it runs under `make test-tools`.
+- `schema_validate.py`: the JSON Schema (draft-07 subset) validator for the shipped schemas.
+  A library, not a gate: `doccheck.py` and `config_check.py` both hold documents to the
+  schemas through `schema_validate.validate`, so it is neither tool's private helper, and
+  `fuzz_schema_validate.py` fuzzes it as a module in its own right.
 - `fuzz_evidence_check.py`, `fuzz_schema_validate.py`, `fuzz_replay_trace.py`,
   `fuzz_evidence_export.py`, `fuzz_detector_spec.py`, `fuzz_config_check.py`: seeded,
-  deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator in
-  doccheck.py, the replay-trace contract checker, the archive verifier, the detector spec
+  deterministic structure-aware fuzzers over the evidence parser, the JSON Schema validator
+  in schema_validate.py, the replay-trace contract checker, the archive verifier, the detector spec
   (`detector_spec.yaml`) with both of its consumers (doccheck's spec pass and the renderers in
   render_detectors.py), and the operator config validator with its file entry point
   (`make test-tools`; `make fuzz FUZZ=<harness> ITERATIONS=N SEED=S` runs a

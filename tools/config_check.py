@@ -57,6 +57,7 @@ from typing import Any
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import doccheck as dc
 import report_text
+import schema_validate as sv
 from self_test_common import main_contract_errors
 
 # Config JSON, loaded from an operator's file or a self-test fixture: shape is
@@ -342,7 +343,7 @@ def check(config: Json, env: dict[str, str] | None = None, check_env: bool = Tru
     if not isinstance(config, dict):
         return [f"config must be a JSON object, got {type(config).__name__}"]
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    out = list(dc._schema_validate(config, schema))
+    out = list(sv.validate(config, schema))
     if out:
         # Every remaining check reads keys the schema may have rejected; report the
         # contract violation alone rather than a cascade of follow-on errors.

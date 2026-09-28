@@ -21,7 +21,7 @@ runtime. "Shipped" means the code in this repository today.
 | 5 | The restore drill resolves the identity-map and HMAC-key paths named in an operator config and stats them, with no permission or ownership check on the result | `tools/restore_drill.py:140` (`secrets_errors`), `:132` (`_resolve` returns a relative path joined onto `--runtime-root`) | Information disclosure: the report names the key paths and their age to anyone who can run the drill | Unmitigated; scheduled for Phase 3 |
 | 6 | Pseudonym re-identification keys have no runtime protection because no runtime exists | `config/schemas/config.v1.schema.json`, `docs/SCHEMAS.md`; no `os.chmod` anywhere in `tools/` | Information disclosure: platform IDs map back to players from any readable evidence copy | Unmitigated; scheduled for Phase 3 |
 | 7 | Self-tests and fuzzers create and recursively delete paths inside the repository, and run in CI | `tools/evidence_check.py:63` (`SCRATCH = ROOT / ".scratch"`), consumed at `:468`, `:558`, `:659`, `:692`, and by `restore_drill.py:232`, `backup_status.py:164`, `fuzz_evidence_export.py:41`, `fuzz_evidence_check.py:46`, `fuzz_config_check.py:75`, `fuzz_detector_spec.py:60` | Denial of service to a checkout; a wedged or slow fuzzer burns the CI budget | Bounded: every scratch path is a fixed constant, never a flag, and CI caps the job at `timeout-minutes: 20` (`.github/workflows/ci.yml:28`) |
-| 8 | Generated thresholds and the detector registry are rewritten from one YAML file, so editing the spec silently changes config defaults and published tables | `tools/render_detectors.py:91` (safe load), writes at `:336` and `:348` | Tampering: a lower threshold becomes a default in shipped config | Mitigated: `tools/doccheck.py:643` (`check_registry_sync`) fails when the generated files drift from the spec |
+| 8 | Generated thresholds and the detector registry are rewritten from one YAML file, so editing the spec silently changes config defaults and published tables | `tools/render_detectors.py:91` (safe load), writes at `:336` and `:348` | Tampering: a lower threshold becomes a default in shipped config | Mitigated: `tools/doccheck.py:785` (`check_registry_sync`) fails when the generated files drift from the spec |
 | 9 | Every in-game control this document previously listed as present (permissioned console, permission-restricted evidence files, dashboard auth, webhook) has no implementation | `TODO.md:108`, `TODO.md:112`, `TODO.md:189`, `TODO.md:192` | A false mitigation claim is worse than a named gap: a reader builds on a control that does not exist | Fixed in this document; the surface is now marked planned |
 
 Two earlier revisions of this document carried findings that are now resolved, and they are
@@ -33,7 +33,7 @@ recorded rather than deleted so the next pass knows the class was already hit.
   The remaining instance of the class is threat 3 (`--out`), because `--out` is a directory, not a
   name, and never passes through that gate.
 - The absent-surface list claimed there is "no `socket`, `urllib`, `requests`, or `http` import in
-  `tools/`". That was false as written: `tools/doccheck.py:55` imports `urllib.parse.unquote`. The
+  `tools/`". That was false as written: `tools/doccheck.py:73` imports `urllib.parse.unquote`. The
   claim is corrected below; `urllib.parse` is a string transform, not network I/O, but a reader
   grepping for the named modules would have found the import and stopped trusting the list.
 
@@ -55,9 +55,9 @@ webhook, and no IPC in the tree.
 | `tools/evidence_export.py:906` (`--dir`, `--archive`, `--out`, `--index`, `--self-test`) | Evidence segments, an archive manifest, and the member names inside it | `tools/evidence_export.py:126` (`archive_members`), `:181` (`preflight`), `:450` (`verify`) | `tools/evidence_export.py:340`, `:346`, `:242` |
 | `tools/restore_drill.py:370` (`--archive`, `--work`, `--config`, `--runtime-root`, `--key-max-age-hours`) | An archive directory, an empty work directory, and an operator config naming the key and identity-map paths | `tools/restore_drill.py:88` (`restore`), `:140` (`secrets_errors`) | `tools/restore_drill.py:88` (restores into `--work`, refusing a non-empty one) |
 | `tools/backup_status.py:260` (`--root`, `--max-age-hours`) | An archive root: manifests and file digests | read-only | none |
-| `tools/config_check.py:605` (`--config`, `--show-effective`, `--skip-env`) | An operator config file, validated against the shipped JSON Schemas and detector registry | `tools/config_check.py:285` (process environment) | none |
+| `tools/config_check.py:720` (`--config`, `--show-effective`, `--skip-env`) | An operator config file, validated against the shipped JSON Schemas and detector registry | `tools/config_check.py:356` (process environment) | none |
 | `tools/sbom.py:429` (`--out`) | `uv.lock` | `uv.lock` | `tools/sbom.py:458` to `:459` |
-| `tools/doccheck.py:1475` (no flags) | The repository tree itself, treated as content to lint rather than as instructions; spawns three sibling tools as subprocesses | `tools/doccheck.py:625` (`subprocess.run`, literal script names, `shell` off) | none |
+| `tools/doccheck.py:1964` (no flags) | The repository tree itself, treated as content to lint rather than as instructions; spawns three sibling tools as subprocesses | `tools/doccheck.py:767` (`subprocess.run`, literal script names, `shell` off) | none |
 | `tools/render_detectors.py:300` (`--check`, `--manifest`) | `tools/detector_spec.yaml`, parsed with the safe loader | `tools/render_detectors.py:91` | `tools/render_detectors.py:336`, `:348` |
 | `tools/replay_contract_check.py:586` (`--self-test`, `--fix-fingerprint`; paths are fixed constants) | A committed sample trace | `tools/replay_contract_check.py:605` (safe load) | `tools/replay_contract_check.py:581`, under `--fix-fingerprint` only |
 | `tools/guard_python.py:21` (no flags) | `.python-version` | `tools/guard_python.py:24` | none |
@@ -70,7 +70,7 @@ webhook, and no IPC in the tree.
 These are the properties a reader is most likely to assume and that no shipped code has:
 
 - No network I/O. There is no `socket`, `requests`, `http`, `ftplib`, or `smtplib` import in
-  `tools/`. The one `urllib` import is `urllib.parse.unquote` (`tools/doccheck.py:55`), which
+  `tools/`. The one `urllib` import is `urllib.parse.unquote` (`tools/doccheck.py:73`), which
   decodes percent-escapes in a string and opens nothing; a prior revision of this list claimed no
   `urllib` import at all, and that was wrong.
 - No deserialization of untrusted data. No `pickle`, no `eval`, no `exec`; every YAML read goes
@@ -85,7 +85,7 @@ These are the properties a reader is most likely to assume and that no shipped c
   (`tools/evidence_check.py:198`); no tool reads key or token contents. Two tools come close
   enough to name: `config_check.py:285` reads the process environment to check that a
   `webhook.urlEnv` or `dashboard.secretEnv` name is set, and reports presence only, never the
-  value (`tools/config_check.py:240`); `restore_drill.py:140` stats the identity-map and HMAC-key
+  value (`tools/config_check.py:312`); `restore_drill.py:140` stats the identity-map and HMAC-key
   files named in a config and reports their size and age, never their contents. Both resolve
   against a planned runtime, and both are threat 5 above.
 - No process spawning except `doccheck.py:625`, which runs three literal script names through
@@ -181,7 +181,7 @@ The boundaries that exist in shipped code today, with what crosses them:
 6. **Repository content to generated artifacts.** `tools/detector_spec.yaml` is the single source
    of truth; `tools/render_detectors.py` writes both the config manifest and the registry table
    inside `docs/DETECTORS.md` from it. Editing the spec is a repository change, and
-   `tools/doccheck.py:643` fails the build when the generated files disagree with it.
+   `tools/doccheck.py:785` fails the build when the generated files disagree with it.
 7. **Pull request to CI.** Untrusted code runs on `ubuntu-24.04` under `contents: read` with
    SHA-pinned actions and no secrets. This is a build boundary with no production privilege
    behind it, which is the property to preserve if the workflow ever gains a release step.
@@ -260,7 +260,7 @@ location, not a checklist.
   key to the chain is what removes it.
 
 **Repository content to generated artifacts.**
-- *Tampering*: mitigated by the registry-sync check (`tools/doccheck.py:643`) and the config
+- *Tampering*: mitigated by the registry-sync check (`tools/doccheck.py:785`) and the config
   schema cross-reference, both in `make check`.
 
 **Pull request to CI.**
@@ -269,7 +269,7 @@ location, not a checklist.
   re-reviewed before it is added.
 - *Denial of service*: a wedged fuzzer is bounded by `timeout-minutes: 20`
   (`.github/workflows/ci.yml:28`), and each subprocess `doccheck` spawns has its own
-  `TOOL_TIMEOUT_S` (`tools/doccheck.py:609`).
+  `TOOL_TIMEOUT_S` (`tools/doccheck.py:751`).
 
 **Client to game (planned, no code yet).** The adversaries and scenarios in the next section are
 the design for this boundary. They are unmitigated by construction until Phases 1 and 2 land.
@@ -291,7 +291,7 @@ the design for this boundary. They are unmitigated by construction until Phases 
   archive verify runs first (boundary 4 above). A reordering would not fail any existing test.
 - **Documentation drift.** Every line reference in the prior revision of this document was
   re-verified in this pass and most were stale, and one absent-surface claim (no `urllib` import)
-  was contradicted by `tools/doccheck.py:55`. A security document whose references no longer
+  was contradicted by `tools/doccheck.py:73`. A security document whose references no longer
   resolve is worse than a short one, because a reader cannot tell which parts are still true.
 
 ## Abuse cases

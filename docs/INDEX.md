@@ -77,6 +77,7 @@ bug to fix in the same change.
     ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
     ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain,
     │                            declared-vs-used dependencies)
+    ├── schema_validate.py       the JSON Schema validator doccheck and config_check share
     ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
     ├── evidence_export.py       verified evidence archive export and restore drill
     │                            (make export-evidence, make backup, make verify-archive)
