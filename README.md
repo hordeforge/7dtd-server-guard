@@ -109,12 +109,15 @@ Loop:
   manifest from `tools/detector_spec.yaml` (the single source of truth for detectors).
 - `make exercise`: validate the design-time replay contract against the sample trace.
 - `make test-tools`: run the shipped Python tooling's negative self-tests plus its fuzzers
-  (evidence parser, schema validator, replay-trace contract checker).
+  (evidence parser and archive exporter, schema validator, replay-trace contract checker,
+  detector spec consumers).
 - `make fuzz FUZZ=replay_trace [ITERATIONS=200] [SEED=24301]`: one fuzzer at a short
   iteration count, for editing a single tool. Seeds are deterministic, so a reported
   `seed=` reproduces the failure.
 - `make ci`: everything CI runs, locally in one step
-  (`lint` + `check` + `exercise` + `test-tools`).
+  (`lint` + `check` + `exercise` + `test-tools`). Recipes run with `TZ=UTC` and
+  `PYTHONHASHSEED=0`, the same values ci.yml sets, so a local gate and the CI gate
+  of one commit report the same thing.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the full path, including generated-file
 regeneration and what a change is expected to include.

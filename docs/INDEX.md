@@ -62,7 +62,8 @@ bug to fix in the same change.
 ├── .github/                   CI workflow, dependabot, review prompts
 ├── config/
 │   ├── server-guard.example.json     example config v1
-│   ├── detector-config-manifest.json generated per-detector thresholds (make detectors)
+│   ├── detector-config-manifest.json generated per-detector thresholds (make detectors,
+    │                            never hand-edited)
 │   └── schemas/                      JSON Schema: config.v1, config-manifest.v1
 ├── docs/                      indexed contracts plus the non-binding proposal incubator
 ├── src/                       planned C# source (net48), see ARCHITECTURE.md -> Source layout
@@ -72,12 +73,17 @@ bug to fix in the same change.
     ├── render_detectors.py      renders DETECTORS.md and the config manifest from the spec
     ├── doccheck.py              docs quality gate (em dashes, links, spec, schemas, chain)
     ├── evidence_check.py        evidence hash-chain verifier (make verify-evidence)
+    ├── evidence_export.py       verified evidence archive export and restore drill
+    │                            (make export-evidence, make verify-archive)
     ├── replay_contract_check.py replay-trace semantic contract gate (make exercise)
     ├── fuzz_evidence_check.py   seeded fuzzer over the evidence parser (make test-tools)
+    ├── fuzz_evidence_export.py  seeded fuzzer over the archive verifier (make test-tools)
     ├── fuzz_schema_validate.py  seeded fuzzer over the JSON Schema validator (make test-tools)
     ├── fuzz_replay_trace.py     seeded fuzzer over the replay-trace contract checker
     │                            (make test-tools)
-    ├── fuzz_common.py           mutation engine shared by the three fuzzers
+    ├── fuzz_detector_spec.py    seeded fuzzer over the detector spec consumers
+    │                            (make test-tools)
+    ├── fuzz_common.py           mutation engine shared by the five fuzzers
     ├── guard_python.py          enforces the .python-version pin before any tool runs
     ├── fixtures/                traces/, regression/, generators/ (traces/ holds the
     │                            inventory design vector now; the rest fill in at Phase 4)

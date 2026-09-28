@@ -5,8 +5,10 @@
 # Schemas, config/schema cross-references, evidence chain, replay contract.
 .PHONY: setup check ci lint detectors exercise test-tools fuzz verify-evidence export-evidence verify-archive guard-python help
 
-# Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in harness order.
-FUZZERS := evidence_check schema_validate replay_trace detector_spec
+# Fuzzer harness names addressable by `make fuzz FUZZ=<name>`, in the order
+# `test-tools` runs them. Every harness tools/fuzz_*.py must appear here, or the
+# short-run loop cannot reproduce a seed the full run reported.
+FUZZERS := evidence_check schema_validate replay_trace detector_spec evidence_export
 empty :=
 space := $(empty) $(empty)
 # Short-run defaults for the edit-test loop; the full budgets live in each
@@ -18,8 +20,19 @@ SEED ?= 24301
 # uv is the only Python toolchain here: it resolves the locked dependency set and
 # the interpreter pinned in .python-version, so a bare `make check` on a fresh
 # clone runs the same versions CI does. --frozen fails instead of silently
-# re-resolving when uv.lock is stale.
+# re-resolving when uv.lock is stale. The uv release itself is pinned by
+# required-version in pyproject.toml, so the resolver that reads uv.lock is the
+# same one CI runs.
 UV := uv run --frozen
+
+# Every recipe runs with a fixed zone and hash seed, so a local gate and the CI
+# gate of the same commit agree: a timestamp or an unordered set iteration
+# cannot make one host's report differ from another's. CI sets the same three
+# variables in ci.yml; LC_ALL stays CI-only because it exists on the runner image
+# and may not on a developer host, while every tool here reads and writes UTF-8
+# explicitly instead of through the locale.
+export TZ := UTC
+export PYTHONHASHSEED := 0
 
 # The pinned version in .python-version is the single source of truth for the
 # interpreter toolchain: uv installs exactly it, and the guard fails unless the
@@ -89,7 +102,7 @@ verify-evidence:
 # Usage: make export-evidence DIR=/path/to/evidence OUT=/path/to/archive-root
 export-evidence:
 	@test -n "$(DIR)" -a -n "$(OUT)" || { echo "usage: make export-evidence DIR=<evidence-dir> OUT=<archive-root>"; exit 2; }
-	$(UV) python tools/evidence_export.py --dir $(DIR) --out $(OUT)
+	$(UV) python tools/evidence_export.py --dir "$(DIR)" --out "$(OUT)"
 
 # Prove an archive is intact and restorable (the restore drill; also catches silent
 # backup corruption long before a real restore needs it).
@@ -106,7 +119,7 @@ help:
 	@echo "  make detectors       regenerate registry tables + config manifest from the spec"
 	@echo "  make exercise        validate the design-time inventory stack replay contract"
 	@echo "  make test-tools      self-tests + fuzzers for the Python tooling"
-	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, detector_spec)"
+	@echo "  make fuzz FUZZ=<name>    one fuzzer, short run (evidence_check, schema_validate, replay_trace, detector_spec, evidence_export)"
 	@echo "  make ci              everything CI runs locally in one step (lint + check + exercise + test-tools)"
 	@echo "  make verify-evidence DIR=<dir>   verify an evidence hash chain"
 	@echo "  make export-evidence DIR=<dir> OUT=<root>   verify + archive an evidence dir"

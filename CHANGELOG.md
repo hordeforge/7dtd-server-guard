@@ -50,7 +50,7 @@ above reserves minor bumps for that.
   edited in place no longer verifies clean. A version 1 manifest has no
   self-digest and is reported as an unsupported version by
   `make verify-archive`.
-- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec>
+- `make fuzz FUZZ=<evidence_check|schema_validate|replay_trace|detector_spec|evidence_export>
   [ITERATIONS=N] [SEED=S]`
   runs one fuzzer at a short iteration count, with a usage error naming the valid
   harnesses. Every harness already took `--iterations` and `--seed`.
@@ -97,6 +97,18 @@ above reserves minor bumps for that.
 - `tools/evidence_check.py` streams evidence segments instead of materializing them, so
   `make verify-evidence` costs constant memory on a production evidence directory
   (measured 217MB to 42MB peak RSS on a 25MB segment, flat from 25MB to 101MB segments).
+- `pyproject.toml` sets `tool.uv.required-version` to the uv release CI installs, so the
+  resolver that reads `uv.lock` is pinned for a local run too and a different uv release
+  refuses to run instead of resolving the lock differently.
+- The Makefile exports `TZ=UTC` and `PYTHONHASHSEED=0`, the values ci.yml already set, so a
+  local `make ci` and the CI gate of one commit report the same thing.
+- `make fuzz FUZZ=evidence_export` runs the archive fuzzer at a short iteration count, like
+  the other five harnesses. It was missing from the Makefile's fuzzer list, so a seed its
+  full run reported could not be replayed. `make export-evidence` quotes `DIR` and `OUT`, as
+  `make verify-evidence` already did, so a path containing a space is one path.
+- `tools/evidence_export.py` counts a segment's records by streaming the file, matching the
+  constant-memory property `evidence_check.py` already had and the module claimed for the
+  copy and hash path.
 - `tools/render_detectors.py` parses `tools/detector_spec.yaml` once per process; the
   doccheck gate parsed it three times at ~90ms each.
 - The evidence audit record bounds `reason` at 512 characters.

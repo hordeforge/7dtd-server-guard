@@ -2,3 +2,8 @@
 # or commit breaks every #!/usr/bin/env shell script with "bad interpreter".
 # Every tracked text file is already LF, so this forces no renormalization.
 * text=auto eol=lf
+
+# Written by tools/render_detectors.py, never by hand: `make check` fails when it
+# drifts from tools/detector_spec.yaml. Flagged so an editor folds it instead of
+# treating an edit here as a source change.
+config/detector-config-manifest.json linguist-generated=true

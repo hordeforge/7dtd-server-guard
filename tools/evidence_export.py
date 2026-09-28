@@ -74,7 +74,12 @@ def file_digest(path: pathlib.Path) -> tuple[str, int]:
 
 
 def _record_count(path: pathlib.Path) -> int:
-    return sum(1 for _ in path.read_text(encoding="utf-8").splitlines() if _.strip())
+    """Non-empty lines in a segment. Streamed, not slurped, so a large segment
+    does not set this process's memory ceiling (the property file_digest keeps).
+    Text-mode iteration splits on the newline every writer of a JSONL segment
+    uses, and a truncated final line still counts as the record it was."""
+    with path.open("r", encoding="utf-8") as fh:
+        return sum(1 for line in fh if line.strip())
 
 
 def archive_members(source: pathlib.Path, index_name: str) -> list[pathlib.Path]:

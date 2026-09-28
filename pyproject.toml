@@ -27,3 +27,7 @@ target-version = ["py312"]
 
 [tool.uv]
 package = false
+# uv is the resolver that reads uv.lock, so its release is part of the pinned
+# toolchain. CI installs 0.12.13; a different release refuses to run rather than
+# resolving the lock differently from the recorded build.
+required-version = "==0.12.13"
