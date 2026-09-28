@@ -164,6 +164,22 @@ above reserves minor bumps for that.
 - `hmacKey.permissions` joins `identityMap.permissions`: the re-identification
   key file is stored at the same `0600` default as the identity map.
 
+### Fixed
+
+- `make export-evidence` is re-runnable. The archive name carries a one-second
+  stamp, so a retried export landed on the directory the first attempt had written
+  and was reported as a failure, which the backup schedule in
+  [docs/OPERATIONS.md](docs/OPERATIONS.md) alerts on: a retried backup raised the
+  alarm for a backup that was present and verified. A retry whose existing archive
+  holds exactly the segments and index it would have copied now exits 0 and writes
+  nothing. An archive holding a different evidence set under the same name is
+  still refused, because a different export must not replace an archive the
+  operator may already have copied off the server.
+- Each `make export-evidence` stages into its own directory. Two exports of the
+  same second shared one staging path, so the second deleted the first's copy in
+  progress. A staging directory left by a killed run is swept once it is older than
+  a day, so the archive root does not grow a directory per crash.
+
 ### Added
 
 - `tools/replay_contract_check.py --fix-fingerprint` reseals a trace's recorded

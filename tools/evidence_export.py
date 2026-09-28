@@ -11,7 +11,9 @@ hypothesis, so this tool refuses to copy anything it cannot verify first:
           archived: a per-file SHA-256 and byte count, a record count for the
           segments, and a manifestSha256 over the manifest's own remaining
           fields. A chain error, an empty copy, or a byte mismatch aborts before
-          any archive is declared complete.
+          any archive is declared complete. A retry of an export whose archive name
+          the previous second already claimed converges on that archive when it
+          holds the same evidence, and is refused when it does not.
   verify  re-check an existing archive against its manifest and re-verify the
           chain inside it. This is the restore drill: an archive that passes
           can be copied back into place and read. A manifestVersion 1 archive
@@ -43,6 +45,7 @@ import json
 import pathlib
 import shutil
 import sys
+import tempfile
 from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -71,6 +74,10 @@ COPY_CHUNK_BYTES = 1 << 20
 # Archive-name stamp the self-tests pin, so a name collision under test is a
 # property of the export guard and not of when the test happened to run.
 SELF_TEST_STAMP = "20260723T120000Z"
+# A staged archive is verified and renamed inside one export, so a staging
+# directory older than this belongs to a run that died. Without the bound a
+# killed run would leave one directory behind per death, forever.
+STALE_STAGING_AGE_SECONDS = 24 * 60 * 60
 
 
 def utc_stamp() -> str:
@@ -187,13 +194,16 @@ def copy_verified(members: list[pathlib.Path], staging: pathlib.Path) -> list[st
 
 
 def stage(
-    staging: pathlib.Path, source: pathlib.Path, members: list[pathlib.Path], index_name: str
+    staging: pathlib.Path,
+    source: pathlib.Path,
+    members: list[pathlib.Path],
+    index_name: str,
+    created_utc: str,
 ) -> list[str]:
     """Fill the staging directory and prove it is a restorable archive."""
     copy_errors = copy_verified(members, staging)
     if copy_errors:
         return copy_errors
-    created_utc = staging.name.removeprefix(".staging-").removeprefix("evidence-")
     manifest = build_manifest(source, staging, created_utc, index_name)
     if not manifest["totalBytes"] or not manifest["totalRecords"]:
         return [f"{source}: archive would be empty; refusing to record a zero-byte backup"]
@@ -204,19 +214,69 @@ def stage(
     return [f"archive did not verify: {e}" for e in verify(staging)]
 
 
+def redo_errors(dest: pathlib.Path, members: list[pathlib.Path]) -> list[str]:
+    """What stops a re-run of the same export from being a no-op.
+
+    The archive name carries a one-second stamp, so a retried export lands on the
+    directory the first attempt already wrote. The retry has to converge on that
+    directory when it holds exactly the members this run would copy, byte for
+    byte: the first attempt's verified archive *is* the result this run would
+    produce, and reporting a refusal would turn a delivered backup into a
+    non-zero exit, which the runbook (OPERATIONS.md -> Schedule) alerts on. An
+    archive holding a different evidence set is a different export, and the
+    second must not overwrite the first.
+    """
+    archived = {p.name for p in dest.glob(SEGMENT_GLOB)} | {
+        p.name for p in dest.glob("*.json") if p.name != MANIFEST_NAME
+    }
+    if archived != {m.name for m in members}:
+        return [
+            f"{dest}: an archive for this second holds a different evidence set; "
+            "refusing to overwrite an existing archive"
+        ]
+    diverged = [m.name for m in members if file_digest(m) != file_digest(dest / m.name)]
+    if diverged:
+        return [
+            f"{dest}: archived {', '.join(sorted(diverged))} differ from the source; "
+            "refusing to overwrite an existing archive"
+        ]
+    return []
+
+
+def _sweep_stale_staging(out_root: pathlib.Path, prefix: str, keep: pathlib.Path) -> None:
+    """Remove staging directories a dead run left behind, this run's excepted.
+
+    Each export stages into its own directory, so a concurrent export cannot
+    delete a copy in progress. The leftovers of a killed run would otherwise
+    accumulate in the archive root, so a run older than
+    STALE_STAGING_AGE_SECONDS is swept before the next export claims the name.
+    """
+    cutoff = dt.datetime.now(dt.UTC).timestamp() - STALE_STAGING_AGE_SECONDS
+    for path in out_root.glob(f"{prefix}*"):
+        if path == keep or not path.is_dir():
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
 def export(
     source: pathlib.Path, out_root: pathlib.Path, index_name: str, stamp: str | None = None
 ) -> list[str]:
     """Verify, copy, and manifest. Returns errors; empty means the archive is
-    complete and verified. Nothing is written when verification fails.
+    complete and verified. Nothing is written when verification fails. A retry of
+    a run whose archive already exists is a no-op, not a failure.
 
     The archive is named after `stamp`, defaulting to the current second. An
     explicit stamp names an archive rather than timestamping one, so a caller
-    that must hit the overwrite refusal, which is keyed on that name, says
-    which name it means instead of depending on where the clock happens to be.
-    The name carries a one-second timestamp, so two exports into the same root
-    inside one second are refused as a collision; the self-test passes the same
-    stamp rather than depending on where the second boundary falls.
+    that must land twice on the same name, which is what a retry does and what
+    the redo check is keyed on, says which name it means instead of depending
+    on where the clock happens to be. The name carries a one-second timestamp, so
+    two exports into the same root inside one second meet the redo check; the
+    self-test passes the same stamp rather than depending on where the second
+    boundary falls.
     """
     members, errs = preflight(source, index_name)
     if errs:
@@ -225,15 +285,14 @@ def export(
     dest = out_root / f"evidence-{stamp if stamp is not None else utc_stamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
     if dest.exists():
-        return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
-    staging = out_root / f".staging-{dest.name}"
+        return redo_errors(dest, members)
+    prefix = f".staging-{dest.name}-"
+    staging = pathlib.Path(tempfile.mkdtemp(prefix=prefix, dir=out_root))
+    _sweep_stale_staging(out_root, prefix, keep=staging)
     try:
-        out_root.mkdir(parents=True, exist_ok=True)
-        if dest.exists():
-            return [f"{dest}: archive already exists; refusing to overwrite an existing archive"]
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(parents=True)
-        staging_errors = stage(staging, source, members, index_name)
+        staging_errors = stage(
+            staging, source, members, index_name, dest.name.removeprefix("evidence-")
+        )
         if staging_errors:
             return staging_errors
         staging.rename(dest)
@@ -409,19 +468,59 @@ def _self_test_happy_path(
         return [*errs, "self-test: export did not honor the requested stamp"], archives
     if verify(archives[0]):
         errs.append("self-test: fresh archive did not verify")
-    # A second export naming an existing archive must refuse, not overwrite. The
-    # stamp is pinned rather than taken from the clock, so the collision is the
-    # export guard's doing and not a race against the wall-clock second.
-    if not export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP):
-        errs.append("self-test: a colliding export overwrote a live archive")
+    # A retry naming the same archive must converge on it: no second directory,
+    # no rewrite, no error. The stamp is pinned rather than taken from the clock,
+    # so the retry lands on the archive the first call wrote instead of racing the
+    # wall-clock second, and the redo check is the export guard's doing. Reporting
+    # a refusal here would raise a backup alert for a backup that is present and
+    # verified (OPERATIONS.md -> Schedule). The refusals themselves are the
+    # divergence cases below.
+    before = {p.name: file_digest(p) for p in archives[0].iterdir() if p.is_file()}
+    redo = export(source, out_root, DEFAULT_INDEX_NAME, SELF_TEST_STAMP)
+    if redo:
+        errs.append(f"self-test: a retried export of the same evidence reported {redo}")
     if sorted(p for p in out_root.iterdir() if p.is_dir()) != archives:
-        errs.append("self-test: a refused export still left a new archive behind")
-    errs += [
-        f"self-test: a refused export disturbed the live archive {archive.name}"
-        for archive in archives
-        if not archive.is_dir() or verify(archive)
-    ]
+        errs.append("self-test: a retried export left a new archive behind")
+    after = {p.name: file_digest(p) for p in archives[0].iterdir() if p.is_file()}
+    if after != before:
+        errs.append("self-test: a retried export rewrote the archive that already existed")
+    if verify(archives[0]):
+        errs.append("self-test: a refused export disturbed the live archive")
+    errs += _self_test_redo_divergence(source, out_root)
     return errs, archives
+
+
+def _self_test_redo_divergence(source: pathlib.Path, out_root: pathlib.Path) -> list[str]:
+    """A redo converges only on the evidence it would have copied.
+
+    Two different evidence sets can land on the same one-second archive name.
+    The second is a different export, so it must be refused rather than replace
+    the archive an operator may already have copied off the server.
+    """
+    errs: list[str] = []
+    archive = min(p for p in out_root.iterdir() if p.is_dir())
+    other = archive.parent / "other-source"
+    _write_sample_stream(other)
+    # Same file names, different bytes: the segment a restore would read differs.
+    target = other / "evidence-2026-07-21-000000.jsonl"
+    target.write_text(
+        target.read_text(encoding="utf-8").replace('"type":"finding"', '"type":"health"'),
+        encoding="utf-8",
+    )
+    members = archive_members(other, DEFAULT_INDEX_NAME)
+    if not any("refusing to overwrite" in e for e in redo_errors(archive, members)):
+        errs.append("self-test: a redo over different bytes was treated as a no-op")
+    # A different evidence set, same second: also refused.
+    extra = other / "evidence-2026-07-23-000000.jsonl"
+    extra.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+    members = archive_members(other, DEFAULT_INDEX_NAME)
+    if not any("refusing to overwrite" in e for e in redo_errors(archive, members)):
+        errs.append("self-test: a redo over a different evidence set was treated as a no-op")
+    # The evidence this run would have written converges.
+    if redo_errors(archive, archive_members(source, DEFAULT_INDEX_NAME)):
+        errs.append("self-test: a redo over the same evidence was refused")
+    shutil.rmtree(other, ignore_errors=True)
+    return errs
 
 
 def _self_test_refusal(

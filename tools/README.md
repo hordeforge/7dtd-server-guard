@@ -16,7 +16,10 @@
 - `evidence_export.py`: archives an evidence directory and proves the archive is
   restorable. The chain is verified before the copy and the copies are re-verified
   against a per-file SHA-256 manifest; a chain error, a zero-byte segment, or a copy
-  mismatch aborts instead of recording a backup. `make export-evidence DIR=... OUT=...`
+  mismatch aborts instead of recording a backup. A re-run of the same export into
+  the same second converges on the archive that already exists rather than reporting
+  a failed backup, and is refused when that archive holds a different evidence set.
+  `make export-evidence DIR=... OUT=...`
   archives, `make verify-archive ARCHIVE=...` re-verifies an existing archive (the
   restore drill in docs/OPERATIONS.md). Secrets are never archived here: the identity map
   and HMAC key are backed up separately. Self-tests run under `make test-tools`.

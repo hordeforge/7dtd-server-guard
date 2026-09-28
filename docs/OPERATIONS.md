@@ -147,6 +147,15 @@ manifest version 1 and is not verifiable by this tool. It refuses to run on a ch
 that does not verify, on a zero-byte segment, and on a copy that does not match the
 source, so a failed write can never be recorded as a successful backup.
 
+The archive name carries a one-second stamp, so a retried export lands on the
+directory the first attempt wrote. A retry that finds that archive holding exactly the
+segments and index it would have copied exits 0 and writes nothing: the retry is a
+no-op, not a second archive and not a failed backup. A retry that finds a different
+evidence set under that name is refused, because that is a different export and must
+not replace an archive the operator may already have copied off the server. Each
+export stages into its own directory, so two exports running at once cannot delete
+each other's copy in progress.
+
 The identity map and the HMAC key are archived separately, under different
 credentials, in a different failure domain than the evidence they explain. A single
 stolen archive containing both would turn every pseudonym in it into a named player.
