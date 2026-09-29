@@ -1,4 +1,4 @@
-# 🛡️ Landclaim (7DTD ServerGuard)
+# 🛡️ Landclaim (ServerGuard)
 
 > **Part of [HordeForge](https://github.com/hordeforge)**: High-Performance Systems Engineering for 7 Days to Die.
 
@@ -24,7 +24,7 @@ that a player uses an aimbot or wallhack from one event. A C# mod requires an EA
 server, so this project complements server administration on modded servers and is not
 a replacement for Easy Anti-Cheat.
 
-## 📚 Modding Best Practices
+## Modding best practices
 
 See the canonical **[HordeForge 7DTD Modding Best Practices Guide](https://github.com/hordeforge/.github/blob/main/MODDING_BEST_PRACTICES.md)** for engine load order rules, EAC-off requirements, `ModInfo.xml` specifications, and V3.2.0 compatibility notes.
 
