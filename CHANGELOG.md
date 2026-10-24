@@ -10,6 +10,8 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-25
+
 ### Added
 
 - `protocol.sign_library`, an observe-only detector candidate for the V3.3.0 sign upload
