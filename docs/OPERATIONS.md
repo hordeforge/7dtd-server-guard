@@ -39,6 +39,16 @@ instructions for a shipped product.
    the dry-run diff (what *would* have happened), then enable with explicit opt-in
    ([POLICY.md](POLICY.md) -> Enforcement gates). One corrective invariant per run.
 
+## Egress
+
+Server Guard writes evidence locally. When the operator enables the alert sink, it sends
+evidence IDs (never payloads or identities) to the configured webhook. Separately, the stock
+dedicated server is wired to send its own analytics off-host: `player_death` with inventory
+and location, quest events, `server_start`, and `player_join_server`, over HTTPS through the
+vendor SDK, with no managed opt-out. The send sites are decoded; a live transmission was not
+observed, and the release endpoint host is not decoded. A host egress policy that expects
+only the alert sink will also see that traffic ([RESEARCH.md](RESEARCH.md) finding 11).
+
 ## Routine checks
 
 - Weekly: review the health record for self-disabled hooks, faults, queue drops, and

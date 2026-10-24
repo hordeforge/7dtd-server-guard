@@ -16,6 +16,13 @@
       "seam": "process-time ownership resolution; NetPackageOwnedEntitySync"
     },
     {
+      "detectorId": "protocol.sign_library",
+      "phase": 4,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "seam": "NetPackageSingleSignData.ProcessPackage -> SignDataManager.ProcessSignReceived/StorePlayerSignBlob (stock performs no sender check)"
+    },
+    {
       "detectorId": "protocol.permission",
       "phase": 4,
       "ceiling": "Hard",
@@ -469,7 +476,7 @@
       "phase": 7,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag",
+      "seam": "NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer is gone in V3.3.0",
       "thresholds": [
         {
           "key": "max_unaccounted_delta",
@@ -488,14 +495,14 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
+      "seam": "NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer, NetPackageItemDrop"
     },
     {
       "detectorId": "inventory.craft",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.2.0 census)",
+      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.3.0 census)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -503,7 +510,8 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "NetPackageInventoryTransactionRequest (transaction idempotency)",
+      "seam": "at risk: no per-transaction package in the V3.3.0 census; transaction ids went with the removed transactional-inventory layer",
+      "hardCondition": "Hard only if Phase 1 finds a per-transaction id to replay; without one this detector is deferred and its coverage degrades to inventory.delta (Strong)",
       "thresholds": [
         {
           "key": "replay_cache_size",
@@ -531,14 +539,15 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "NetPackageInventoryTransactionRequest (atomic slot check)"
+      "seam": "at risk: no per-transaction atomic slot check in the V3.3.0 census (transactional-inventory layer removed)",
+      "hardCondition": "Hard only if Phase 1 finds a server-side atomic slot check; without one this detector is deferred and its coverage degrades to inventory.delta (Strong)"
     },
     {
       "detectorId": "inventory.quality",
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
+      "seam": "NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer"
     },
     {
       "detectorId": "inventory.trader",
@@ -602,7 +611,7 @@
       "phase": 8,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "NetPackageLockRequest/Response plus claim database at access seam"
+      "seam": "NetPackageLockTarget (LockManager.ProcessRequest, server-authoritative) plus claim database at access seam"
     },
     {
       "detectorId": "world.wire",

@@ -17,6 +17,15 @@ combat, inventory changes, crafting, loot, world interaction, and privileged act
 - It does **not** bypass or interact with Easy Anti-Cheat.
 - It cannot and does not claim to prove use of any specific cheat program from behavior alone.
 
+## Stock game telemetry
+
+Separately from Server Guard, the shipped dedicated server is wired to send its own analytics
+off the host: `player_death` (inventory, position, biome, POI, party locations), quest events,
+`server_start`, and `player_join_server`, over HTTPS through the vendor SDK, with no managed
+opt-out. The send sites are decoded; a live transmission was not observed. Server Guard
+neither adds to nor reads that stream, so this notice is not a disclosure of it; an
+operator's player notice should say that the stock server reports this data as well.
+
 ## What is recorded
 
 For gameplay events that trigger a detector, the server writes an evidence record containing:

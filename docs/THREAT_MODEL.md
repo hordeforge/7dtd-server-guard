@@ -139,7 +139,7 @@ The schema permits that sentinel deliberately, alongside a real digest
 validates by design rather than slipping past a loose check, and
 `tools/replay_contract_check.py` does not require the digest branch. The consequence to carry
 forward: a trace whose hash reads `UNVERIFIED` proves nothing about the build it was recorded
-against, and nothing in the tree verifies a running server against the pinned `3.2.0-b9`
+against, and nothing in the tree verifies a running server against the pinned `3.3.0-b18`
 (`config/server-guard.example.json:6`). The pin is documentary and config-level until Phase 1
 computes a fingerprint (`TODO.md:83`).
 

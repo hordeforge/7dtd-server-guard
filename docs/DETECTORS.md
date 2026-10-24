@@ -43,6 +43,7 @@ not the tables. The per-detector config manifest
 |---|---|---|---|---|
 | `protocol.stage_order` | Package type is legal for the connection's current join/auth/spawn/play stage. | all decision inputs server-derived | Hard | stock-reconnect-resume |
 | `protocol.entity_owner` | The entity ID in a request belongs to the requesting connection. | all decision inputs server-derived | Hard | physics-master-delegate, server-originated-relay |
+| `protocol.sign_library` | A sign upload targets the sender's own player library, or a prefab library under prefab-editor authority. | all decision inputs server-derived | Hard | prefab-edit-mode, client-library-sync, admin-mod-origin |
 | `protocol.permission` | Debug, creative, godmode, spectator, and console actions require permission, checked at execution time, not request time. | all decision inputs server-derived | Hard | admin-principal, automation-principal |
 | `protocol.duplicate_session` | A platform identity has only one live session; duplicate logins are evidence, not proof. | all decision inputs server-derived | Strong | stale-disconnect, reconnect-grace |
 | `protocol.malformed` | Decoded values are in domain: enum in range, no NaN/infinity, coordinates, stack sizes, and lengths bounded. | all decision inputs server-derived | Hard | none |
@@ -89,8 +90,8 @@ not the tables. The per-detector config manifest
 | `inventory.delta` | Every positive item delta is explained by an authorized cause in the double-entry ledger. | all decision inputs server-derived | Strong | all authorized causes, rollback, disconnect, mod-grants, reconciliation |
 | `inventory.stack` | A stack cannot exceed the authoritative item definition's stack limit. | all decision inputs server-derived | Hard | container-stacks, vehicle, drone |
 | `inventory.craft` | Craft output is backed by ingredients, time, station, and recipe. | all decision inputs server-derived; hard condition: Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong) | Hard (conditional) | workstation, craft-cancellation |
-| `inventory.replay` | A transaction ID is applied at most once per session epoch. | all decision inputs server-derived | Hard | reconnect, container-move, craft, trader |
-| `inventory.container_race` | Concurrent container moves resolve atomically; a second player's race never grants an item. | all decision inputs server-derived | Hard | concurrent-moves, split-merge, second-player-race |
+| `inventory.replay` | A transaction ID is applied at most once per session epoch. | all decision inputs server-derived; hard condition: Hard only if Phase 1 finds a per-transaction id to replay; without one this detector is deferred and its coverage degrades to inventory.delta (Strong) | Hard (conditional) | reconnect, container-move, craft, trader |
+| `inventory.container_race` | Concurrent container moves resolve atomically; a second player's race never grants an item. | all decision inputs server-derived; hard condition: Hard only if Phase 1 finds a server-side atomic slot check; without one this detector is deferred and its coverage degrades to inventory.delta (Strong) | Hard (conditional) | concurrent-moves, split-merge, second-player-race |
 | `inventory.quality` | Item quality/mod/durability combinations are possible under item definitions and crafting rules. | all decision inputs server-derived | Hard | mod-item-quality |
 | `inventory.trader` | Trader transactions match server-computed price and currency. | all decision inputs server-derived; hard condition: Hard only if Phase 1 finds an authoritative trader price/currency seam; otherwise degrades to inventory.delta (Strong) | Hard (conditional) | trader-state-sync |
 | `inventory.rollback` | Disconnect/rollback gains are reconciled against the durable save epoch. | all decision inputs server-derived | Strong | crash-recovery, disconnect, save-rollback |
@@ -123,6 +124,7 @@ for a mode raise until its declared fixture set is green in observe mode.
 |---|---|---|---|---|---|---|---|---|
 | `protocol.stage_order` | X | X |  | X |  |  |  |  |
 | `protocol.entity_owner` | X | X |  |  |  | X |  |  |
+| `protocol.sign_library` | X | X |  |  |  | X |  |  |
 | `protocol.permission` | X | X |  |  |  | X |  |  |
 | `protocol.duplicate_session` | X | X |  | X |  |  |  | X |
 | `protocol.malformed` | X | X |  |  |  |  |  |  |
@@ -163,16 +165,18 @@ for a mode raise until its declared fixture set is green in observe mode.
 | `availability.cost` | X | X | X |  |  |  |  |  |
 | `availability.churn` | X | X |  | X |  |  |  |  |
 
-## Seam map (V3.2.0 census candidates)
+## Seam map (V3.3.0 census candidates)
 
-Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`
-(195 types) and the protocol narratives; every seam is verified in Phase 1 before
-a hook is written. Declared per detector in `tools/detector_spec.yaml`.
+Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.3.0/INDEX.md`
+(192 types, 184 registered ids) and the protocol narratives; every seam is verified
+in Phase 1 before a hook is written. Declared per detector in
+`tools/detector_spec.yaml`.
 
 | Detector | Candidate seam |
 |---|---|
 | `protocol.stage_order` | NetPackage*.ProcessPackage stage gating (ConnectionManager.ProcessPackages) |
 | `protocol.entity_owner` | process-time ownership resolution; NetPackageOwnedEntitySync |
+| `protocol.sign_library` | NetPackageSingleSignData.ProcessPackage -> SignDataManager.ProcessSignReceived/StorePlayerSignBlob (stock performs no sender check) |
 | `protocol.permission` | NetPackageConsoleCmdClient/Server, NetPackageDebug, NetPackageModifyCVar execution seams |
 | `protocol.duplicate_session` | NetPackagePlayerLogin, NetPackageRequestToEnterGame handlers |
 | `protocol.malformed` | NetPackage read/decode boundaries across all census types |
@@ -196,16 +200,16 @@ a hook is written. Declared per detector in `tools/detector_spec.yaml`.
 | `progression.xp_rate` | NetPackageEntityAddExpServer |
 | `progression.skill_prereq` | NetPackageEntitySetSkillLevelServer |
 | `progression.health_stamina` | NetPackageEntityStatChanged, NetPackageEntityStatsBuff, NetPackageGameStats |
-| `inventory.delta` | NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag |
-| `inventory.stack` | NetPackageInventoryTransactionRequest, NetPackagePlayerInventory |
-| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.2.0 census) |
-| `inventory.replay` | NetPackageInventoryTransactionRequest (transaction idempotency) |
-| `inventory.container_race` | NetPackageInventoryTransactionRequest (atomic slot check) |
-| `inventory.quality` | NetPackageInventoryTransactionRequest, NetPackagePlayerInventory |
+| `inventory.delta` | NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer is gone in V3.3.0 |
+| `inventory.stack` | NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer, NetPackageItemDrop |
+| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.3.0 census) |
+| `inventory.replay` | at risk: no per-transaction package in the V3.3.0 census; transaction ids went with the removed transactional-inventory layer |
+| `inventory.container_race` | at risk: no per-transaction atomic slot check in the V3.3.0 census (transactional-inventory layer removed) |
+| `inventory.quality` | NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer |
 | `inventory.trader` | NetPackageTraderData (sync only; no price/currency transaction package in the census) |
 | `inventory.rollback` | save epoch / NetPackagePlayerDisconnect / reconnect handlers |
 | `world.block` | NetPackageSetBlock, NetPackagePickupBlock, NetPackageAnimateBlock, NetPackageLandClaimRepair |
-| `world.claim` | NetPackageLockRequest/Response plus claim database at access seam |
+| `world.claim` | NetPackageLockTarget (LockManager.ProcessRequest, server-authoritative) plus claim database at access seam |
 | `world.wire` | NetPackageWireActions, NetPackageWireToolActions |
 | `world.entity_spawn` | NetPackageRequestToSpawnEntity, NetPackageEntitySpawn/Response, NetPackageQuestEntitySpawn |
 | `world.explosion` | NetPackageExplosionInitiate, NetPackageExplosionClient |

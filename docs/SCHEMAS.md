@@ -106,7 +106,7 @@ where the serving environment is not the one running the check.
 | `schemaVersion` | int | 1 | exactly 1 | Reject otherwise |
 | `enabled` | bool | true | - | Master switch; `false` behaves like emergency disable at startup |
 | `emergencyDisable` | bool | false | - | Loaded true, every detector starts at `observe`. At runtime the same state is reached with `sg emergency-disable`, which is operator-only and audited |
-| `buildPin.buildId` | string | `3.2.0-b9` | exact match | Pinned game build; other builds load with all failing hooks disabled (observe-only) |
+| `buildPin.buildId` | string | `3.3.0-b18` | exact match | Pinned game build; other builds load with all failing hooks disabled (observe-only) |
 | `buildPin.policy` | string | `observe-else` | `observe-else` only in v1 | Behavior on build mismatch |
 | `modes.<detectorId>` | string | `observe` | `observe` / `correct` / `enforce` | Per-detector mode; raising requires the phase gates in POLICY.md, never just config editing |
 | `actions.correct` | bool | true | - | Permit `correct` transitions for Hard invariants in `correct`/`enforce` modes |
@@ -257,7 +257,7 @@ copying this example into a record needs values that validate.
   "tick": 36547,
   "tickHealthMs": 41,
   "latencyMs": 88,
-  "buildId": "3.2.0-b9",
+  "buildId": "3.3.0-b18",
   "configHash": "cafe000000000000000000000000000000000000000000000000000000000000",
   "hookManifestHash": "beef000000000000000000000000000000000000000000000000000000000000",
   "sessionEpoch": 7,
@@ -385,7 +385,7 @@ by the metadata-contract tests (TEST_PLAN.md Layer 3). One entry per hook:
 ```json
 {
   "manifestVersion": 1,
-  "buildId": "3.2.0-b9",
+  "buildId": "3.3.0-b18",
   "buildFingerprint": "sha256:...",
   "configSchemaHash": "...",
   "hooks": [

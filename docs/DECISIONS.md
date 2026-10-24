@@ -13,7 +13,7 @@ see note).
 ## D-01: Pin one game build and fail open
 
 - **Status:** accepted; the one-build fail-open rule binds, its build pin is superseded by
-  D-18 (V3.2.0 (b9)).
+  D-19 (V3.3.0 (b18)).
 - **Decision:** Target exactly one 7 Days to Die dedicated build at a time, Unity Mono. Every
   Harmony hook resolves exact type, full signature, parameter roles, return type, and
   metadata token against that build and self-disables on mismatch. Other builds load in
@@ -169,7 +169,7 @@ see note).
 - **Status:** accepted.
 - **Decision:** Combat validators hook both `NetPackageDamageEntity` and
   `NetPackageRangeCheckDamageEntity`; a validator on one path only protects nothing. Both
-  seams are the two damage paths named in the V3.2.0 netpackage census (D-18).
+  seams are the two damage paths named in the V3.3.0 netpackage census (D-19).
 - **Alternatives:** Hook the common post-damage sink only (rejected: the range-check path
   bypasses the sink; the at-risk seam list names it).
 - **Consequence:** RESEARCH.md open question, SIGNALS.md -> Correlation graph, TODO.md Phase 6,
@@ -238,8 +238,7 @@ see note).
 
 ## D-18: Re-pin the supported build to V3.2.0 (b9)
 
-- **Status:** accepted. Supersedes the build pin in D-01; D-01's one-build fail-open rule is
-  unchanged.
+- **Status:** superseded by D-19 (build pin only).
 - **Decision:** The pinned build is 7 Days to Die dedicated V3.2.0 (b9), Unity Mono, the build
   installed locally. `buildPin.buildId` defaults to `3.2.0-b9` (SCHEMAS.md, config v1), and
   the Phase 1 surface inventory, hook manifest, and metadata tests verify against it.
@@ -252,6 +251,28 @@ see note).
   from that census, so the `world.budget` fan-out seam cites `NetPackagePOIMetadataRequest`
   instead. The V3.0.1 and V3.1.0 narratives stay as historical evidence; the V3.1.0 dumps
   remain valid for deltas the V3.2.0 dump does not cover.
+
+## D-19: Re-pin the supported build to V3.3.0 (b18)
+
+- **Status:** accepted. Supersedes the build pin in D-18; D-01's one-build fail-open rule is
+  unchanged.
+- **Decision:** The pinned build is 7 Days to Die dedicated V3.3.0 (b18), Unity Mono, the
+  build installed locally. `buildPin.buildId` defaults to `3.3.0-b18` (SCHEMAS.md, config v1),
+  and the Phase 1 surface inventory, hook manifest, and metadata tests verify against it.
+- **Alternatives:** Stay on V3.2.0 (b9) (rejected: it is no longer the build the project runs,
+  and its netpackage ids are stale); hardcode a per-build package-id table (rejected:
+  registration ids are derived from metadata order, so a mod assembly shifts every id after
+  it and no table is stable).
+- **Consequence:** RESEARCH.md -> Local evidence points at the V3.3.0 netpackage census
+  (192 types, 184 registered ids) as the seam source for `tools/detector_spec.yaml`. The
+  transactional-inventory layer that carried `NetPackageInventoryTransaction*` is removed, so
+  `inventory.delta` now diffs whole-container blobs and `inventory.replay` and
+  `inventory.container_race` are at risk until Phase 1 re-derives a seam. The lock pair is
+  replaced by the server-authoritative `NetPackageLockTarget`, so `world.claim` cites that
+  package. V3.3.0 adds `NetPackageSingleSignData`, whose stock write path performs no sender
+  check; `protocol.sign_library` records that as an observe-only detector candidate (Phase 4).
+  Every registration id is inferred from metadata order until a live b18 join capture exists.
+  The V3.0.1, V3.1.0, and V3.2.0 narratives stay as historical evidence.
 
 ## Decision process
 

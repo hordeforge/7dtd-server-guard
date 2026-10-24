@@ -17,7 +17,7 @@ location of every threat.
 
 - **Contact:** maci (maci.stgn@gmail.com).
 - Do **not** open a public issue for an exploitable finding first.
-- Include: affected build (target is V3.2.0 b9), the detector or code path, a reproduction or
+- Include: affected build (target is V3.3.0 b18), the detector or code path, a reproduction or
   proof-of-concept, and the impact (false reject, evidence tampering, bypass, resource abuse).
 
 ## Supported versions

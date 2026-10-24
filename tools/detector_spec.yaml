@@ -54,6 +54,32 @@ detectors:
     contexts: [physics-master-delegate, server-originated-relay]
     fixtures: [normal, violation, admin-mod-origin]
 
+  - id: protocol.sign_library
+    seam: "NetPackageSingleSignData.ProcessPackage -> SignDataManager.ProcessSignReceived/StorePlayerSignBlob (stock performs no sender check)"
+    family: protocol
+    phase: 4
+    ceiling: Hard
+    default_mode: observe
+    summary: "A sign upload targets the sender's own player library, or a prefab library under prefab-editor authority."
+    inputs:
+      - {name: library_id, authority: client-declared, role: observed}
+      - {name: sender_library_id, authority: server-derived, role: decision}
+      - {name: prefab_edit_authority, authority: server-derived, role: decision}
+    algorithm: |
+      Compare the upload's libraryId with the sender's own player library id, and admit a
+      prefab library only while prefab-edit mode is active. V3.3.0 performs neither check:
+      ProcessSignReceived never reads Sender and StorePlayerSignBlob validates only that the
+      id parses as a player id, so a client can create a new guid or overwrite an existing
+      guid in another player's library, with any sharing value; the server persists the blob
+      to that player's `.signs` file and relays it. Sign deletion is ownership-checked and
+      sharing is client-enforced, so neither covers the write path. The join download is a
+      separate stock behavior: SendSignDataToClient ships every player library, private ones
+      included, and pays no attention to sharing. Observe-only until Phase 4 legal-context
+      fixtures exist.
+    state: "None (reads the sender identity and the prefab-edit flag)."
+    contexts: [prefab-edit-mode, client-library-sync, admin-mod-origin]
+    fixtures: [normal, violation, admin-mod-origin]
+
   - id: protocol.permission
     seam: "NetPackageConsoleCmdClient/Server, NetPackageDebug, NetPackageModifyCVar execution seams"
     family: protocol
@@ -67,7 +93,10 @@ detectors:
       - {name: admin_level, authority: server-derived, role: decision}
     algorithm: |
       At the execution seam, resolve the principal's admin level and compare against the
-      action's required level. Exempts named admin and automation principals.
+      action's required level. Exempts named admin and automation principals. V3.3.0 adds
+      `give` and `listitems`, and neither overrides DefaultPermissionLevel, so both inherit
+      level 0 (highest); a deny-by-default command policy has to decide about `give`
+      explicitly, because it drops an item stack at the player's feet.
     state: "None (reads the server permission registry)."
     contexts: [admin-principal, automation-principal]
     fixtures: [normal, violation, admin-mod-origin]
@@ -535,7 +564,7 @@ detectors:
 
   # ---------------------------------------------------------------- inventory (phase 7)
   - id: inventory.delta
-    seam: "NetPackageInventoryTransactionRequest/Response, NetPackagePlayerInventory, NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag"
+    seam: "NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer is gone in V3.3.0"
     family: inventory
     phase: 7
     ceiling: Strong
@@ -551,7 +580,10 @@ detectors:
       grant, mod action, vehicle/drone/container move, rollback reconciliation). Unknown
       server-origin changes are logged separately and never accuse a player. Reconciliation
       after crash/disconnect never attributes to a player. Cap full-inventory diffs per
-      tick and diff lazily (perf dominator).
+      tick and diff lazily (perf dominator). V3.3.0 removed the transactional-inventory
+      layer, so a player inventory now arrives as whole-container ItemStackGrid blobs;
+      Phase 1 must re-derive which delta attribution survives that change before any
+      per-transaction claim is made.
     state: "Per-player item ledger, cause queue, reconciliation markers."
     thresholds:
       - {key: max_unaccounted_delta, type: int, range: [1, 1000000], default: 1000, note: "placeholder, item count"}
@@ -559,7 +591,7 @@ detectors:
     fixtures: [normal, violation, rollback, admin-mod-origin, induced-finding]
 
   - id: inventory.stack
-    seam: "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
+    seam: "NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer, NetPackageItemDrop"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -569,14 +601,15 @@ detectors:
       - {name: claimed_stack, authority: client-declared, role: observed}
       - {name: item_definition, authority: server-derived, role: decision}
     algorithm: |
-      Compare the claimed stack against the item definition at the mutation seam; reject
-      the transition (correct). The verdict depends only on the item definition.
+      Compare the claimed stack in the uploaded container grid against the item
+      definition at the apply seam; reject the transition (correct). The verdict depends
+      only on the item definition.
     state: "None (reads item XML definition)."
     contexts: [container-stacks, vehicle, drone]
     fixtures: [normal, violation]
 
   - id: inventory.craft
-    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.2.0 census)"
+    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.3.0 census)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -589,18 +622,21 @@ detectors:
     algorithm: |
       At-risk seam: the package census shows no craft/recipe/workstation-queue package;
       backpack crafting appears client-local and workstations sync as opaque tile-entity
-      blobs. If Phase 1 finds no seam, this detector is deferred and its coverage degrades
+      blobs. The transactional-inventory layer that once carried container moves is gone
+      in V3.3.0, so craft attribution would have to come from the whole-container inventory
+      blob. If Phase 1 finds no seam, this detector is deferred and its coverage degrades
       to inventory.delta.
     state: "Craft transaction state machine (only if the seam exists)."
     contexts: [workstation, craft-cancellation]
     fixtures: [normal, violation, rollback]
 
   - id: inventory.replay
-    seam: "NetPackageInventoryTransactionRequest (transaction idempotency)"
+    seam: "at risk: no per-transaction package in the V3.3.0 census; transaction ids went with the removed transactional-inventory layer"
     family: inventory
     phase: 7
     ceiling: Hard
     default_mode: observe
+    hard_condition: "Hard only if Phase 1 finds a per-transaction id to replay; without one this detector is deferred and its coverage degrades to inventory.delta (Strong)"
     summary: "A transaction ID is applied at most once per session epoch."
     inputs:
       - {name: transaction_id, authority: client-declared, role: observed}
@@ -608,7 +644,9 @@ detectors:
     algorithm: |
       Session-scoped idempotency cache: a replayed transaction is a no-op (the second
       application is rejected without state change). The verdict depends only on the
-      server's cache.
+      server's cache. V3.3.0 removed the transactional-inventory layer, so there is no
+      transaction id to key this on until Phase 1 re-derives a seam from the
+      whole-container upload.
     state: "Per-session bounded transaction-id cache with replay-window expiry."
     thresholds:
       - {key: replay_cache_size, type: int, range: [64, 1000000], default: 10000}
@@ -617,11 +655,12 @@ detectors:
     fixtures: [normal, violation, reconnect-duplicate-session]
 
   - id: inventory.container_race
-    seam: "NetPackageInventoryTransactionRequest (atomic slot check)"
+    seam: "at risk: no per-transaction atomic slot check in the V3.3.0 census (transactional-inventory layer removed)"
     family: inventory
     phase: 7
     ceiling: Hard
     default_mode: observe
+    hard_condition: "Hard only if Phase 1 finds a server-side atomic slot check; without one this detector is deferred and its coverage degrades to inventory.delta (Strong)"
     summary: "Concurrent container moves resolve atomically; a second player's race never grants an item."
     inputs:
       - {name: slot_ownership, authority: server-derived, role: decision}
@@ -629,13 +668,15 @@ detectors:
     algorithm: |
       The server atomically checks slot ownership and container version; a racing request
       fails without state change, so the victim accrues nothing (POLICY.md attribution).
-      Post-transaction conservation re-verifies the ledger.
+      Post-transaction conservation re-verifies the ledger. V3.3.0 removed the
+      transactional-inventory layer, so Phase 1 must re-derive whether a server-side atomic
+      check still exists for container moves.
     state: "Container version counters."
     contexts: [concurrent-moves, split-merge, second-player-race]
     fixtures: [normal, violation, induced-finding]
 
   - id: inventory.quality
-    seam: "NetPackageInventoryTransactionRequest, NetPackagePlayerInventory"
+    seam: "NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -721,7 +762,7 @@ detectors:
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: world.claim
-    seam: "NetPackageLockRequest/Response plus claim database at access seam"
+    seam: "NetPackageLockTarget (LockManager.ProcessRequest, server-authoritative) plus claim database at access seam"
     family: world
     phase: 8
     ceiling: Hard

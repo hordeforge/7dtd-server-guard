@@ -1,11 +1,11 @@
 # Research and constraints
 
-Research date: 2026-08-28 (the initial survey is dated inline where it is cited). Local
-target: 7 Days to Die dedicated V3.2.0 (b9), Unity Mono
-(the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research` narratives under Local
-evidence now include **V3.2.0** regenerable dumps (`il/netpackages-v3.2.0/`,
-`il/dedi-complete-v3.2.0/`, `il/deep-v3.2.0/`, `il/loop-complete-v3.2.0/`) and the
-**V3.1.0** set (`il/netpackages-v3.1.0/` and siblings); older narrative
+Research date: 2026-08-28 (the initial survey is dated inline where it is cited; the V3.3.0
+b18 retarget was checked 2026-10-24). Local target: 7 Days to Die dedicated V3.3.0 (b18),
+Unity Mono (the pinned build; see [POLICY.md](POLICY.md)). The `7dtd-engine-research`
+narratives under Local evidence now include **V3.3.0** regenerable dumps
+(`il/netpackages-v3.3.0/`, `il/dedi-complete-v3.3.0/`, `il/full-v3.3.0/`) plus the earlier
+V3.2.0 set and the **V3.1.0** set (`il/netpackages-v3.1.0/` and siblings); older narrative
 text was produced against V3.0.1 (b4). Phase 1 still re-verifies every surface against the
 pinned build before any hook is written, but the build delta risk is partially de-risked.
 
@@ -30,20 +30,49 @@ pinned build before any hook is written, but the build delta risk is partially d
 8. The V3 protocol includes authoritative processing surfaces for movement, damage, inventory,
    transaction, wire, teleport, player, and entity packages. Exact hook viability must be verified
    from metadata and smoke tests for every supported game build.
-9. The V3.2.0 netpackage census (195 types, `il/netpackages-v3.2.0/INDEX.md`) names the seams:
-   `NetPackageDamageEntity` and `NetPackageRangeCheckDamageEntity` are the two damage paths;
+9. The V3.3.0 netpackage census (192 types, 184 registered ids,
+   `il/netpackages-v3.3.0/INDEX.md`) names the seams: `NetPackageDamageEntity` and
+   `NetPackageRangeCheckDamageEntity` are the two damage paths;
    `NetPackageEntityPosAndRot`/`RelPosAndRot`/`EntityPhysics`/`PlayerStats` carry movement;
    `NetPackageEntityTeleport` (client) vs `NetPackageTeleportPlayer` (server) split the
-   teleport story; `NetPackageInventoryTransactionRequest/Response` is a real transaction
-   package (craft and trader price/currency transactions still have no package in the
-   census); `NetPackageEntityAddExpServer` and `NetPackageEntitySetSkillLevelServer` are the
-   client-pushed progression seams; `NetPackageConsoleCmdClient/Server` are the console
-   seams; `NetPackageSetBlock`, `NetPackageWireActions`, `NetPackageExplosionInitiate`, and
-   `NetPackageRequestToSpawnEntity` are the world/entity seams. Every detector's declared
-   seam in `tools/detector_spec.yaml` cites these candidates; Phase 1 verifies them. The
-   census delta from V3.1.0 (193 types) to V3.2.0 adds `NetPackagePOIMetadataRequest`,
-   `NetPackagePOIMetadataResponse`, and `NetPackageConfirmSpawnEntity`, and drops
-   `NetPackagePOIAround`; every other named seam is present in both.
+   teleport story; `NetPackageEntityAddExpServer` and `NetPackageEntitySetSkillLevelServer`
+   are the client-pushed progression seams; `NetPackageConsoleCmdClient/Server` are the
+   console seams; `NetPackageSetBlock`, `NetPackageWireActions`,
+   `NetPackageExplosionInitiate`, and `NetPackageRequestToSpawnEntity` are the world/entity
+   seams. Two V3.3.0 changes cut the inventory seam set. The transactional-inventory layer
+   is removed (`NetPackageInventoryTransactionRequest/Response`,
+   `NetPackageInventoryDataRequest/Response`, `TransactionalInventory`, `InventoryTransaction`,
+   `InventoryManager`), and `NetPackagePlayerInventory` now carries whole-container
+   `ItemStackGrid` blobs for the inventory, bag, and equipment. The lock request/response
+   pair is replaced by one server-authoritative `NetPackageLockTarget` with `LockChannel`
+   and `WorldObjectType`. Every detector's declared seam in `tools/detector_spec.yaml`
+   cites these candidates; Phase 1 verifies them. The census delta from V3.2.0 (195 types)
+   removes six packages and adds three, among them the sign pair
+   `NetPackageSingleSignData` and `NetPackageSignDelete` (finding 10). Registration ids are
+   derived from metadata order, and a mod assembly adding a `NetPackage` subclass shifts
+   every id after it, so each numeric id is inferred until a live b18 join capture exists.
+10. Sign libraries have no server-side write authorization. `NetPackageSingleSignData`
+    carries a `libraryId`, a length, and a `SignData` blob; `ProcessPackage` calls
+    `SignDataManager.ProcessSignReceived`, which never reads `Sender`, and
+    `StorePlayerSignBlob` checks only that the id parses as a player id. A client can write
+    a new guid, or overwrite an existing guid, in another player's library with any sharing
+    value, and the server persists it to that player's `.signs` file and relays it. The
+    join download (`SendSignDataToClient`) serializes every player library, private ones
+    included, and ignores `sharing`, so those bytes reach every client regardless of the
+    stock UI gates. Deletion is ownership-checked; `sharing` is client-enforced only. There
+    is no audit trail and no analytics event for signs. `protocol.sign_library` in
+    `tools/detector_spec.yaml` records this as an observe-only detector candidate; the
+    download exposure is stock behavior to report to operators, not an action guard can
+    reject.
+11. The stock dedicated server is wired to emit telemetry off-host. `Services.Analytics` adds
+    `player_death` (inventory, position, biome, POI id and name, party locations),
+    `quest_added`, `quest_removed`, and `quest_progression` to `server_start` and
+    `player_join_server` (schema 3), over HTTPS POST `/analytics/v1/batch` through
+    `BhvrAnalyticsMS`; there is no managed opt-out. The send sites are decoded; a live
+    transmission was not observed. The only endpoint literal in the dedicated install's
+    `data.unity3d` is a development host, so the release endpoint host is not decoded. This
+    is stock server egress, not guard egress: guard writes evidence locally, and its operator
+    alert sink is a separate opt-in.
 
 ## Where findings landed
 
@@ -60,7 +89,9 @@ updates the owning document, not just this one:
 | 6 (ModEvents surface) | ARCHITECTURE.md → Hook policy |
 | 7 (EAC types) | THREAT_MODEL.md → Out of scope; SECURITY.md → Out of scope |
 | 8 (authoritative processing surfaces) | TODO.md → Phase 1; TEST_PLAN.md → Layer 3 |
-| 9 (V3.2.0 census names the seams) | DETECTORS.md → seam fields; tools/detector_spec.yaml; TODO.md → Phase 1 |
+| 9 (V3.3.0 census names the seams) | DETECTORS.md → seam fields; tools/detector_spec.yaml; TODO.md → Phase 1 |
+| 10 (sign library write authorization) | DETECTORS.md → `protocol.sign_library`; tools/detector_spec.yaml; TODO.md → Phase 4 |
+| 11 (stock telemetry egress) | PRIVACY.md -> Stock game telemetry; OPERATIONS.md -> Egress |
 
 ## Community landscape (surveyed 2026-07-21)
 
@@ -102,13 +133,14 @@ inventory against the pinned build, unless noted otherwise.
 
 | Question | If unresolved | Resolved by |
 |---|---|---|
-| Is there a craft/recipe/workstation-queue seam the server can hook? | Craft detector degrades to unexplained-delta (Strong). The V3.2.0 census shows no craft package; whether `NetPackageInventoryTransactionRequest` covers craft transactions is the Phase 1 question | Phase 1, Phase 7 |
+| Is there a craft/recipe/workstation-queue seam the server can hook? | Craft detector degrades to unexplained-delta (Strong). The V3.3.0 census shows no craft package, and the transactional-inventory layer that could have covered craft is removed; whether the whole-container inventory blob gives craft attribution is the Phase 1 question | Phase 1, Phase 7 |
+| Does any per-transaction inventory seam survive the removal of the transactional-inventory layer? | `inventory.replay` and `inventory.container_race` stay deferred and degrade to `inventory.delta` (Strong) | Phase 1, Phase 7 |
 | Is there an authoritative trader price/currency decision point? | Trader detector degrades to unexplained-delta (Strong). The census shows `NetPackageTraderData` sync only, no price/currency transaction package | Phase 1, Phase 7 |
 | Which client values does the vanilla server already validate or overwrite? | Duplicate validation, wrong authority class | Phase 1 |
 | Does the movement envelope hold against server-authoritative state on the pinned build? | Movement stays Strong, never Hard | Phase 1, Phase 5 |
 | Do `NetPackageDamageEntity` and `NetPackageRangeCheckDamageEntity` cover the same attack surface? | One path leaves a bypass | Phase 1, Phase 6 |
 | Can vehicle physics-master limits be reconstructed server-side? | Vehicle signals stay Weak | Phase 5 |
-| Which seams changed between V3.0.1 (b4) and V3.2.0 (b9)? | Hooks misresolve; fail-open limits the damage, coverage gaps remain | Phase 1 re-verification |
+| Which seams changed between V3.2.0 (b9) and V3.3.0 (b18)? | Hooks misresolve; fail-open limits the damage, coverage gaps remain | Phase 1 re-verification |
 
 ## Primary references
 
@@ -123,7 +155,11 @@ inventory against the pinned build, unless noted otherwise.
 
 ## Local evidence
 
-- `../../7dtd-engine-research/il/netpackages-v3.2.0/INDEX.md`: V3.2.0 netpackage census (195 types) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
+- `../../7dtd-engine-research/il/netpackages-v3.3.0/INDEX.md`: V3.3.0 netpackage census (192 types, 184 registered ids) with read/write/process sizes; the seam source for `tools/detector_spec.yaml`.
+- `../../7dtd-engine-research/docs/gameplay/signs.md`: player sign libraries, the three sharing modes, the delete matrix, and the `.signs`/`deletedSigns.dat` stores.
+- `../../7dtd-engine-research/docs/network/protocol-packages.md`: per-package body catalog, including the V3.3.0 wire delta.
+- `../../7dtd-engine-research/docs/admin/console-commands.md`: console registry, including the V3.3.0 `give` and `listitems` additions.
+- `../../7dtd-engine-research/docs/admin/server-lifecycle.md`: dedicated lifecycle and the analytics send sites.
 - `../../7dtd-engine-research/docs/loop/managers.md`: `ModEvents` inventory.
 - `../../7dtd-engine-research/docs/inventories/netpackages.md`: network package inventory and complexity.
 - `../../7dtd-engine-research/docs/network/protocol-frames.md`: decoded movement and damage frame structure.

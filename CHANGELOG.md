@@ -10,6 +10,27 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+### Added
+
+- `protocol.sign_library`, an observe-only detector candidate for the V3.3.0 sign upload
+  package. The stock server never compares the uploaded library id with the sender, so a
+  client can write into another player's library.
+
+### Changed
+
+- Retarget the pinned build from V3.2.0 (b9) to V3.3.0 (b18) in the config schema default, the
+  example config, the evidence and replay samples, the metadata-test README, and the design
+  contract. The new pin is D-19 in `docs/DECISIONS.md`.
+- Regenerate the detector registry and config manifest against the V3.3.0 netpackage census
+  (192 types, 184 registered ids). Inventory seams move to the whole-container
+  `NetPackagePlayerInventory` blobs because the transactional-inventory layer is removed;
+  `inventory.replay` and `inventory.container_race` carry a hard condition and degrade to
+  `inventory.delta` until Phase 1 re-derives a seam. The lock and sign seams cite
+  `NetPackageLockTarget` and `NetPackageSingleSignData`. The console seam notes that `give`
+  and `listitems` inherit permission level 0.
+- Record the stock server's telemetry egress and the sign-library write gap in
+  `docs/RESEARCH.md`, `PRIVACY.md`, and `docs/OPERATIONS.md`.
+
 ## [0.5.0] - 2026-09-28
 
 This ships as 0.5.0, not a patch: the entries under Breaking change config validation, the

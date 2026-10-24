@@ -3,12 +3,13 @@
   "enabled": true,
   "emergencyDisable": false,
   "buildPin": {
-    "buildId": "3.2.0-b9",
+    "buildId": "3.3.0-b18",
     "policy": "observe-else"
   },
   "modes": {
     "protocol.stage_order": "observe",
     "protocol.entity_owner": "observe",
+    "protocol.sign_library": "observe",
     "protocol.permission": "observe",
     "protocol.duplicate_session": "observe",
     "protocol.malformed": "observe",

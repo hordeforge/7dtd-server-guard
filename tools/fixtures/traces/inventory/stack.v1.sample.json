@@ -3,12 +3,12 @@
   "traceId": "inventory.stack.contract-v1",
   "detectorId": "inventory.stack",
   "seed": 74071,
-  "build": {"gameVersion": "V3.2.0-b9", "hookManifestHash": "UNVERIFIED"},
+  "build": {"gameVersion": "V3.3.0-b18", "hookManifestHash": "UNVERIFIED"},
   "mode": "observe",
   "determinism": {
     "startUtc": "2026-07-21T12:00:00.000Z",
     "startMonotonicMs": 0,
-    "fingerprint": "68b6f3d1d137f0646a0db38d35082bb4b75d5e77811af00fb987476f6fcede76"
+    "fingerprint": "b72add43780de8635827c5944197ded96afcccf7963c75a64385d6f81b245a4c"
   },
   "workBudget": {"maxEvents": 4, "maxStateEntries": 8, "maxWorkUnits": 32},
   "cases": [
