@@ -44,6 +44,7 @@ not the tables. The per-detector config manifest
 | `protocol.stage_order` | Package type is legal for the connection's current join/auth/spawn/play stage. | all decision inputs server-derived | Hard | stock-reconnect-resume |
 | `protocol.entity_owner` | The entity ID in a request belongs to the requesting connection. | all decision inputs server-derived | Hard | physics-master-delegate, server-originated-relay |
 | `protocol.sign_library` | A sign upload targets the sender's own player library, or a prefab library under prefab-editor authority. | all decision inputs server-derived | Hard | prefab-edit-mode, client-library-sync, admin-mod-origin |
+| `protocol.drone_recovery` | A drone recovery request targets the sender's own player id. | all decision inputs server-derived | Hard | drone-recovery, admin-mod-origin |
 | `protocol.permission` | Debug, creative, godmode, spectator, and console actions require permission, checked at execution time, not request time. | all decision inputs server-derived | Hard | admin-principal, automation-principal |
 | `protocol.duplicate_session` | A platform identity has only one live session; duplicate logins are evidence, not proof. | all decision inputs server-derived | Strong | stale-disconnect, reconnect-grace |
 | `protocol.malformed` | Decoded values are in domain: enum in range, no NaN/infinity, coordinates, stack sizes, and lengths bounded. | all decision inputs server-derived | Hard | none |
@@ -125,6 +126,7 @@ for a mode raise until its declared fixture set is green in observe mode.
 | `protocol.stage_order` | X | X |  | X |  |  |  |  |
 | `protocol.entity_owner` | X | X |  |  |  | X |  |  |
 | `protocol.sign_library` | X | X |  |  |  | X |  |  |
+| `protocol.drone_recovery` | X | X |  |  |  | X |  |  |
 | `protocol.permission` | X | X |  |  |  | X |  |  |
 | `protocol.duplicate_session` | X | X |  | X |  |  |  | X |
 | `protocol.malformed` | X | X |  |  |  |  |  |  |
@@ -165,10 +167,10 @@ for a mode raise until its declared fixture set is green in observe mode.
 | `availability.cost` | X | X | X |  |  |  |  |  |
 | `availability.churn` | X | X |  | X |  |  |  |  |
 
-## Seam map (V3.3.0 census candidates)
+## Seam map (V3.4.0 census candidates)
 
-Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.3.0/INDEX.md`
-(192 types, 184 registered ids) and the protocol narratives; every seam is verified
+Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.4.0/INDEX.md`
+(194 types, 190 registered ids) and the protocol narratives; every seam is verified
 in Phase 1 before a hook is written. Declared per detector in
 `tools/detector_spec.yaml`.
 
@@ -177,6 +179,7 @@ in Phase 1 before a hook is written. Declared per detector in
 | `protocol.stage_order` | NetPackage*.ProcessPackage stage gating (ConnectionManager.ProcessPackages) |
 | `protocol.entity_owner` | process-time ownership resolution; NetPackageOwnedEntitySync |
 | `protocol.sign_library` | NetPackageSingleSignData.ProcessPackage -> SignDataManager.ProcessSignReceived/StorePlayerSignBlob (stock performs no sender check) |
+| `protocol.drone_recovery` | NetPackageDroneRecoveryRequest.ProcessPackage -> DroneManager.RecoverDroneForPlayer (stock performs no sender check) |
 | `protocol.permission` | NetPackageConsoleCmdClient/Server, NetPackageDebug, NetPackageModifyCVar execution seams |
 | `protocol.duplicate_session` | NetPackagePlayerLogin, NetPackageRequestToEnterGame handlers |
 | `protocol.malformed` | NetPackage read/decode boundaries across all census types |
@@ -200,11 +203,11 @@ in Phase 1 before a hook is written. Declared per detector in
 | `progression.xp_rate` | NetPackageEntityAddExpServer |
 | `progression.skill_prereq` | NetPackageEntitySetSkillLevelServer |
 | `progression.health_stamina` | NetPackageEntityStatChanged, NetPackageEntityStatsBuff, NetPackageGameStats |
-| `inventory.delta` | NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer is gone in V3.3.0 |
+| `inventory.delta` | NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer has been gone since V3.3.0 and remains gone in V3.4.0 |
 | `inventory.stack` | NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer, NetPackageItemDrop |
-| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.3.0 census) |
-| `inventory.replay` | at risk: no per-transaction package in the V3.3.0 census; transaction ids went with the removed transactional-inventory layer |
-| `inventory.container_race` | at risk: no per-transaction atomic slot check in the V3.3.0 census (transactional-inventory layer removed) |
+| `inventory.craft` | craft/recipe/workstation-queue seam (at risk: no craft package in the V3.4.0 census) |
+| `inventory.replay` | at risk: no per-transaction package in the V3.4.0 census; transaction ids went with the removed transactional-inventory layer |
+| `inventory.container_race` | at risk: no per-transaction atomic slot check in the V3.4.0 census (transactional-inventory layer removed) |
 | `inventory.quality` | NetPackagePlayerInventory (container blobs), NetPackageBag, NetPackageDropItemsContainer |
 | `inventory.trader` | NetPackageTraderData (sync only; no price/currency transaction package in the census) |
 | `inventory.rollback` | save epoch / NetPackagePlayerDisconnect / reconnect handlers |

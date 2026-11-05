@@ -13,7 +13,7 @@ see note).
 ## D-01: Pin one game build and fail open
 
 - **Status:** accepted; the one-build fail-open rule binds, its build pin is superseded by
-  D-19 (V3.3.0 (b18)).
+  D-20 (V3.4.0 (b10)).
 - **Decision:** Target exactly one 7 Days to Die dedicated build at a time, Unity Mono. Every
   Harmony hook resolves exact type, full signature, parameter roles, return type, and
   metadata token against that build and self-disables on mismatch. Other builds load in
@@ -169,7 +169,7 @@ see note).
 - **Status:** accepted.
 - **Decision:** Combat validators hook both `NetPackageDamageEntity` and
   `NetPackageRangeCheckDamageEntity`; a validator on one path only protects nothing. Both
-  seams are the two damage paths named in the V3.3.0 netpackage census (D-19).
+  seams are the two damage paths named in the V3.4.0 netpackage census (D-20).
 - **Alternatives:** Hook the common post-damage sink only (rejected: the range-check path
   bypasses the sink; the at-risk seam list names it).
 - **Consequence:** RESEARCH.md open question, SIGNALS.md -> Correlation graph, TODO.md Phase 6,
@@ -254,8 +254,8 @@ see note).
 
 ## D-19: Re-pin the supported build to V3.3.0 (b18)
 
-- **Status:** accepted. Supersedes the build pin in D-18; D-01's one-build fail-open rule is
-  unchanged.
+- **Status:** superseded by D-20 (V3.4.0 (b10)). Its b18 claims stay as history. It superseded
+  the build pin in D-18, and D-01's one-build fail-open rule is unchanged.
 - **Decision:** The pinned build is 7 Days to Die dedicated V3.3.0 (b18), Unity Mono, the
   build installed locally. `buildPin.buildId` defaults to `3.3.0-b18` (SCHEMAS.md, config v1),
   and the Phase 1 surface inventory, hook manifest, and metadata tests verify against it.
@@ -273,6 +273,34 @@ see note).
   check; `protocol.sign_library` records that as an observe-only detector candidate (Phase 4).
   Every registration id is inferred from metadata order until a live b18 join capture exists.
   The V3.0.1, V3.1.0, and V3.2.0 narratives stay as historical evidence.
+
+## D-20: Re-pin the supported build to V3.4.0 (b10)
+
+- **Status:** accepted. Supersedes the build pin in D-19; D-01's one-build fail-open rule is
+  unchanged.
+- **Decision:** The pinned build is 7 Days to Die dedicated V3.4.0 (b10), Unity Mono, the build
+  installed locally. `buildPin.buildId` defaults to `3.4.0-b10` (SCHEMAS.md, config v1), and the
+  Phase 1 surface inventory, hook manifest, and metadata tests verify against it.
+- **Alternatives:** Stay on V3.3.0 (b18) (rejected: it is no longer the build the project runs,
+  and its registered-id table predates the two drone recovery packages); hardcode a
+  per-build package-id table (rejected: registration ids are derived from metadata order, so
+  a mod assembly shifts every id after it and no table is stable).
+- **Consequence:** RESEARCH.md -> Local evidence points at the V3.4.0 netpackage census
+  (194 types, 190 registered ids measured from a live join) as the seam source for
+  `tools/detector_spec.yaml`. Every seam named at b18 survives: the 50 referenced package
+  types keep their full method-signature sets, and the four non-package methods
+  (`ConnectionManager.ProcessPackages` IL 116, `SignDataManager.ProcessSignReceived` IL 31,
+  `StorePlayerSignBlob` IL 19, `LockManager.ProcessRequest` IL 19) have identical instruction
+  counts. One seam body changed: `NetPackageSetBlock.ProcessPackage` drops from 59 to 34 IL
+  instructions, so any future instruction-anchored patch of that method must re-anchor, while
+  the exact-signature hook the policy requires still resolves. V3.4.0 adds
+  `NetPackageDroneRecoveryRequest` (id 45) and `NetPackageDroneRecoveryResponse` (id 46) and
+  shifts every id above 46 by +2; `protocol.drone_recovery` records the new request path,
+  which resolves the target player id from the package body and never compares it with the
+  sender. The transactional-inventory layer is still absent, so `inventory.replay` and
+  `inventory.container_race` stay at risk. The id table is measured through a live stock join
+  but stays scoped to the stock build and mod stack it was measured on. The V3.0.1, V3.1.0,
+  V3.2.0, and V3.3.0 narratives stay as historical evidence.
 
 ## Decision process
 

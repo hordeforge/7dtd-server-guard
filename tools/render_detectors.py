@@ -248,9 +248,9 @@ def render_fixture_matrix(detectors: list[Detector]) -> str:
 
 def render_seam_map(detectors: list[Detector]) -> str:
     out = [
-        "## Seam map (V3.3.0 census candidates)\n",
-        "Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.3.0/INDEX.md`",
-        "(192 types, 184 registered ids) and the protocol narratives; every seam is verified",
+        "## Seam map (V3.4.0 census candidates)\n",
+        "Candidate authoritative seams from `7dtd-engine-research/il/netpackages-v3.4.0/INDEX.md`",
+        "(194 types, 190 registered ids) and the protocol narratives; every seam is verified",
         "in Phase 1 before a hook is written. Declared per detector in",
         "`tools/detector_spec.yaml`.\n",
         "| Detector | Candidate seam |",

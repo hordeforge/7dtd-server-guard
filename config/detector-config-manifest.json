@@ -23,6 +23,13 @@
       "seam": "NetPackageSingleSignData.ProcessPackage -> SignDataManager.ProcessSignReceived/StorePlayerSignBlob (stock performs no sender check)"
     },
     {
+      "detectorId": "protocol.drone_recovery",
+      "phase": 4,
+      "ceiling": "Hard",
+      "defaultMode": "observe",
+      "seam": "NetPackageDroneRecoveryRequest.ProcessPackage -> DroneManager.RecoverDroneForPlayer (stock performs no sender check)"
+    },
+    {
       "detectorId": "protocol.permission",
       "phase": 4,
       "ceiling": "Hard",
@@ -476,7 +483,7 @@
       "phase": 7,
       "ceiling": "Strong",
       "defaultMode": "observe",
-      "seam": "NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer is gone in V3.3.0",
+      "seam": "NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer has been gone since V3.3.0 and remains gone in V3.4.0",
       "thresholds": [
         {
           "key": "max_unaccounted_delta",
@@ -502,7 +509,7 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.3.0 census)",
+      "seam": "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.4.0 census)",
       "hardCondition": "Hard only if Phase 1 finds an authoritative craft/recipe/workstation-queue seam; otherwise degrades to inventory.delta (Strong)"
     },
     {
@@ -510,7 +517,7 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "at risk: no per-transaction package in the V3.3.0 census; transaction ids went with the removed transactional-inventory layer",
+      "seam": "at risk: no per-transaction package in the V3.4.0 census; transaction ids went with the removed transactional-inventory layer",
       "hardCondition": "Hard only if Phase 1 finds a per-transaction id to replay; without one this detector is deferred and its coverage degrades to inventory.delta (Strong)",
       "thresholds": [
         {
@@ -539,7 +546,7 @@
       "phase": 7,
       "ceiling": "Hard",
       "defaultMode": "observe",
-      "seam": "at risk: no per-transaction atomic slot check in the V3.3.0 census (transactional-inventory layer removed)",
+      "seam": "at risk: no per-transaction atomic slot check in the V3.4.0 census (transactional-inventory layer removed)",
       "hardCondition": "Hard only if Phase 1 finds a server-side atomic slot check; without one this detector is deferred and its coverage degrades to inventory.delta (Strong)"
     },
     {

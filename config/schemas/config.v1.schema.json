@@ -28,7 +28,7 @@
       "properties": {
         "buildId": {
           "type": "string",
-          "default": "3.3.0-b18"
+          "default": "3.4.0-b10"
         },
         "policy": {
           "const": "observe-else",

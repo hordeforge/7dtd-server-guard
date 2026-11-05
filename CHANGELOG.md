@@ -10,6 +10,29 @@ this file and are described only by their git tags.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-05
+
+### Added
+
+- `protocol.drone_recovery`, an observe-only detector candidate for the V3.4.0 drone
+  recovery request. The stock server resolves the target player id from the package body,
+  never compares it with the sender, and broadcasts the response, so a client can recover
+  and re-own another player's drone.
+
+### Changed
+
+- Retarget the pinned build from V3.3.0 (b18) to V3.4.0 (b10) in the config schema default,
+  the example config, the evidence and replay samples, the metadata-test README, and the
+  design contract. The new pin is D-20 in `docs/DECISIONS.md`.
+- Regenerate the detector registry and config manifest against the V3.4.0 netpackage census
+  (194 types, 190 registered ids measured from a live join). Every seam named at b18
+  survives with the same signature set. `NetPackageSetBlock.ProcessPackage` changed body
+  (59 to 34 IL instructions), so an instruction-anchored patch of it must re-anchor; the
+  exact-signature hook still resolves. The two new drone recovery packages occupy ids 45
+  and 46, and every id above 46 shifts by +2.
+- Record the measured id table and the drone recovery path in `docs/RESEARCH.md`, and the
+  hook-target re-check in `docs/DECISIONS.md` D-20.
+
 ## [0.6.0] - 2026-10-25
 
 ### Added

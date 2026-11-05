@@ -67,7 +67,7 @@ detectors:
       - {name: prefab_edit_authority, authority: server-derived, role: decision}
     algorithm: |
       Compare the upload's libraryId with the sender's own player library id, and admit a
-      prefab library only while prefab-edit mode is active. V3.3.0 performs neither check:
+      prefab library only while prefab-edit mode is active. V3.4.0 performs neither check:
       ProcessSignReceived never reads Sender and StorePlayerSignBlob validates only that the
       id parses as a player id, so a client can create a new guid or overwrite an existing
       guid in another player's library, with any sharing value; the server persists the blob
@@ -78,6 +78,31 @@ detectors:
       fixtures exist.
     state: "None (reads the sender identity and the prefab-edit flag)."
     contexts: [prefab-edit-mode, client-library-sync, admin-mod-origin]
+    fixtures: [normal, violation, admin-mod-origin]
+
+  - id: protocol.drone_recovery
+    seam: "NetPackageDroneRecoveryRequest.ProcessPackage -> DroneManager.RecoverDroneForPlayer (stock performs no sender check)"
+    family: protocol
+    phase: 4
+    ceiling: Hard
+    default_mode: observe
+    summary: "A drone recovery request targets the sender's own player id."
+    inputs:
+      - {name: requested_player_id, authority: client-declared, role: observed}
+      - {name: sender_player_id, authority: server-derived, role: decision}
+      - {name: drone_owner_id, authority: server-derived, role: decision}
+    algorithm: |
+      Compare the request body's playerId with the sender's own player id. V3.4.0 resolves
+      the id from the package body and passes it to DroneManager.RecoverDroneForPlayer,
+      which scans the active and unloaded drone lists for that player's id, teleports the
+      drone to the player, and triggers a save. ProcessPackage never compares the id with
+      Sender, and the `actionId` field is unread. The response carries playerId and droneId
+      and is sent with range 192 and no client selector, so it is a broadcast. A stock
+      client sends its own id from the drone dialog action, so a request naming another
+      player is an impossible-by-construction transition on another player's drone.
+      Observe-only until Phase 4 legal-context fixtures exist.
+    state: "None (reads the sender identity and the package body)."
+    contexts: [drone-recovery, admin-mod-origin]
     fixtures: [normal, violation, admin-mod-origin]
 
   - id: protocol.permission
@@ -93,7 +118,7 @@ detectors:
       - {name: admin_level, authority: server-derived, role: decision}
     algorithm: |
       At the execution seam, resolve the principal's admin level and compare against the
-      action's required level. Exempts named admin and automation principals. V3.3.0 adds
+      action's required level. Exempts named admin and automation principals. V3.3.0 added
       `give` and `listitems`, and neither overrides DefaultPermissionLevel, so both inherit
       level 0 (highest); a deny-by-default command policy has to decide about `give`
       explicitly, because it drops an item stack at the player's feet.
@@ -564,7 +589,7 @@ detectors:
 
   # ---------------------------------------------------------------- inventory (phase 7)
   - id: inventory.delta
-    seam: "NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer is gone in V3.3.0"
+    seam: "NetPackagePlayerInventory (inventory, bag, and equipment blobs), NetPackageDropItemsContainer, NetPackageItemDrop, NetPackageBag; the transactional-inventory layer has been gone since V3.3.0 and remains gone in V3.4.0"
     family: inventory
     phase: 7
     ceiling: Strong
@@ -609,7 +634,7 @@ detectors:
     fixtures: [normal, violation]
 
   - id: inventory.craft
-    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.3.0 census)"
+    seam: "craft/recipe/workstation-queue seam (at risk: no craft package in the V3.4.0 census)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -622,16 +647,16 @@ detectors:
     algorithm: |
       At-risk seam: the package census shows no craft/recipe/workstation-queue package;
       backpack crafting appears client-local and workstations sync as opaque tile-entity
-      blobs. The transactional-inventory layer that once carried container moves is gone
-      in V3.3.0, so craft attribution would have to come from the whole-container inventory
-      blob. If Phase 1 finds no seam, this detector is deferred and its coverage degrades
-      to inventory.delta.
+      blobs. The transactional-inventory layer that once carried container moves has been
+      gone since V3.3.0 and remains gone at V3.4.0, so craft attribution would have to come
+      from the whole-container inventory blob. If Phase 1 finds no seam, this detector is
+      deferred and its coverage degrades to inventory.delta.
     state: "Craft transaction state machine (only if the seam exists)."
     contexts: [workstation, craft-cancellation]
     fixtures: [normal, violation, rollback]
 
   - id: inventory.replay
-    seam: "at risk: no per-transaction package in the V3.3.0 census; transaction ids went with the removed transactional-inventory layer"
+    seam: "at risk: no per-transaction package in the V3.4.0 census; transaction ids went with the removed transactional-inventory layer"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -644,9 +669,9 @@ detectors:
     algorithm: |
       Session-scoped idempotency cache: a replayed transaction is a no-op (the second
       application is rejected without state change). The verdict depends only on the
-      server's cache. V3.3.0 removed the transactional-inventory layer, so there is no
-      transaction id to key this on until Phase 1 re-derives a seam from the
-      whole-container upload.
+      server's cache. V3.3.0 removed the transactional-inventory layer and V3.4.0 did not
+      restore it, so there is no transaction id to key this on until Phase 1 re-derives a
+      seam from the whole-container upload.
     state: "Per-session bounded transaction-id cache with replay-window expiry."
     thresholds:
       - {key: replay_cache_size, type: int, range: [64, 1000000], default: 10000}
@@ -655,7 +680,7 @@ detectors:
     fixtures: [normal, violation, reconnect-duplicate-session]
 
   - id: inventory.container_race
-    seam: "at risk: no per-transaction atomic slot check in the V3.3.0 census (transactional-inventory layer removed)"
+    seam: "at risk: no per-transaction atomic slot check in the V3.4.0 census (transactional-inventory layer removed)"
     family: inventory
     phase: 7
     ceiling: Hard
@@ -669,8 +694,8 @@ detectors:
       The server atomically checks slot ownership and container version; a racing request
       fails without state change, so the victim accrues nothing (POLICY.md attribution).
       Post-transaction conservation re-verifies the ledger. V3.3.0 removed the
-      transactional-inventory layer, so Phase 1 must re-derive whether a server-side atomic
-      check still exists for container moves.
+      transactional-inventory layer and V3.4.0 did not restore it, so Phase 1 must re-derive
+      whether a server-side atomic check still exists for container moves.
     state: "Container version counters."
     contexts: [concurrent-moves, split-merge, second-player-race]
     fixtures: [normal, violation, induced-finding]
